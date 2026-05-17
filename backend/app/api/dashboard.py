@@ -1,0 +1,157 @@
+from datetime import datetime, timezone
+from decimal import Decimal
+
+from fastapi import APIRouter, Depends
+from pydantic import BaseModel
+from sqlalchemy import desc, func
+from sqlalchemy.orm import Session
+
+from ..deps import get_current_user, get_db
+from ..models import ApiKey, ModelRow, RequestLog, User
+from ..schemas.log import RequestLogSummary
+from .logs import _enrich_summary
+
+router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
+
+
+class TopModelEntry(BaseModel):
+    model_id: int | None
+    model_name: str | None
+    cost: Decimal
+    requests: int
+
+
+class TopApiKeyEntry(BaseModel):
+    api_key_id: int | None
+    api_key_prefix: str | None
+    requests: int
+    cost: Decimal
+
+
+class DashboardOut(BaseModel):
+    balance: Decimal
+    today_text_requests: int
+    today_image_requests: int
+    today_video_requests: int
+    today_spend: Decimal
+    month_spend: Decimal
+    recent_failures: list[RequestLogSummary]
+    recent_logs: list[RequestLogSummary]
+    top_models_by_cost: list[TopModelEntry]
+    top_api_keys_by_usage: list[TopApiKeyEntry]
+
+
+def _today() -> datetime:
+    n = datetime.now(timezone.utc)
+    return datetime(n.year, n.month, n.day, tzinfo=timezone.utc)
+
+
+def _month() -> datetime:
+    n = datetime.now(timezone.utc)
+    return datetime(n.year, n.month, 1, tzinfo=timezone.utc)
+
+
+@router.get("", response_model=DashboardOut)
+def dashboard(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> DashboardOut:
+    today = _today()
+    month = _month()
+
+    def _count_by_type(t: str) -> int:
+        return int(
+            db.query(func.count(RequestLog.id))
+            .filter(
+                RequestLog.user_id == user.id,
+                RequestLog.request_type == t,
+                RequestLog.created_at >= today,
+            )
+            .scalar()
+            or 0
+        )
+
+    today_spend = Decimal(
+        db.query(func.coalesce(func.sum(RequestLog.cost), 0))
+        .filter(RequestLog.user_id == user.id, RequestLog.created_at >= today)
+        .scalar()
+        or 0
+    )
+    month_spend = Decimal(
+        db.query(func.coalesce(func.sum(RequestLog.cost), 0))
+        .filter(RequestLog.user_id == user.id, RequestLog.created_at >= month)
+        .scalar()
+        or 0
+    )
+
+    failures = (
+        db.query(RequestLog)
+        .filter(RequestLog.user_id == user.id, RequestLog.status == "failed")
+        .order_by(desc(RequestLog.created_at))
+        .limit(10)
+        .all()
+    )
+    recent = (
+        db.query(RequestLog)
+        .filter(RequestLog.user_id == user.id)
+        .order_by(desc(RequestLog.created_at))
+        .limit(20)
+        .all()
+    )
+
+    top_models = (
+        db.query(
+            RequestLog.model_id,
+            func.coalesce(func.sum(RequestLog.cost), 0).label("c"),
+            func.count(RequestLog.id).label("n"),
+        )
+        .filter(RequestLog.user_id == user.id, RequestLog.created_at >= month)
+        .group_by(RequestLog.model_id)
+        .order_by(desc("c"))
+        .limit(5)
+        .all()
+    )
+    top_keys = (
+        db.query(
+            RequestLog.api_key_id,
+            func.count(RequestLog.id).label("n"),
+            func.coalesce(func.sum(RequestLog.cost), 0).label("c"),
+        )
+        .filter(RequestLog.user_id == user.id, RequestLog.created_at >= month)
+        .group_by(RequestLog.api_key_id)
+        .order_by(desc("n"))
+        .limit(5)
+        .all()
+    )
+
+    keys_by_id = {k.id: k for k in db.query(ApiKey).filter(ApiKey.user_id == user.id).all()}
+    models_by_id = {m.id: m for m in db.query(ModelRow).all()}
+
+    return DashboardOut(
+        balance=Decimal(user.balance),
+        today_text_requests=_count_by_type("text"),
+        today_image_requests=_count_by_type("image"),
+        today_video_requests=_count_by_type("video"),
+        today_spend=today_spend,
+        month_spend=month_spend,
+        recent_failures=[_enrich_summary(r, keys_by_id, models_by_id) for r in failures],
+        recent_logs=[_enrich_summary(r, keys_by_id, models_by_id) for r in recent],
+        top_models_by_cost=[
+            TopModelEntry(
+                model_id=m_id,
+                model_name=models_by_id[m_id].public_name if m_id in models_by_id else None,
+                cost=Decimal(c),
+                requests=int(n),
+            )
+            for (m_id, c, n) in top_models
+        ],
+        top_api_keys_by_usage=[
+            TopApiKeyEntry(
+                api_key_id=k_id,
+                api_key_prefix=keys_by_id[k_id].key_prefix if k_id in keys_by_id else None,
+                requests=int(n),
+                cost=Decimal(c),
+            )
+            for (k_id, n, c) in top_keys
+        ],
+    )

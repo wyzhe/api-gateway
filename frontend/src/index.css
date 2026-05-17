@@ -1,0 +1,133 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* Relay design tokens — carried over from the prototype's styles.css. */
+:root {
+  --background: #0a0b0d;
+  --surface: #111316;
+  --surface-2: #16191d;
+  --surface-3: #1b1e23;
+  --border: #23262b;
+  --border-strong: #2e3239;
+  --border-soft: #1b1e22;
+
+  --foreground: #eceef1;
+  --muted-foreground: #9097a1;
+  --faint: #5c636d;
+  --dim: #43484f;
+
+  --accent: #7be38b;
+  --accent-dim: #4f9e5c;
+  --accent-foreground: #0a0b0d;
+
+  --success: #4ade80;
+  --warn: #f5b544;
+  --danger: #f87171;
+  --info: #7ab7ff;
+
+  --openai: #10a37f;
+  --anthropic: #d97757;
+  --gemini: #5b8def;
+  --xai: #b8b8b8;
+  --veo: #c084fc;
+  --apimart: #7be38b;
+
+  --radius: 8px;
+
+  --card: var(--surface);
+  --card-foreground: var(--foreground);
+  --popover: var(--surface-2);
+  --popover-foreground: var(--foreground);
+  --primary: var(--accent);
+  --primary-foreground: var(--accent-foreground);
+  --secondary: var(--surface-3);
+  --secondary-foreground: var(--foreground);
+  --muted: var(--surface-2);
+  --destructive: var(--danger);
+  --ring: var(--accent);
+  --input: var(--surface-3);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-faint: var(--faint);
+  --color-dim: var(--dim);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-success: var(--success);
+  --color-warn: var(--warn);
+  --color-info: var(--info);
+  --color-openai: var(--openai);
+  --color-anthropic: var(--anthropic);
+  --color-gemini: var(--gemini);
+  --color-xai: var(--xai);
+  --color-veo: var(--veo);
+  --color-apimart: var(--apimart);
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 2px);
+  --radius-xl: calc(var(--radius) + 4px);
+  --font-sans:
+    "Geist", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono:
+    "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    font-feature-settings: "ss01", "cv11";
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection {
+    background: color-mix(in oklch, var(--accent) 35%, transparent);
+  }
+}
+
+@layer components {
+  .mono {
+    font-family: var(--font-mono);
+  }
+  .kbd {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 6px;
+    border: 1px solid var(--border-strong);
+    background: var(--surface-3);
+    border-radius: 4px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--muted-foreground);
+  }
+}
