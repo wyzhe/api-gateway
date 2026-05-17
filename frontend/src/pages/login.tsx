@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -10,16 +10,13 @@ export function LoginPage() {
   const { login, user } = useAuth();
   const nav = useNavigate();
   const loc = useLocation();
+  const redirectTo = (loc.state as { from?: string } | null)?.from ?? "/dashboard";
   const [email, setEmail] = useState("admin@example.com");
   const [password, setPassword] = useState("admin123");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  if (user) {
-    const to = (loc.state as any)?.from || "/dashboard";
-    nav(to, { replace: true });
-    return null;
-  }
+  if (user) return <Navigate to={redirectTo} replace />;
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -27,8 +24,7 @@ export function LoginPage() {
     setBusy(true);
     try {
       await login(email, password);
-      const to = (loc.state as any)?.from || "/dashboard";
-      nav(to, { replace: true });
+      nav(redirectTo, { replace: true });
     } catch (err: any) {
       setError(err?.message || "Login failed");
     } finally {

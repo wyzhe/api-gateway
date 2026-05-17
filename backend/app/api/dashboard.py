@@ -1,4 +1,3 @@
-from datetime import datetime, timezone
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends
@@ -9,12 +8,15 @@ from sqlalchemy.orm import Session
 from ..deps import get_current_user, get_db
 from ..models import ApiKey, ModelRow, RequestLog, User
 from ..schemas.log import RequestLogSummary
+from ..utils.time import month_start_utc, today_utc
 from .logs import _enrich_summary
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
 
 
 class TopModelEntry(BaseModel):
+    model_config = {"protected_namespaces": ()}
+
     model_id: int | None
     model_name: str | None
     cost: Decimal
@@ -41,23 +43,13 @@ class DashboardOut(BaseModel):
     top_api_keys_by_usage: list[TopApiKeyEntry]
 
 
-def _today() -> datetime:
-    n = datetime.now(timezone.utc)
-    return datetime(n.year, n.month, n.day, tzinfo=timezone.utc)
-
-
-def _month() -> datetime:
-    n = datetime.now(timezone.utc)
-    return datetime(n.year, n.month, 1, tzinfo=timezone.utc)
-
-
 @router.get("", response_model=DashboardOut)
 def dashboard(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> DashboardOut:
-    today = _today()
-    month = _month()
+    today = today_utc()
+    month = month_start_utc()
 
     def _count_by_type(t: str) -> int:
         return int(

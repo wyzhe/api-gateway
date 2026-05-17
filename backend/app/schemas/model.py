@@ -6,6 +6,8 @@ from pydantic import BaseModel, Field
 
 
 class ModelOut(BaseModel):
+    model_config = {"from_attributes": True, "protected_namespaces": ()}
+
     id: int
     public_name: str
     upstream_model: str
@@ -26,10 +28,10 @@ class ModelOut(BaseModel):
     generation_price: Decimal | None
     created_at: datetime
 
-    model_config = {"from_attributes": True}
-
 
 class ModelCreate(BaseModel):
+    model_config = {"protected_namespaces": ()}
+
     public_name: str = Field(min_length=1, max_length=120)
     upstream_model: str = Field(min_length=1, max_length=120)
     provider_id: int
@@ -49,6 +51,8 @@ class ModelCreate(BaseModel):
 
 
 class ModelUpdate(BaseModel):
+    model_config = {"protected_namespaces": ()}
+
     public_name: str | None = None
     upstream_model: str | None = None
     provider_id: int | None = None

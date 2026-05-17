@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Query
@@ -8,18 +8,9 @@ from sqlalchemy.orm import Session
 from ..deps import get_current_user, get_db
 from ..models import BalanceTransaction, RequestLog, User
 from ..schemas.billing import BillingSummary, TransactionOut
+from ..utils.time import month_start_utc, today_utc
 
 router = APIRouter(prefix="/api/billing", tags=["billing"])
-
-
-def _today_start() -> datetime:
-    now = datetime.now(timezone.utc)
-    return datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
-
-
-def _month_start() -> datetime:
-    now = datetime.now(timezone.utc)
-    return datetime(now.year, now.month, 1, tzinfo=timezone.utc)
 
 
 @router.get("/summary", response_model=BillingSummary)
@@ -27,8 +18,8 @@ def summary(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> BillingSummary:
-    today = _today_start()
-    month = _month_start()
+    today = today_utc()
+    month = month_start_utc()
 
     def _sum(since: datetime) -> Decimal:
         v = (

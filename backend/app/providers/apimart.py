@@ -33,6 +33,18 @@ TASK_STATUS_MAP = {
 
 DEFAULT_TIMEOUT = httpx.Timeout(connect=10.0, read=120.0, write=30.0, pool=10.0)
 
+# Single shared async client (HTTP/1.1 keep-alive + TLS session reuse).
+# `app.main.lifespan` is the right place to close it on shutdown if you care;
+# httpx will GC it cleanly on process exit either way.
+_HTTPX_CLIENT: httpx.AsyncClient | None = None
+
+
+def _client() -> httpx.AsyncClient:
+    global _HTTPX_CLIENT
+    if _HTTPX_CLIENT is None:
+        _HTTPX_CLIENT = httpx.AsyncClient(timeout=DEFAULT_TIMEOUT)
+    return _HTTPX_CLIENT
+
 
 class APIMartProvider(BaseProvider):
     name = "apimart"
@@ -68,18 +80,17 @@ class APIMartProvider(BaseProvider):
         *,
         stream: bool = False,
     ) -> ProviderResponse:
-        async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
-            resp = await client.post(
-                self._url(PATH_CHAT),
-                headers=self._headers(),
-                json={**payload, "stream": False},
-            )
-            body = resp.json() if resp.content else {}
-            return ProviderResponse(
-                http_status=resp.status_code,
-                body=body,
-                upstream_request_id=self._request_id(resp),
-            )
+        resp = await _client().post(
+            self._url(PATH_CHAT),
+            headers=self._headers(),
+            json={**payload, "stream": False},
+        )
+        body = resp.json() if resp.content else {}
+        return ProviderResponse(
+            http_status=resp.status_code,
+            body=body,
+            upstream_request_id=self._request_id(resp),
+        )
 
     async def chat_completions_stream(
         self,
@@ -91,115 +102,99 @@ class APIMartProvider(BaseProvider):
         opts.setdefault("include_usage", True)
         body["stream_options"] = opts
 
-        async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
-            async with client.stream(
-                "POST",
-                self._url(PATH_CHAT),
-                headers={**self._headers(), "Accept": "text/event-stream"},
-                json=body,
-            ) as resp:
-                if resp.status_code != 200:
-                    # Surface the error body as a single chunk for the gateway layer.
-                    err = await resp.aread()
-                    yield ProviderStreamChunk(
-                        raw_line=b"data: " + err + b"\n\n",
-                        parsed={"_error": True, "_http": resp.status_code, "body": err.decode(errors="replace")},
-                    )
-                    return
-                async for raw_line in resp.aiter_lines():
-                    if raw_line == "":
-                        # SSE separator
-                        yield ProviderStreamChunk(raw_line=b"\n", parsed=None)
-                        continue
-                    if raw_line.startswith(":"):
-                        # Heartbeat / comment — pass through verbatim
-                        yield ProviderStreamChunk(raw_line=(raw_line + "\n").encode(), parsed=None)
-                        continue
-                    parsed = None
-                    if raw_line.startswith("data: "):
-                        data_str = raw_line[6:]
-                        if data_str != "[DONE]":
-                            import json as _json
+        async with _client().stream(
+            "POST",
+            self._url(PATH_CHAT),
+            headers={**self._headers(), "Accept": "text/event-stream"},
+            json=body,
+        ) as resp:
+            if resp.status_code != 200:
+                err = await resp.aread()
+                yield ProviderStreamChunk(
+                    raw_line=b"data: " + err + b"\n\n",
+                    parsed={"_error": True, "_http": resp.status_code, "body": err.decode(errors="replace")},
+                )
+                return
+            async for raw_line in resp.aiter_lines():
+                if raw_line == "":
+                    yield ProviderStreamChunk(raw_line=b"\n", parsed=None)
+                    continue
+                if raw_line.startswith(":"):
+                    # SSE comment / heartbeat — pass through verbatim.
+                    yield ProviderStreamChunk(raw_line=(raw_line + "\n").encode(), parsed=None)
+                    continue
+                parsed = None
+                if raw_line.startswith("data: "):
+                    data_str = raw_line[6:]
+                    if data_str != "[DONE]":
+                        import json as _json
 
-                            try:
-                                parsed = _json.loads(data_str)
-                            except Exception:
-                                parsed = None
-                    yield ProviderStreamChunk(
-                        raw_line=(raw_line + "\n").encode(),
-                        parsed=parsed,
-                    )
+                        try:
+                            parsed = _json.loads(data_str)
+                        except Exception:
+                            parsed = None
+                yield ProviderStreamChunk(
+                    raw_line=(raw_line + "\n").encode(),
+                    parsed=parsed,
+                )
 
     # ---------------- Image (async) ----------------
 
     async def image_generation(self, payload: dict[str, Any]) -> ProviderResponse:
-        async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
-            resp = await client.post(
-                self._url(PATH_IMAGES),
-                headers=self._headers(),
-                json=payload,
-            )
-            return ProviderResponse(
-                http_status=resp.status_code,
-                body=(resp.json() if resp.content else {}),
-                upstream_request_id=self._request_id(resp),
-            )
+        resp = await _client().post(
+            self._url(PATH_IMAGES),
+            headers=self._headers(),
+            json=payload,
+        )
+        return ProviderResponse(
+            http_status=resp.status_code,
+            body=(resp.json() if resp.content else {}),
+            upstream_request_id=self._request_id(resp),
+        )
 
     # ---------------- Video (async) ----------------
 
     async def video_generation(self, payload: dict[str, Any]) -> ProviderResponse:
-        async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
-            resp = await client.post(
-                self._url(PATH_VIDEOS),
-                headers=self._headers(),
-                json=payload,
-            )
-            return ProviderResponse(
-                http_status=resp.status_code,
-                body=(resp.json() if resp.content else {}),
-                upstream_request_id=self._request_id(resp),
-            )
+        resp = await _client().post(
+            self._url(PATH_VIDEOS),
+            headers=self._headers(),
+            json=payload,
+        )
+        return ProviderResponse(
+            http_status=resp.status_code,
+            body=(resp.json() if resp.content else {}),
+            upstream_request_id=self._request_id(resp),
+        )
 
-    @staticmethod
-    def extract_task_id(submission_body: dict[str, Any] | list) -> str | None:
+    def extract_task_id(self, submission_body: dict[str, Any] | list) -> str | None:
         """APIMart submission response shape (video):
             {"code": 200, "data": [{"task_id": "...", "status": "submitted"}]}
         Image submissions follow a similar wrapper or may use OpenAI-ish shape.
         Be defensive."""
-        if isinstance(submission_body, dict):
-            # Wrapped form
-            data = submission_body.get("data")
-            if isinstance(data, list) and data:
-                first = data[0] if isinstance(data[0], dict) else None
-                if first:
-                    for k in ("task_id", "id"):
-                        if k in first:
-                            return str(first[k])
+        if not isinstance(submission_body, dict):
+            return None
+        data = submission_body.get("data")
+        if isinstance(data, list) and data and isinstance(data[0], dict):
             for k in ("task_id", "id"):
-                if k in submission_body:
-                    return str(submission_body[k])
-            # OpenAI-ish image: {"created": ..., "data":[{"url": ..., "task_id": ...}]}
-            # already covered above.
+                if k in data[0]:
+                    return str(data[0][k])
+        for k in ("task_id", "id"):
+            if k in submission_body:
+                return str(submission_body[k])
         return None
 
     # ---------------- Task status ----------------
 
     async def get_task_status(self, task_id: str) -> ProviderTaskResult:
-        async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
-            resp = await client.get(
-                self._url(PATH_TASK.format(task_id=task_id)),
-                headers=self._headers(),
-            )
-            body: dict[str, Any] = resp.json() if resp.content else {}
+        resp = await _client().get(
+            self._url(PATH_TASK.format(task_id=task_id)),
+            headers=self._headers(),
+        )
+        body: dict[str, Any] = resp.json() if resp.content else {}
 
-        # Some endpoints wrap as {"code":200,"data":{...}}, others return flat.
-        payload = body
-        if isinstance(body, dict) and isinstance(body.get("data"), dict) and "status" not in body:
-            payload = body["data"]
-        elif isinstance(body, dict) and "data" not in body and "status" in body:
-            payload = body
-        elif isinstance(body, dict) and isinstance(body.get("data"), dict):
-            payload = body["data"]
+        # APIMart may wrap as {"code":200,"data":{...status...}} or return the
+        # status object at top level. Unwrap when there's a dict under `data`.
+        payload = body["data"] if isinstance(body, dict) and isinstance(body.get("data"), dict) else body
 
         raw_status = (payload.get("status") if isinstance(payload, dict) else None) or ""
         norm = TASK_STATUS_MAP.get(raw_status.lower(), "running" if raw_status else "queued")

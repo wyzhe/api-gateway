@@ -7,6 +7,7 @@ import { TypeBadge } from "@/components/type-badge";
 import { ProviderTag } from "@/components/provider-tag";
 import { PageHeader } from "@/components/shell";
 import { api } from "@/lib/api";
+import { priceLabel } from "@/lib/utils";
 
 type Model = {
   id: number;
@@ -90,17 +91,3 @@ export function AdminModelsPage() {
   );
 }
 
-function priceLabel(m: Model): string {
-  switch (m.pricing_mode) {
-    case "per_token":
-      return `${m.input_price ?? "0"} in · ${m.output_price ?? "0"} out / 1M`;
-    case "per_image":
-      return `${m.image_price ?? m.generation_price ?? "0"} / image`;
-    case "per_second":
-      return `${m.video_second_price ?? "0"} / sec`;
-    case "per_generation":
-      return `${m.generation_price ?? "0"} / gen`;
-    default:
-      return "—";
-  }
-}

@@ -13,6 +13,8 @@ settings = get_settings()
 
 
 def _to_bytes(s: str) -> bytes:
+    # bcrypt silently truncates plaintext past 72 bytes; we mirror that here so
+    # hash/verify agree. Pydantic schemas cap password length to keep this safe.
     return s.encode("utf-8")[:72]
 
 

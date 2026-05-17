@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -7,6 +7,7 @@ from sqlalchemy import desc, func
 from sqlalchemy.orm import Session
 
 from ..deps import get_db, require_admin
+from ..utils.time import month_start_utc, today_utc
 from ..models import (
     ApiKey,
     BalanceTransaction,
@@ -28,16 +29,6 @@ from .models import _to_out as model_to_out
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 
-def _today() -> datetime:
-    n = datetime.now(timezone.utc)
-    return datetime(n.year, n.month, n.day, tzinfo=timezone.utc)
-
-
-def _month() -> datetime:
-    n = datetime.now(timezone.utc)
-    return datetime(n.year, n.month, 1, tzinfo=timezone.utc)
-
-
 # ---------------- Overview ----------------
 
 
@@ -52,8 +43,8 @@ class OverviewOut(BaseModel):
 
 @router.get("/overview", response_model=OverviewOut, dependencies=[Depends(require_admin)])
 def overview(db: Session = Depends(get_db)) -> OverviewOut:
-    today = _today()
-    month = _month()
+    today = today_utc()
+    month = month_start_utc()
     users = int(db.query(func.count(User.id)).scalar() or 0)
     today_reqs = int(
         db.query(func.count(RequestLog.id)).filter(RequestLog.created_at >= today).scalar() or 0

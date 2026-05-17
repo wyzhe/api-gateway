@@ -8,6 +8,8 @@ from pydantic import BaseModel
 class RequestLogSummary(BaseModel):
     """List/table view — omits heavy JSON payloads."""
 
+    model_config = {"from_attributes": True, "protected_namespaces": ()}
+
     id: int
     user_id: int
     api_key_id: int | None
@@ -32,8 +34,6 @@ class RequestLogSummary(BaseModel):
     error_message: str | None
     asset_url: str | None
     created_at: datetime
-
-    model_config = {"from_attributes": True}
 
 
 class RequestLogDetail(RequestLogSummary):

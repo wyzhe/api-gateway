@@ -6,6 +6,7 @@ import { TypeBadge } from "@/components/type-badge";
 import { ProviderTag } from "@/components/provider-tag";
 import { PageHeader } from "@/components/shell";
 import { api } from "@/lib/api";
+import { priceLabel } from "@/lib/utils";
 
 type Model = {
   id: number;
@@ -23,21 +24,6 @@ type Model = {
   generation_price: string | null;
   capabilities: any;
 };
-
-function priceLabel(m: Model): string {
-  switch (m.pricing_mode) {
-    case "per_token":
-      return `$${m.input_price ?? "0"} in · $${m.output_price ?? "0"} out / 1M tokens`;
-    case "per_image":
-      return `$${m.image_price ?? m.generation_price ?? "0"} / image`;
-    case "per_second":
-      return `$${m.video_second_price ?? "0"} / second`;
-    case "per_generation":
-      return `$${m.generation_price ?? "0"} / generation`;
-    default:
-      return "—";
-  }
-}
 
 function ModelGrid({ models }: { models: Model[] }) {
   if (models.length === 0)

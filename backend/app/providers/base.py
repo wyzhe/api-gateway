@@ -77,3 +77,9 @@ class BaseProvider:
 
     async def get_task_status(self, task_id: str) -> ProviderTaskResult:
         raise NotImplementedError
+
+    # ---- Submission helpers ----
+
+    def extract_task_id(self, submission_body: dict[str, Any] | list) -> str | None:
+        """Pull the upstream task_id out of an async submission response."""
+        raise NotImplementedError

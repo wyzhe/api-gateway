@@ -14,7 +14,7 @@ from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from ..deps import get_api_key_user, get_db
-from ..models import ApiKey, ModelRow, RequestLog, User, VideoTask
+from ..models import ApiKey, ModelRow, RequestLog, User, VideoTask  # VideoTask used in get_task
 from ..services import cost_service, gateway_service
 
 router = APIRouter(prefix="/v1", tags=["gateway"])
@@ -342,9 +342,7 @@ async def images_generations(
         raise HTTPException(status_code=resp.http_status, detail=body_text)
 
     # APIMart returns a task_id (image generation is async).
-    from ..providers.apimart import APIMartProvider as _AP
-
-    task_id = _AP.extract_task_id(resp.body)
+    task_id = provider_client.extract_task_id(resp.body)
     if not task_id:
         # Defensive: upstream did not include a task_id we recognize.
         gateway_service.persist_failure(
@@ -356,26 +354,12 @@ async def images_generations(
         )
         raise HTTPException(status_code=502, detail="Upstream did not return a task_id")
 
-    log = gateway_service.persist_queued_task(
+    log, task_row = gateway_service.persist_queued_task(
         db, user=user, api_key=api_key, provider=resolved.provider, model=resolved.model,
         request_type="image", request_payload=payload, response_payload=resp.body,
         upstream_request_id=resp.upstream_request_id, request_id=request_id,
         latency_ms=latency_ms, http_status=resp.http_status, upstream_task_id=task_id,
     )
-    # Track in video_tasks too — table is generic; rename later if it becomes
-    # confusing. For MVP image and video share the polling endpoint.
-    task_row = VideoTask(
-        user_id=user.id,
-        api_key_id=api_key.id,
-        request_log_id=log.id,
-        provider_id=resolved.provider.id,
-        model_id=resolved.model.id,
-        upstream_task_id=task_id,
-        status="queued",
-    )
-    db.add(task_row)
-    db.commit()
-    db.refresh(task_row)
 
     return {
         "task_id": f"task_{task_row.id}",
@@ -437,9 +421,7 @@ async def videos_generations(
         )
         raise HTTPException(status_code=resp.http_status, detail=body_text)
 
-    from ..providers.apimart import APIMartProvider as _AP
-
-    task_id = _AP.extract_task_id(resp.body)
+    task_id = provider_client.extract_task_id(resp.body)
     if not task_id:
         gateway_service.persist_failure(
             db, user=user, api_key=api_key, provider=resolved.provider, model=resolved.model,
@@ -450,24 +432,12 @@ async def videos_generations(
         )
         raise HTTPException(status_code=502, detail="Upstream did not return a task_id")
 
-    log = gateway_service.persist_queued_task(
+    log, task_row = gateway_service.persist_queued_task(
         db, user=user, api_key=api_key, provider=resolved.provider, model=resolved.model,
         request_type="video", request_payload=payload, response_payload=resp.body,
         upstream_request_id=resp.upstream_request_id, request_id=request_id,
         latency_ms=latency_ms, http_status=resp.http_status, upstream_task_id=task_id,
     )
-    task_row = VideoTask(
-        user_id=user.id,
-        api_key_id=api_key.id,
-        request_log_id=log.id,
-        provider_id=resolved.provider.id,
-        model_id=resolved.model.id,
-        upstream_task_id=task_id,
-        status="queued",
-    )
-    db.add(task_row)
-    db.commit()
-    db.refresh(task_row)
 
     return {
         "task_id": f"task_{task_row.id}",

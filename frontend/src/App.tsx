@@ -1,25 +1,29 @@
+import { Suspense, lazy } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { RequireAdmin, RequireAuth } from "@/lib/auth";
 import { Shell } from "@/components/shell";
 import { LoginPage } from "@/pages/login";
 import { DashboardPage } from "@/pages/dashboard";
-import { ApiKeysPage } from "@/pages/api-keys";
-import { UsageLogsPage } from "@/pages/usage-logs";
-import { PlaygroundPage } from "@/pages/playground";
-import { ModelsPage } from "@/pages/models";
-import { BillingPage } from "@/pages/billing";
-import { GenerationsPage } from "@/pages/generations";
-import { DocsPage } from "@/pages/docs";
-import { AdminOverviewPage } from "@/pages/admin/overview";
-import { AdminUsersPage } from "@/pages/admin/users";
-import { AdminModelsPage } from "@/pages/admin/models";
-import { AdminProvidersPage } from "@/pages/admin/providers";
-import { AdminLogsPage } from "@/pages/admin/logs";
+
+const ApiKeysPage = lazy(() => import("@/pages/api-keys").then((m) => ({ default: m.ApiKeysPage })));
+const UsageLogsPage = lazy(() => import("@/pages/usage-logs").then((m) => ({ default: m.UsageLogsPage })));
+const PlaygroundPage = lazy(() => import("@/pages/playground").then((m) => ({ default: m.PlaygroundPage })));
+const ModelsPage = lazy(() => import("@/pages/models").then((m) => ({ default: m.ModelsPage })));
+const BillingPage = lazy(() => import("@/pages/billing").then((m) => ({ default: m.BillingPage })));
+const GenerationsPage = lazy(() => import("@/pages/generations").then((m) => ({ default: m.GenerationsPage })));
+const DocsPage = lazy(() => import("@/pages/docs").then((m) => ({ default: m.DocsPage })));
+const AdminOverviewPage = lazy(() => import("@/pages/admin/overview").then((m) => ({ default: m.AdminOverviewPage })));
+const AdminUsersPage = lazy(() => import("@/pages/admin/users").then((m) => ({ default: m.AdminUsersPage })));
+const AdminModelsPage = lazy(() => import("@/pages/admin/models").then((m) => ({ default: m.AdminModelsPage })));
+const AdminProvidersPage = lazy(() => import("@/pages/admin/providers").then((m) => ({ default: m.AdminProvidersPage })));
+const AdminLogsPage = lazy(() => import("@/pages/admin/logs").then((m) => ({ default: m.AdminLogsPage })));
 
 function Workspace({ children }: { children: React.ReactNode }) {
   return (
     <RequireAuth>
-      <Shell>{children}</Shell>
+      <Shell>
+        <Suspense fallback={<div className="p-8 text-muted-foreground">Loading…</div>}>{children}</Suspense>
+      </Shell>
     </RequireAuth>
   );
 }
@@ -27,7 +31,9 @@ function Workspace({ children }: { children: React.ReactNode }) {
 function Admin({ children }: { children: React.ReactNode }) {
   return (
     <RequireAdmin>
-      <Shell>{children}</Shell>
+      <Shell>
+        <Suspense fallback={<div className="p-8 text-muted-foreground">Loading…</div>}>{children}</Suspense>
+      </Shell>
     </RequireAdmin>
   );
 }

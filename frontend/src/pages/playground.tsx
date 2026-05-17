@@ -106,6 +106,13 @@ export function PlaygroundPage() {
   );
 }
 
+function useUnmountCleanup(cleanup: () => void) {
+  // Stable cleanup ref so leaving the page aborts streams / polling.
+  const ref = useRef(cleanup);
+  ref.current = cleanup;
+  useEffect(() => () => ref.current(), []);
+}
+
 /* ---------------- Chat ---------------- */
 function ChatTab({ models, apiKey }: { models: Model[]; apiKey: string }) {
   const [model, setModel] = useState("");
@@ -119,6 +126,7 @@ function ChatTab({ models, apiKey }: { models: Model[]; apiKey: string }) {
   const [rawResp, setRawResp] = useState<any>(null);
   const [busy, setBusy] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  useUnmountCleanup(() => abortRef.current?.abort());
 
   useEffect(() => {
     if (!model && models.length) setModel(models[0].public_name);
@@ -292,6 +300,8 @@ function ImageTab({ models, apiKey }: { models: Model[]; apiKey: string }) {
   const [taskStatus, setTaskStatus] = useState<string>("");
   const [assetUrl, setAssetUrl] = useState<string | null>(null);
   const [rawReq, setRawReq] = useState<any>(null);
+  const cancelRef = useRef({ cancelled: false });
+  useUnmountCleanup(() => (cancelRef.current.cancelled = true));
 
   useEffect(() => {
     if (!model && models.length) setModel(models[0].public_name);
@@ -301,6 +311,8 @@ function ImageTab({ models, apiKey }: { models: Model[]; apiKey: string }) {
 
   const run = async () => {
     if (!apiKey) return toast.error("Paste an API key above first.");
+    cancelRef.current = { cancelled: false };
+    const cancel = cancelRef.current;
     setBusy(true);
     setSubmitResp(null);
     setPollResp(null);
@@ -310,6 +322,7 @@ function ImageTab({ models, apiKey }: { models: Model[]; apiKey: string }) {
     setRawReq(payload);
     try {
       const res = await gateway("/v1/images/generations", apiKey, { method: "POST", body: payload });
+      if (cancel.cancelled) return;
       setSubmitResp(res.body);
       if (res.status >= 400) {
         toast.error(JSON.stringify(res.body?.detail || res.body).slice(0, 200));
@@ -323,27 +336,33 @@ function ImageTab({ models, apiKey }: { models: Model[]; apiKey: string }) {
         return;
       }
       setTaskStatus("queued");
-      // Poll every 4s up to 25 times (~100s).
+      let lastStatus = "queued";
       for (let i = 0; i < 25; i++) {
         await new Promise((r) => setTimeout(r, i === 0 ? 6000 : 4000));
+        if (cancel.cancelled) return;
         const p = await gateway(`/v1/tasks/${taskId}`, apiKey);
-        setPollResp(p.body);
         const s = p.body?.status as string;
-        setTaskStatus(s);
+        if (s !== lastStatus) {
+          setPollResp(p.body);
+          setTaskStatus(s);
+          lastStatus = s;
+        }
         if (s === "succeeded") {
           setAssetUrl(p.body?.asset_url);
+          setPollResp(p.body);
           toast.success("Image ready");
           break;
         }
         if (s === "failed") {
+          setPollResp(p.body);
           toast.error(p.body?.error_message || "Generation failed");
           break;
         }
       }
     } catch (e: any) {
-      toast.error(String(e?.message || e));
+      if (!cancel.cancelled) toast.error(String(e?.message || e));
     } finally {
-      setBusy(false);
+      if (!cancel.cancelled) setBusy(false);
     }
   };
 
@@ -447,6 +466,8 @@ function VideoTab({ models, apiKey }: { models: Model[]; apiKey: string }) {
   const [taskStatus, setTaskStatus] = useState("");
   const [assetUrl, setAssetUrl] = useState<string | null>(null);
   const [rawReq, setRawReq] = useState<any>(null);
+  const cancelRef = useRef({ cancelled: false });
+  useUnmountCleanup(() => (cancelRef.current.cancelled = true));
 
   useEffect(() => {
     if (!model && models.length) setModel(models[0].public_name);
@@ -456,6 +477,8 @@ function VideoTab({ models, apiKey }: { models: Model[]; apiKey: string }) {
 
   const run = async () => {
     if (!apiKey) return toast.error("Paste an API key above first.");
+    cancelRef.current = { cancelled: false };
+    const cancel = cancelRef.current;
     setBusy(true);
     setSubmitResp(null);
     setPollResp(null);
@@ -465,6 +488,7 @@ function VideoTab({ models, apiKey }: { models: Model[]; apiKey: string }) {
     setRawReq(payload);
     try {
       const res = await gateway("/v1/videos/generations", apiKey, { method: "POST", body: payload });
+      if (cancel.cancelled) return;
       setSubmitResp(res.body);
       if (res.status >= 400) {
         toast.error(JSON.stringify(res.body?.detail || res.body).slice(0, 200));
@@ -478,27 +502,33 @@ function VideoTab({ models, apiKey }: { models: Model[]; apiKey: string }) {
         return;
       }
       setTaskStatus("queued");
-      // Poll every 6s up to 60 times (~6 minutes for video).
+      let lastStatus = "queued";
       for (let i = 0; i < 60; i++) {
         await new Promise((r) => setTimeout(r, i === 0 ? 8000 : 6000));
+        if (cancel.cancelled) return;
         const p = await gateway(`/v1/tasks/${taskId}`, apiKey);
-        setPollResp(p.body);
         const s = p.body?.status as string;
-        setTaskStatus(s);
+        if (s !== lastStatus) {
+          setPollResp(p.body);
+          setTaskStatus(s);
+          lastStatus = s;
+        }
         if (s === "succeeded") {
           setAssetUrl(p.body?.asset_url);
+          setPollResp(p.body);
           toast.success("Video ready");
           break;
         }
         if (s === "failed") {
+          setPollResp(p.body);
           toast.error(p.body?.error_message || "Video failed");
           break;
         }
       }
     } catch (e: any) {
-      toast.error(String(e?.message || e));
+      if (!cancel.cancelled) toast.error(String(e?.message || e));
     } finally {
-      setBusy(false);
+      if (!cancel.cancelled) setBusy(false);
     }
   };
 

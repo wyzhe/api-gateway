@@ -196,9 +196,14 @@ def persist_queued_task(
     latency_ms: int,
     http_status: int,
     upstream_task_id: str | None,
-) -> RequestLog:
+) -> tuple[RequestLog, "VideoTask"]:
     """For async submissions (image/video) that returned a task_id.
-    cost=0 for now; gets charged when task succeeds via /v1/tasks/{id} polling."""
+
+    cost=0 here; gets charged when the task succeeds via /v1/tasks/{id} polling.
+    Inserts both the RequestLog and the VideoTask in a single transaction.
+    """
+    from ..models import VideoTask  # local import keeps the module dependency graph flat
+
     log = RequestLog(
         user_id=user.id,
         api_key_id=api_key.id,
@@ -217,8 +222,19 @@ def persist_queued_task(
         response_payload_json=response_payload if isinstance(response_payload, (dict, list)) else None,
     )
     db.add(log)
-    db.flush()
+    db.flush()  # need log.id for the task FK
     mark_key_used(db, api_key)
+    task = VideoTask(
+        user_id=user.id,
+        api_key_id=api_key.id,
+        request_log_id=log.id,
+        provider_id=provider.id,
+        model_id=model.id,
+        upstream_task_id=upstream_task_id or "",
+        status="queued",
+    )
+    db.add(task)
     db.commit()
     db.refresh(log)
-    return log
+    db.refresh(task)
+    return log, task

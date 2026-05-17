@@ -5,13 +5,6 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export function fmtMoney(value: number | string | null | undefined, digits = 6): string {
-  if (value === null || value === undefined) return "—";
-  const n = typeof value === "string" ? Number(value) : value;
-  if (Number.isNaN(n)) return "—";
-  return `$${n.toFixed(digits)}`;
-}
-
 export function fmtCompactMoney(value: number | string | null | undefined): string {
   if (value === null || value === undefined) return "—";
   const n = typeof value === "string" ? Number(value) : value;
@@ -26,6 +19,30 @@ export function fmtDate(value: string | Date | null | undefined): string {
   if (!value) return "—";
   const d = typeof value === "string" ? new Date(value) : value;
   return d.toLocaleString();
+}
+
+export type PricedModel = {
+  pricing_mode: string;
+  input_price?: string | null;
+  output_price?: string | null;
+  image_price?: string | null;
+  video_second_price?: string | null;
+  generation_price?: string | null;
+};
+
+export function priceLabel(m: PricedModel): string {
+  switch (m.pricing_mode) {
+    case "per_token":
+      return `$${m.input_price ?? "0"} in · $${m.output_price ?? "0"} out / 1M tokens`;
+    case "per_image":
+      return `$${m.image_price ?? m.generation_price ?? "0"} / image`;
+    case "per_second":
+      return `$${m.video_second_price ?? "0"} / second`;
+    case "per_generation":
+      return `$${m.generation_price ?? "0"} / generation`;
+    default:
+      return "—";
+  }
 }
 
 export function fmtRelative(value: string | Date | null | undefined): string {
