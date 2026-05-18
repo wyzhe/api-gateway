@@ -28,10 +28,12 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { PageHeader } from "@/components/shell";
 import { api } from "@/lib/api";
+import { useT } from "@/lib/i18n";
 import type { AdminUser, Transaction } from "@/lib/types";
 import { fmtCompactMoney, fmtDate } from "@/lib/utils";
 
 export function AdminUsersPage() {
+  const t = useT();
   const [rows, setRows] = useState<AdminUser[]>([]);
   const [openCreate, setOpenCreate] = useState(false);
   const [openRecharge, setOpenRecharge] = useState<AdminUser | null>(null);
@@ -84,7 +86,7 @@ export function AdminUsersPage() {
         initial_balance: initBalance,
       },
     });
-    toast.success("User created");
+    toast.success(t("admin.users.toastCreated"));
     setOpenCreate(false);
     setEmail("");
     setPw("");
@@ -99,7 +101,7 @@ export function AdminUsersPage() {
       method: "POST",
       body: { amount: rechargeAmount, note: rechargeNote || null },
     });
-    toast.success("Balance updated");
+    toast.success(t("admin.users.toastBalanceUpdated"));
     setOpenRecharge(null);
     setRechargeAmount("");
     setRechargeNote("");
@@ -121,7 +123,7 @@ export function AdminUsersPage() {
     };
     if (editPw.trim()) body.password = editPw.trim();
     await api(`/api/admin/users/${openEdit.id}`, { method: "PATCH", body });
-    toast.success("User updated");
+    toast.success(t("admin.users.toastUserUpdated"));
     setOpenEdit(null);
     void refresh();
   };
@@ -129,28 +131,51 @@ export function AdminUsersPage() {
   const toggle = async (u: AdminUser) => {
     const a = u.status === "active" ? "disable" : "enable";
     await api(`/api/admin/users/${u.id}/${a}`, { method: "POST" });
-    toast.success(`User ${a}d`);
+    toast.success(
+      a === "disable"
+        ? t("admin.users.toastUserDisabled")
+        : t("admin.users.toastUserEnabled"),
+    );
     void refresh();
+  };
+
+  const txnTypeLabel = (type: Transaction["type"]): string => {
+    switch (type) {
+      case "recharge":
+        return t("admin.users.txnsDrawer.typeRecharge");
+      case "debit":
+        return t("admin.users.txnsDrawer.typeDebit");
+      case "adjustment":
+        return t("admin.users.txnsDrawer.typeAdjustment");
+      case "refund":
+        return t("admin.users.txnsDrawer.typeRefund");
+      default:
+        return type;
+    }
   };
 
   return (
     <div>
       <PageHeader
-        title="Users"
-        subtitle={`${rows.length} accounts`}
-        actions={<Button onClick={() => setOpenCreate(true)}><Plus className="h-4 w-4" /> New user</Button>}
+        title={t("admin.users.title")}
+        subtitle={t("admin.users.subtitleCount", { count: rows.length })}
+        actions={
+          <Button onClick={() => setOpenCreate(true)}>
+            <Plus className="h-4 w-4" /> {t("admin.users.newUserBtn")}
+          </Button>
+        }
       />
 
       <div className="rounded-md border border-border">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Email</TableHead>
-              <TableHead>Role</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Balance</TableHead>
-              <TableHead>Created</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
+              <TableHead>{t("admin.users.colEmail")}</TableHead>
+              <TableHead>{t("admin.users.colRole")}</TableHead>
+              <TableHead>{t("admin.users.colStatus")}</TableHead>
+              <TableHead>{t("admin.users.colBalance")}</TableHead>
+              <TableHead>{t("admin.users.colCreated")}</TableHead>
+              <TableHead className="text-right">{t("admin.users.colActions")}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -161,20 +186,30 @@ export function AdminUsersPage() {
                   {u.display_name && <div className="text-xs text-muted-foreground">{u.display_name}</div>}
                 </TableCell>
                 <TableCell><Badge variant={u.role === "admin" ? "accent" : "outline"}>{u.role}</Badge></TableCell>
-                <TableCell><Badge variant={u.status === "active" ? "success" : "warn"}>{u.status}</Badge></TableCell>
+                <TableCell>
+                  <Badge variant={u.status === "active" ? "success" : "warn"}>
+                    {u.status === "active"
+                      ? t("admin.users.statusActive")
+                      : t("admin.users.statusDisabled")}
+                  </Badge>
+                </TableCell>
                 <TableCell className="mono text-xs">{fmtCompactMoney(u.balance)}</TableCell>
                 <TableCell className="text-xs text-muted-foreground">{fmtDate(u.created_at)}</TableCell>
                 <TableCell className="text-right">
                   <div className="inline-flex gap-1">
-                    <Button variant="ghost" size="icon" onClick={() => openEditDialog(u)} title="Edit">
+                    <Button variant="ghost" size="icon" onClick={() => openEditDialog(u)} title={t("admin.users.actionEdit")}>
                       <Pencil className="h-3.5 w-3.5" />
                     </Button>
-                    <Button variant="ghost" size="icon" onClick={() => setOpenTxns(u)} title="Transactions">
+                    <Button variant="ghost" size="icon" onClick={() => setOpenTxns(u)} title={t("admin.users.actionTransactions")}>
                       <History className="h-3.5 w-3.5" />
                     </Button>
-                    <Button variant="outline" size="sm" onClick={() => setOpenRecharge(u)}>Recharge</Button>
+                    <Button variant="outline" size="sm" onClick={() => setOpenRecharge(u)}>
+                      {t("admin.users.actionRecharge")}
+                    </Button>
                     <Button variant="outline" size="sm" onClick={() => toggle(u)}>
-                      {u.status === "active" ? "Disable" : "Enable"}
+                      {u.status === "active"
+                        ? t("admin.users.actionDisable")
+                        : t("admin.users.actionEnable")}
                     </Button>
                   </div>
                 </TableCell>
@@ -187,16 +222,26 @@ export function AdminUsersPage() {
       {/* Create */}
       <Dialog open={openCreate} onOpenChange={setOpenCreate}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Create user</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{t("admin.users.createDialog.title")}</DialogTitle></DialogHeader>
           <div className="flex flex-col gap-3">
-            <FormField label="Email"><Input value={email} onChange={(e) => setEmail(e.target.value)} /></FormField>
-            <FormField label="Password"><Input type="password" value={pw} onChange={(e) => setPw(e.target.value)} /></FormField>
-            <FormField label="Display name (optional)"><Input value={name} onChange={(e) => setName(e.target.value)} /></FormField>
-            <FormField label="Initial balance (USD)"><Input value={initBalance} onChange={(e) => setInitBalance(e.target.value)} /></FormField>
+            <FormField label={t("admin.users.createDialog.emailLabel")}>
+              <Input value={email} onChange={(e) => setEmail(e.target.value)} />
+            </FormField>
+            <FormField label={t("admin.users.createDialog.passwordLabel")}>
+              <Input type="password" value={pw} onChange={(e) => setPw(e.target.value)} />
+            </FormField>
+            <FormField label={t("admin.users.createDialog.nameLabel")}>
+              <Input value={name} onChange={(e) => setName(e.target.value)} />
+            </FormField>
+            <FormField label={t("admin.users.createDialog.initialBalanceLabel")}>
+              <Input value={initBalance} onChange={(e) => setInitBalance(e.target.value)} />
+            </FormField>
           </div>
           <div className="flex justify-end gap-2 mt-3">
-            <Button variant="outline" onClick={() => setOpenCreate(false)}>Cancel</Button>
-            <Button onClick={create}>Create</Button>
+            <Button variant="outline" onClick={() => setOpenCreate(false)}>
+              {t("admin.users.createDialog.cancel")}
+            </Button>
+            <Button onClick={create}>{t("admin.users.createDialog.submit")}</Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -205,33 +250,37 @@ export function AdminUsersPage() {
       <Dialog open={!!openEdit} onOpenChange={(o) => !o && setOpenEdit(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Edit {openEdit?.email}</DialogTitle>
+            <DialogTitle>
+              {t("admin.users.editDialog.title", { email: openEdit?.email ?? "" })}
+            </DialogTitle>
           </DialogHeader>
           <div className="flex flex-col gap-3">
-            <FormField label="Display name">
+            <FormField label={t("admin.users.editDialog.nameLabel")}>
               <Input value={editName} onChange={(e) => setEditName(e.target.value)} />
             </FormField>
-            <FormField label="Role">
+            <FormField label={t("admin.users.editDialog.roleLabel")}>
               <Select value={editRole} onValueChange={(v) => setEditRole(v as "user" | "admin")}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="user">user</SelectItem>
-                  <SelectItem value="admin">admin</SelectItem>
+                  <SelectItem value="user">{t("admin.users.editDialog.roleUser")}</SelectItem>
+                  <SelectItem value="admin">{t("admin.users.editDialog.roleAdmin")}</SelectItem>
                 </SelectContent>
               </Select>
             </FormField>
-            <FormField label="Reset password (leave blank to keep current)">
+            <FormField label={t("admin.users.editDialog.resetPasswordLabel")}>
               <Input
                 type="password"
                 value={editPw}
                 onChange={(e) => setEditPw(e.target.value)}
-                placeholder="min 6 chars"
+                placeholder={t("admin.users.editDialog.resetPasswordPlaceholder")}
               />
             </FormField>
           </div>
           <div className="flex justify-end gap-2 mt-3">
-            <Button variant="outline" onClick={() => setOpenEdit(null)}>Cancel</Button>
-            <Button onClick={saveEdit}>Save</Button>
+            <Button variant="outline" onClick={() => setOpenEdit(null)}>
+              {t("admin.users.editDialog.cancel")}
+            </Button>
+            <Button onClick={saveEdit}>{t("admin.users.editDialog.save")}</Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -240,19 +289,30 @@ export function AdminUsersPage() {
       <Dialog open={!!openRecharge} onOpenChange={(o) => !o && setOpenRecharge(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Recharge {openRecharge?.email}</DialogTitle>
+            <DialogTitle>
+              {t("admin.users.rechargeDialog.title", { email: openRecharge?.email ?? "" })}
+            </DialogTitle>
           </DialogHeader>
           <div className="flex flex-col gap-3">
-            <FormField label="Amount (USD, can be decimal)">
-              <Input value={rechargeAmount} onChange={(e) => setRechargeAmount(e.target.value)} placeholder="10" />
+            <FormField label={t("admin.users.rechargeDialog.amountLabel")}>
+              <Input
+                value={rechargeAmount}
+                onChange={(e) => setRechargeAmount(e.target.value)}
+                placeholder={t("admin.users.rechargeDialog.amountPlaceholder")}
+              />
             </FormField>
-            <FormField label="Note (optional)">
+            <FormField label={t("admin.users.rechargeDialog.noteLabel")}>
               <Input value={rechargeNote} onChange={(e) => setRechargeNote(e.target.value)} />
             </FormField>
+            <div className="text-xs text-muted-foreground">
+              {t("admin.users.rechargeDialog.auditHint")}
+            </div>
           </div>
           <div className="flex justify-end gap-2 mt-3">
-            <Button variant="outline" onClick={() => setOpenRecharge(null)}>Cancel</Button>
-            <Button onClick={recharge}>Recharge</Button>
+            <Button variant="outline" onClick={() => setOpenRecharge(null)}>
+              {t("admin.users.rechargeDialog.cancel")}
+            </Button>
+            <Button onClick={recharge}>{t("admin.users.rechargeDialog.submit")}</Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -265,40 +325,44 @@ export function AdminUsersPage() {
               <SheetHeader>
                 <SheetTitle>{openTxns.email}</SheetTitle>
                 <SheetDescription>
-                  Current balance <span className="mono text-foreground">{fmtCompactMoney(openTxns.balance)}</span>
-                  {" · "}{txns.length} transactions
+                  {t("admin.users.txnsDrawer.currentBalance")}{" "}
+                  <span className="mono text-foreground">{fmtCompactMoney(openTxns.balance)}</span>
+                  {" · "}
+                  {t("admin.users.txnsDrawer.txnsCount", { count: txns.length })}
                 </SheetDescription>
               </SheetHeader>
               <div className="mt-4">
                 {txns.length === 0 && (
-                  <div className="text-sm text-muted-foreground text-center py-6">No transactions yet.</div>
+                  <div className="text-sm text-muted-foreground text-center py-6">
+                    {t("admin.users.txnsDrawer.empty")}
+                  </div>
                 )}
                 {txns.length > 0 && (
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Type</TableHead>
-                        <TableHead>Amount</TableHead>
-                        <TableHead>Balance after</TableHead>
-                        <TableHead>Note</TableHead>
-                        <TableHead>When</TableHead>
+                        <TableHead>{t("admin.users.txnsDrawer.colType")}</TableHead>
+                        <TableHead>{t("admin.users.txnsDrawer.colAmount")}</TableHead>
+                        <TableHead>{t("admin.users.txnsDrawer.colBalanceAfter")}</TableHead>
+                        <TableHead>{t("admin.users.txnsDrawer.colNote")}</TableHead>
+                        <TableHead>{t("admin.users.txnsDrawer.colWhen")}</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {txns.map((t) => (
-                        <TableRow key={t.id}>
+                      {txns.map((tx) => (
+                        <TableRow key={tx.id}>
                           <TableCell>
-                            <Badge variant={t.type === "recharge" ? "success" : t.type === "debit" ? "warn" : "default"}>
-                              {t.type}
+                            <Badge variant={tx.type === "recharge" ? "success" : tx.type === "debit" ? "warn" : "default"}>
+                              {txnTypeLabel(tx.type)}
                             </Badge>
                           </TableCell>
                           <TableCell className="mono text-xs">
-                            {t.type === "debit" ? "−" : "+"}
-                            {fmtCompactMoney(t.amount)}
+                            {tx.type === "debit" ? "−" : "+"}
+                            {fmtCompactMoney(tx.amount)}
                           </TableCell>
-                          <TableCell className="mono text-xs">{fmtCompactMoney(t.balance_after)}</TableCell>
-                          <TableCell className="text-xs text-muted-foreground">{t.note || "—"}</TableCell>
-                          <TableCell className="text-xs text-muted-foreground">{fmtDate(t.created_at)}</TableCell>
+                          <TableCell className="mono text-xs">{fmtCompactMoney(tx.balance_after)}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{tx.note || "—"}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{fmtDate(tx.created_at)}</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
