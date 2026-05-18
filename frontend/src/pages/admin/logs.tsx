@@ -15,10 +15,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { TypeBadge } from "@/components/type-badge";
 import { PageHeader } from "@/components/shell";
 import { api } from "@/lib/api";
+import { useT } from "@/lib/i18n";
 import type { LogDetail as Detail, LogSummary as Log } from "@/lib/types";
 import { fmtCompactMoney, fmtDate, fmtRelative, statusBadgeVariant } from "@/lib/utils";
 
 export function AdminLogsPage() {
+  const t = useT();
   const [rows, setRows] = useState<Log[]>([]);
   const [type, setType] = useState("__all__");
   const [userId, setUserId] = useState("");
@@ -39,42 +41,42 @@ export function AdminLogsPage() {
 
   return (
     <div>
-      <PageHeader title="All logs" subtitle="Every gateway request across all users." />
+      <PageHeader title={t("admin.logs.title")} subtitle={t("admin.logs.subtitle")} />
       <div className="flex flex-wrap gap-2 mb-3">
         <Select value={type} onValueChange={setType}>
           <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="__all__">All types</SelectItem>
-            <SelectItem value="text">Text</SelectItem>
-            <SelectItem value="image">Image</SelectItem>
-            <SelectItem value="video">Video</SelectItem>
+            <SelectItem value="__all__">{t("admin.logs.filterAllTypes")}</SelectItem>
+            <SelectItem value="text">{t("admin.logs.typeText")}</SelectItem>
+            <SelectItem value="image">{t("admin.logs.typeImage")}</SelectItem>
+            <SelectItem value="video">{t("admin.logs.typeVideo")}</SelectItem>
           </SelectContent>
         </Select>
         <Select value={status} onValueChange={setStatus}>
           <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="__all__">All statuses</SelectItem>
-            <SelectItem value="success">Success</SelectItem>
-            <SelectItem value="failed">Failed</SelectItem>
-            <SelectItem value="running">Running</SelectItem>
-            <SelectItem value="queued">Queued</SelectItem>
+            <SelectItem value="__all__">{t("admin.logs.filterAllStatuses")}</SelectItem>
+            <SelectItem value="success">{t("admin.logs.statusSuccess")}</SelectItem>
+            <SelectItem value="failed">{t("admin.logs.statusFailed")}</SelectItem>
+            <SelectItem value="running">{t("admin.logs.statusRunning")}</SelectItem>
+            <SelectItem value="queued">{t("admin.logs.statusQueued")}</SelectItem>
           </SelectContent>
         </Select>
-        <Input className="w-32" placeholder="user_id" value={userId} onChange={(e) => setUserId(e.target.value)} />
-        <Button variant="outline" onClick={() => refresh()}>Refresh</Button>
+        <Input className="w-32" placeholder={t("admin.logs.userIdPlaceholder")} value={userId} onChange={(e) => setUserId(e.target.value)} />
+        <Button variant="outline" onClick={() => refresh()}>{t("admin.logs.refreshBtn")}</Button>
       </div>
 
       <div className="rounded-md border border-border">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Type</TableHead>
-              <TableHead>User</TableHead>
-              <TableHead>Model</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Cost</TableHead>
-              <TableHead>Latency</TableHead>
-              <TableHead>When</TableHead>
+              <TableHead>{t("admin.logs.colType")}</TableHead>
+              <TableHead>{t("admin.logs.colUser")}</TableHead>
+              <TableHead>{t("admin.logs.colModel")}</TableHead>
+              <TableHead>{t("admin.logs.colStatus")}</TableHead>
+              <TableHead>{t("admin.logs.colCost")}</TableHead>
+              <TableHead>{t("admin.logs.colLatency")}</TableHead>
+              <TableHead>{t("admin.logs.colWhen")}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -87,7 +89,7 @@ export function AdminLogsPage() {
                   <Badge variant={statusBadgeVariant(r.status)}>{r.status}</Badge>
                 </TableCell>
                 <TableCell className="mono text-xs">{fmtCompactMoney(r.cost)}</TableCell>
-                <TableCell className="text-xs text-muted-foreground">{r.latency_ms ?? "—"}ms</TableCell>
+                <TableCell className="text-xs text-muted-foreground">{r.latency_ms ?? "—"}{t("admin.logs.latencyMs")}</TableCell>
                 <TableCell className="text-xs text-muted-foreground">{fmtRelative(r.created_at)}</TableCell>
               </TableRow>
             ))}
@@ -104,10 +106,10 @@ export function AdminLogsPage() {
                 <SheetDescription className="mono">{selected.request_id}</SheetDescription>
               </SheetHeader>
               <div className="grid grid-cols-2 gap-2 mt-3 text-xs">
-                <div>User: <span className="mono">#{selected.user_id}</span></div>
-                <div>Cost: <span className="mono">{fmtCompactMoney(selected.cost)}</span></div>
-                <div>Latency: {selected.latency_ms ?? "—"} ms</div>
-                <div>When: {fmtDate(selected.created_at)}</div>
+                <div>{t("admin.logs.drawerUser")}: <span className="mono">#{selected.user_id}</span></div>
+                <div>{t("admin.logs.drawerCost")}: <span className="mono">{fmtCompactMoney(selected.cost)}</span></div>
+                <div>{t("admin.logs.drawerLatency")}: {selected.latency_ms ?? "—"} {t("admin.logs.drawerLatencyUnit")}</div>
+                <div>{t("admin.logs.drawerWhen")}: {fmtDate(selected.created_at)}</div>
               </div>
               {selected.error_message && (
                 <div className="mt-3 text-xs border border-destructive/40 bg-destructive/10 text-destructive px-3 py-2 rounded-md">
@@ -115,11 +117,11 @@ export function AdminLogsPage() {
                 </div>
               )}
               <div className="mt-4">
-                <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">Request</div>
+                <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">{t("admin.logs.sectionRequest")}</div>
                 <CodeBlock lang="json" code={JSON.stringify(selected.request_payload_json, null, 2)} maxHeight="14rem" />
               </div>
               <div className="mt-3">
-                <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">Response</div>
+                <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">{t("admin.logs.sectionResponse")}</div>
                 <CodeBlock lang="json" code={JSON.stringify(selected.response_payload_json, null, 2)} maxHeight="20rem" />
               </div>
             </>
