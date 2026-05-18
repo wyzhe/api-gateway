@@ -223,6 +223,27 @@ export const en = {
     toastVideoReady: "Video ready",
     toastVideoFailed: "Video failed",
   },
+  models: {
+    title: "Models",
+    subtitle: "{count} models available · all routed through APIMart",
+    tabAll: "All ({count})",
+    tabText: "Text ({count})",
+    tabImage: "Image ({count})",
+    tabVideo: "Video ({count})",
+    empty: "No models in this group.",
+    upstreamLabel: "Upstream:",
+    colName: "Name",
+    colProvider: "Provider",
+    colType: "Type",
+    colContext: "Context",
+    colInputPrice: "Input price",
+    colOutputPrice: "Output price",
+    colCachePrice: "Cache price",
+    colStatus: "Status",
+    priceUnit: "$/1M tokens",
+    statusActive: "Active",
+    statusDisabled: "Disabled",
+  },
 };
 
 export type EnDict = typeof en;
