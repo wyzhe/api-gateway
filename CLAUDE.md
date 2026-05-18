@@ -31,7 +31,11 @@ When you need to change anything that talks to APIMart, **the only file that sho
 
 5. **The `/api/*` endpoints take a JWT. The `/v1/*` endpoints take a user API key (`lgw_…`).** They are *different* auth modes. `deps.get_current_user` and `deps.get_api_key_user` enforce this.
 
-6. **Don't hardcode model lists in the frontend.** The catalog comes from `GET /api/models` (user side) and `GET /api/admin/models` (admin). Pricing, visibility, public-vs-upstream-name mapping all live in the `models` table. Admin can edit at runtime.
+6. **Don't hardcode model lists in the frontend.** The catalog comes from `GET /api/models` (user side) and `GET /api/admin/models` (admin). Pricing, visibility, public-vs-upstream-name mapping all live in the `models` table. Admin can edit at runtime via the UI (`Admin → Models → New / Edit`) or `POST/PATCH /api/admin/models`.
+
+7. **Every `/v1/*` call goes through `gateway_service.require_can_spend(db, user, api_key)`.** It chains `require_balance` (402 if `balance <= 0`) and `require_within_monthly_limit` (429 if the key has a `monthly_limit` and `SUM(cost)` for the UTC month meets/exceeds it). Don't bypass it on a new gateway route — the cap is the only thing standing between a leaked key and a billing surprise.
+
+8. **Shared TS types live in `frontend/src/lib/types.ts`.** Pages should `import type { Model, ApiKey, LogSummary, ... }` from there, not redeclare. Same for the shared `LogDetailDrawer` in `components/log-detail-drawer.tsx` — usage-logs, dashboard, and generations all use it via the `useLogDetail()` hook.
 
 ## How APIMart actually behaves (this informed the schema)
 
@@ -74,15 +78,17 @@ Because image is async, our `/v1/images/generations` returns `task_id` too (we c
 
 ## Open issues to be aware of
 
-- `nano-banana` returned `model_not_found` from APIMart during our smoke test even though docs list it. May be intermittent on APIMart's side. `gpt-image-2` works reliably.
-- `grok-imagine` and `grok-imagine-video` are seeded with `status='disabled'` because APIMart docs don't currently list them. Flip them on via Admin → Models if you confirm support.
+- `nano-banana` and `claude-sonnet-4.6` sometimes return `model_not_found` from APIMart (their wording for "upstream busy"). Same for some video models. `gpt-4o` and `gpt-image-2` are the reliable ones for demos. Use `Admin → Models → Ping` to check before promising anything.
+- `sora2` is **seeded but disabled** because observed queue times exceeded 30 minutes; enable via Admin → Models if you're patient.
+- `grok-imagine` and `grok-imagine-video` are seeded `disabled` because APIMart docs don't currently list them.
+- `monthly_limit` is enforced **before** the upstream call using a `SUM(cost)` query — a single oversized request can overshoot the cap by the full amount of that one request. Acceptable for MVP; if it matters, post-charge re-check + clawback.
 - The frontend Playground stores the user's API key in `localStorage` for convenience. Fine for an MVP among friends; revisit before any wider distribution.
 - Token expiry is 7 days, no refresh token. Wider rollout = add refresh.
 
 ## Running things
 
-- Tests: there's no test suite yet. The seven verification flows in `README.md` are the canonical smoke test.
-- Database migrations: `cd backend && alembic upgrade head`. New migrations: edit models, then `alembic revision --autogenerate -m "msg"`.
+- Tests: `cd backend && .venv/bin/pytest` — 41 tests, ~5s. Pure-function tests run anywhere; integration tests auto-skip if Postgres isn't reachable. New routes should grow `tests/test_gateway_paths.py`; new pure helpers go in their own `test_*.py`.
+- Database migrations: `cd backend && alembic upgrade head`. New migrations: edit models, then `alembic revision --autogenerate -m "msg"`. The `seed.py` `RENAME_ON_BOOT` / `DISABLE_ON_BOOT` maps let you retire model names without a migration.
 - Frontend build: `cd frontend && npm run build` (does `tsc -b` first; type errors will fail the build).
 - Backend lint: `ruff check backend/` (not wired into CI yet).
 

@@ -78,15 +78,18 @@ The Vite dev server proxies `/api/*` and `/v1/*` to `http://localhost:8000`, so 
 
 ---
 
-## End-to-end smoke test (7 flows)
+## End-to-end smoke test (8 flows)
 
 1. **Admin init** — log in as `admin@example.com`, you land on `/dashboard` with the admin sidebar toggle.
-2. **Create user + recharge** — Admin → Users → New user (alice@example.com / alice123, initial $10) → Recharge +$5.
-3. **API key** — Sign in as alice → API Keys → Create key. **Full key shown once**, copy it.
+2. **Create user + recharge** — Admin → Users → New user (alice@example.com / alice123, initial $10) → Recharge +$5. Open the History icon to see the ledger.
+3. **API key** — Sign in as alice → API Keys → Create key, set a monthly spend cap. **Full key shown once**, copy it.
 4. **Chat** — Playground → Chat tab → paste the key → pick `gpt-4o` → Run. Output streams, log appears under Usage / Logs, balance drops.
-5. **Logs detail** — Usage / Logs → click a row → drawer shows raw request, raw response, cost.
-6. **Image** — Playground → Image tab → `gpt-image-2` → Run. Polls APIMart task, image appears, `$0.04` debited.
-7. **Video** — Playground → Video tab → `sora2` → Run. Polls until task succeeds (1–3 min), video plays.
+5. **Logs detail** — Dashboard "Recent activity" row OR Usage / Logs row → drawer shows raw request, raw response, cost.
+6. **Image** — Playground → Image tab → `gpt-image-2` → Run. Polls APIMart task, image appears, `$0.04` debited. Generations page shows the asset with download link.
+7. **Video** — Playground → Video tab → `veo3` → Run. Polls until task succeeds (1–3 min), video plays.
+8. **Monthly limit** — Admin or owner: edit a key's monthly limit below current usage. Next call returns HTTP 429 with `"API key monthly limit reached"`.
+
+Admin extras: Admin → Models → **Ping** (uses a tiny bit of credit) to verify upstream is reachable for a given model.
 
 ---
 
@@ -112,9 +115,11 @@ Key design rules:
 - All money is `Decimal` end-to-end. DB columns are `Numeric(18,8)`.
 - Debit + request_log are written in the **same DB transaction** (`SELECT … FOR UPDATE` on the user row).
 - Failed requests never debit.
+- Every `/v1/*` call goes through `gateway_service.require_can_spend(db, user, key)` which checks the user has positive balance AND the key is within its monthly cap (if any). The monthly cap is enforced via a single `SUM(cost)` per call against `request_logs` (UTC month).
 - Image/video are **async on APIMart**: gateway returns `task_id`; user polls `/v1/tasks/{task_id}`. The polling endpoint lazily refreshes from APIMart and finalizes cost on success.
 - Stream `chat/completions` forces `stream_options.include_usage=true` so the final SSE chunk carries usage for billing.
 - Provider details (paths, request envelope, status vocab) are isolated in `backend/app/providers/apimart.py`. Adding a second provider = subclass `BaseProvider`.
+- Admin can ping any model: `POST /api/admin/models/{id}/healthcheck` issues a minimal upstream call (1-token chat for text models; submit-only for image/video) and reports `{ok, latency_ms, error}`. Costs a tiny bit of credit — don't spam.
 
 ---
 
@@ -129,20 +134,27 @@ llm-api-gateway/
 │  │  ├─ database.py
 │  │  ├─ security.py          # bcrypt + JWT + API key gen
 │  │  ├─ deps.py              # auth dependencies
-│  │  ├─ seed.py              # admin + APIMart + 12 default models
+│  │  ├─ enums.py             # canonical str enums (UserRole, RequestType...)
+│  │  ├─ seed.py              # admin + APIMart + default models (rename/disable maps)
 │  │  ├─ models/              # SQLAlchemy
 │  │  ├─ schemas/             # Pydantic
-│  │  ├─ services/            # billing, cost, gateway
-│  │  ├─ providers/           # base + apimart adapter
+│  │  ├─ services/            # billing, cost, gateway (incl. require_can_spend,
+│  │  │                       #   mtd_cost_for_api_key(s), submit_async_task)
+│  │  ├─ providers/           # base + apimart adapter (single shared httpx client)
+│  │  ├─ utils/               # time helpers (today_utc / month_start_utc)
 │  │  └─ api/                 # auth, keys, models, billing, logs,
-│  │                          # dashboard, admin, gateway (/v1/*)
+│  │                          # dashboard, admin (incl. /healthcheck), gateway (/v1/*)
+│  ├─ tests/                  # pytest: cost, apimart parsing, security,
+│  │                          #         auth flow, gateway paths (41 tests)
 │  └─ alembic/                # migrations
 ├─ frontend/
 │  ├─ src/
-│  │  ├─ App.tsx              # routes
-│  │  ├─ lib/{api,auth,utils} # fetch + JWT + helpers
-│  │  ├─ components/ui/       # button, card, dialog, sheet, tabs, table…
-│  │  ├─ components/          # shell, provider-tag, type-badge, kpi-tile
+│  │  ├─ App.tsx              # routes (React.lazy)
+│  │  ├─ lib/                 # api, auth, utils, types, hooks
+│  │  ├─ components/ui/       # button, card, dialog, sheet, tabs, table,
+│  │  │                       #   select, switch, badge, form-field, code-block
+│  │  ├─ components/          # shell, provider-tag, type-badge, kpi-tile,
+│  │  │                       #   log-detail-drawer (shared by 3 pages)
 │  │  └─ pages/               # dashboard, api-keys, usage-logs, playground,
 │  │                          # models, billing, generations, docs, admin/*
 │  └─ vite.config.ts          # proxies /api and /v1 to :8000
@@ -150,6 +162,15 @@ llm-api-gateway/
 ├─ .env.example
 └─ README.md
 ```
+
+## Tests
+
+```bash
+cd backend
+.venv/bin/pytest          # 41 tests; integration tests auto-skip if Postgres is unreachable
+```
+
+Coverage: cost calculation, APIMart task_id parsing, password hashing + JWT roundtrip + API key generation, login/me/key CRUD/admin-required, `/v1/*` auth boundary + 402 balance gate + 429 monthly-limit gate + 404 unknown task.
 
 ---
 
