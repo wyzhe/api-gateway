@@ -147,7 +147,6 @@ llm-api-gateway/
 │  │                          # models, billing, generations, docs, admin/*
 │  └─ vite.config.ts          # proxies /api and /v1 to :8000
 ├─ docker-compose.yml         # optional Postgres only
-├─ project/                   # original design prototype (HTML/JSX, reference only)
 ├─ .env.example
 └─ README.md
 ```

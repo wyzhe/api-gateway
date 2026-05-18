@@ -50,7 +50,7 @@ Because image is async, our `/v1/images/generations` returns `task_id` too (we c
 
 - All shadcn-style primitives are hand-written under `src/components/ui/`. No `shadcn/ui` CLI was used because it requires interactive prompts. New primitives go there too.
 - Dark theme is the only theme. Tokens live in `src/index.css` under `:root` and are exported into Tailwind via `@theme inline`.
-- The original prototype is preserved under `project/` for reference. **Do not delete it** — it documents the designer's intent.
+- The original Claude Design HTML/JSX prototype that informed the visual style was removed in cleanup; the design tokens and class structure now live entirely in `src/index.css` and the components under `components/`. Recover the prototype from git history (`git log --all --diff-filter=D -- project/`) if you need it.
 - API calls go through `src/lib/api.ts`. JWT is auto-attached for `/api/*`. `gateway()` and `gatewayStream()` are for `/v1/*` with a user API key.
 - `RequireAuth` / `RequireAdmin` wrap routes that need login or admin role.
 
