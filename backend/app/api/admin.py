@@ -338,6 +338,93 @@ def admin_disable_model(model_id: int, db: Session = Depends(get_db)) -> ModelOu
     return model_to_out(row, _providers_by_id(db))
 
 
+# ---------------- Model health check (upstream ping) ----------------
+
+
+class HealthCheckResult(BaseModel):
+    model_id: int
+    public_name: str
+    upstream_model: str
+    type: str
+    ok: bool
+    status_code: int | None
+    latency_ms: int
+    error: str | None
+    sample: str | None  # short text snippet for text models
+
+    model_config = {"protected_namespaces": ()}
+
+
+@router.post(
+    "/models/{model_id}/healthcheck",
+    response_model=HealthCheckResult,
+    dependencies=[Depends(require_admin)],
+)
+async def admin_healthcheck_model(model_id: int, db: Session = Depends(get_db)) -> HealthCheckResult:
+    """Issue a minimal request to the upstream for this model and report.
+
+    - text models: a 1-token chat completion ("PING").
+    - image / video models: a *submit* only (we don't poll the task to completion;
+      we just confirm submission succeeds and returns a task_id).
+    Costs are billed normally if the call succeeds, so an admin who pings
+    every model burns a bit of credit — keep that in mind.
+    """
+    from ..services import gateway_service
+    import time as _time
+
+    row = db.get(ModelRow, model_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Model not found")
+    provider = db.get(Provider, row.provider_id)
+    if not provider:
+        raise HTTPException(status_code=500, detail="Model has no provider")
+    client = gateway_service.build_provider(provider)
+    started = _time.perf_counter()
+    try:
+        if row.type == "text":
+            resp = await client.chat_completions(
+                {"model": row.upstream_model, "messages": [{"role": "user", "content": "ping"}], "max_tokens": 1},
+            )
+            latency = int((_time.perf_counter() - started) * 1000)
+            ok = resp.http_status < 400
+            sample = None
+            if ok and isinstance(resp.body, dict):
+                sample = (resp.body.get("choices") or [{}])[0].get("message", {}).get("content")
+            return HealthCheckResult(
+                model_id=row.id, public_name=row.public_name, upstream_model=row.upstream_model,
+                type=row.type, ok=ok, status_code=resp.http_status, latency_ms=latency,
+                error=None if ok else _short_err(resp.body), sample=(sample or "")[:100] or None,
+            )
+        method = "image_generation" if row.type == "image" else "video_generation"
+        payload = {"model": row.upstream_model, "prompt": "health check ping"}
+        if row.type == "video":
+            payload.update({"duration": 4, "aspect_ratio": "16:9", "resolution": "720p"})
+        resp = await getattr(client, method)(payload)
+        latency = int((_time.perf_counter() - started) * 1000)
+        ok = resp.http_status < 400 and bool(client.extract_task_id(resp.body))
+        return HealthCheckResult(
+            model_id=row.id, public_name=row.public_name, upstream_model=row.upstream_model,
+            type=row.type, ok=ok, status_code=resp.http_status, latency_ms=latency,
+            error=None if ok else _short_err(resp.body), sample=None,
+        )
+    except Exception as e:
+        latency = int((_time.perf_counter() - started) * 1000)
+        return HealthCheckResult(
+            model_id=row.id, public_name=row.public_name, upstream_model=row.upstream_model,
+            type=row.type, ok=False, status_code=None, latency_ms=latency,
+            error=str(e)[:300], sample=None,
+        )
+
+
+def _short_err(body: object) -> str:
+    if isinstance(body, dict):
+        err = body.get("error") if isinstance(body.get("error"), dict) else None
+        if err:
+            return str(err.get("message") or err)[:300]
+        return str(body.get("detail") or body)[:300]
+    return str(body)[:300]
+
+
 # ---------------- Logs (all users) ----------------
 
 

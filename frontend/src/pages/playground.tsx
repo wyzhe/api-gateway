@@ -20,16 +20,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { TypeBadge } from "@/components/type-badge";
 import { PageHeader } from "@/components/shell";
 import { api, gateway, gatewayStream } from "@/lib/api";
+import { useDefaultModel } from "@/lib/hooks";
+import type { ApiKey, Model } from "@/lib/types";
 import { fmtCompactMoney } from "@/lib/utils";
-
-type Model = {
-  id: number;
-  public_name: string;
-  type: string;
-  display_provider: string | null;
-};
-
-type ApiKey = { id: number; name: string; key_prefix: string; status: string };
 
 export function PlaygroundPage() {
   const [models, setModels] = useState<Model[]>([]);
@@ -128,9 +121,7 @@ function ChatTab({ models, apiKey }: { models: Model[]; apiKey: string }) {
   const abortRef = useRef<AbortController | null>(null);
   useUnmountCleanup(() => abortRef.current?.abort());
 
-  useEffect(() => {
-    if (!model && models.length) setModel(models[0].public_name);
-  }, [models, model]);
+  useDefaultModel(models, model, setModel, "gpt-4o");
 
   const buildPayload = () => ({
     model,
@@ -303,9 +294,7 @@ function ImageTab({ models, apiKey }: { models: Model[]; apiKey: string }) {
   const cancelRef = useRef({ cancelled: false });
   useUnmountCleanup(() => (cancelRef.current.cancelled = true));
 
-  useEffect(() => {
-    if (!model && models.length) setModel(models[0].public_name);
-  }, [models, model]);
+  useDefaultModel(models, model, setModel, "gpt-4o");
 
   const buildPayload = () => ({ model, prompt, size, n, resolution: "1k" });
 
@@ -469,9 +458,7 @@ function VideoTab({ models, apiKey }: { models: Model[]; apiKey: string }) {
   const cancelRef = useRef({ cancelled: false });
   useUnmountCleanup(() => (cancelRef.current.cancelled = true));
 
-  useEffect(() => {
-    if (!model && models.length) setModel(models[0].public_name);
-  }, [models, model]);
+  useDefaultModel(models, model, setModel, "gpt-4o");
 
   const buildPayload = () => ({ model, prompt, duration, aspect_ratio: aspect, resolution });
 

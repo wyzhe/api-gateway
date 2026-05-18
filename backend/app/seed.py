@@ -49,12 +49,12 @@ DEFAULT_MODELS: list[dict] = [
         "capabilities": {"stream": True, "tools": True, "vision": True, "ctx": 128000},
     },
     {
-        "public_name": "claude-sonnet-4.5",
-        "upstream_model": "claude-sonnet-4.5",
+        "public_name": "claude-sonnet-4.6",
+        "upstream_model": "claude-sonnet-4.6",
         "type": "text",
-        "display_name": "Claude Sonnet 4.5",
+        "display_name": "Claude Sonnet 4.6",
         "display_provider": "anthropic",
-        "description": "Anthropic best price/quality balance.",
+        "description": "Anthropic best price/quality balance (2026 refresh).",
         "pricing_mode": "per_token",
         "input_price": Decimal("3.0"),
         "output_price": Decimal("15.0"),
@@ -142,21 +142,9 @@ DEFAULT_MODELS: list[dict] = [
         "video_second_price": Decimal("0.45"),
         "capabilities": {"durations": [4, 8], "aspect_ratios": ["16:9", "9:16"]},
     },
-    {
-        "public_name": "sora2",
-        "upstream_model": "sora-2",
-        "type": "video",
-        "display_name": "Sora 2",
-        "display_provider": "openai",
-        "description": "OpenAI Sora 2 video model (async). 720p, 4/8/12/16/20s.",
-        "pricing_mode": "per_second",
-        "video_second_price": Decimal("0.50"),
-        "capabilities": {
-            "durations": [4, 8, 12, 16, 20],
-            "resolutions": ["720p"],
-            "aspect_ratios": ["16:9", "9:16"],
-        },
-    },
+    # Note: sora2 dropped from seed — observed upstream queue times >30 min,
+    # not suitable for an interactive playground. Re-add as `disabled` if you
+    # want it visible later; admins can also POST /api/admin/models to add.
     {
         # APIMart docs do not currently list grok video — seed disabled.
         "public_name": "grok-imagine-video",
@@ -205,7 +193,32 @@ def ensure_apimart_provider(db: Session) -> Provider:
     return p
 
 
+# Rename map: old public_name -> new public_name. Existing FK rows keep working.
+RENAME_ON_BOOT: dict[str, str] = {
+    "claude-sonnet-4.5": "claude-sonnet-4.6",
+}
+
+# Names we want to keep in the DB (for log FK integrity) but mark disabled.
+DISABLE_ON_BOOT: set[str] = {"sora2"}
+
+
 def ensure_default_models(db: Session, provider: Provider) -> None:
+    # Rename obsolete public_names to current ones (keeps logs/transactions valid).
+    for old, new in RENAME_ON_BOOT.items():
+        row = db.query(ModelRow).filter(ModelRow.public_name == old).one_or_none()
+        if row and not db.query(ModelRow).filter(ModelRow.public_name == new).one_or_none():
+            row.public_name = new
+            row.upstream_model = new
+
+    # Soft-disable models we no longer want exposed.
+    for name in DISABLE_ON_BOOT:
+        row = db.query(ModelRow).filter(ModelRow.public_name == name).one_or_none()
+        if row and row.status != "disabled":
+            row.status = "disabled"
+            row.visible = False
+
+    # Make rename/disable visible to the next query in this transaction.
+    db.flush()
     existing = {m.public_name for m in db.query(ModelRow.public_name).all()}
     for spec in DEFAULT_MODELS:
         if spec["public_name"] in existing:

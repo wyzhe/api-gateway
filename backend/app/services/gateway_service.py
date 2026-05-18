@@ -5,6 +5,7 @@ Responsibilities:
 - Build the APIMartProvider instance for the current request.
 - Persist request_logs atomically with debit (single transaction, FOR UPDATE).
 """
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -15,8 +16,9 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
+from ..enums import RequestType
 from ..models import ApiKey, ModelRow, Provider, RequestLog, User
-from ..providers import APIMartProvider
+from ..providers import APIMartProvider, BaseProvider
 from . import billing_service
 
 settings = get_settings()
@@ -238,3 +240,92 @@ def persist_queued_task(
     db.refresh(log)
     db.refresh(task)
     return log, task
+
+
+# ---------------- High-level async submit (image / video) ----------------
+
+
+async def submit_async_task(
+    db: Session,
+    *,
+    user: User,
+    api_key: ApiKey,
+    payload: dict[str, Any],
+    request_type: RequestType,
+) -> dict[str, Any]:
+    """End-to-end submit flow shared by /v1/images/generations and
+    /v1/videos/generations: resolve model → check balance → call upstream →
+    persist log + task → return the client-facing dict."""
+    public_name = payload.get("model")
+    if not public_name or not isinstance(public_name, str):
+        raise HTTPException(status_code=400, detail="Missing 'model' field")
+    resolved = resolve_model(db, public_name, expected_type=request_type.value)
+    require_balance(user)
+
+    request_id = new_request_id()
+    provider_client = build_provider(resolved.provider)
+    upstream_payload = {**payload, "model": resolved.model.upstream_model}
+
+    method_name = (
+        "image_generation" if request_type == RequestType.IMAGE else "video_generation"
+    )
+    upstream_call = getattr(provider_client, method_name)
+
+    started = time.perf_counter()
+    try:
+        resp = await upstream_call(upstream_payload)
+    except Exception as e:
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        persist_failure(
+            db, user=user, api_key=api_key, provider=resolved.provider,
+            model=resolved.model, request_type=request_type.value,
+            request_payload=payload, response_payload=None, request_id=request_id,
+            latency_ms=latency_ms, http_status=None, error_code="upstream_exception",
+            error_message=str(e)[:1000],
+        )
+        raise HTTPException(status_code=502, detail=f"Upstream {request_type.value} submit failed: {e}")
+    latency_ms = int((time.perf_counter() - started) * 1000)
+
+    if resp.http_status >= 400:
+        body_text = resp.body if isinstance(resp.body, (dict, list)) else {"raw": str(resp.body)}
+        persist_failure(
+            db, user=user, api_key=api_key, provider=resolved.provider,
+            model=resolved.model, request_type=request_type.value,
+            request_payload=payload, response_payload=body_text, request_id=request_id,
+            latency_ms=latency_ms, http_status=resp.http_status,
+            error_code=f"upstream_{resp.http_status}", error_message=None,
+            upstream_request_id=resp.upstream_request_id,
+        )
+        raise HTTPException(status_code=resp.http_status, detail=body_text)
+
+    task_id = provider_client.extract_task_id(resp.body)
+    if not task_id:
+        persist_failure(
+            db, user=user, api_key=api_key, provider=resolved.provider,
+            model=resolved.model, request_type=request_type.value,
+            request_payload=payload, response_payload=resp.body, request_id=request_id,
+            latency_ms=latency_ms, http_status=resp.http_status,
+            error_code="no_task_id",
+            error_message="Upstream response lacked a recognizable task_id",
+            upstream_request_id=resp.upstream_request_id,
+        )
+        raise HTTPException(status_code=502, detail="Upstream did not return a task_id")
+
+    log, task_row = persist_queued_task(
+        db, user=user, api_key=api_key, provider=resolved.provider, model=resolved.model,
+        request_type=request_type.value, request_payload=payload, response_payload=resp.body,
+        upstream_request_id=resp.upstream_request_id, request_id=request_id,
+        latency_ms=latency_ms, http_status=resp.http_status, upstream_task_id=task_id,
+    )
+    return {
+        "task_id": f"task_{task_row.id}",
+        "status": "queued",
+        "type": request_type.value,
+        "_gateway": {
+            "request_id": request_id,
+            "log_id": log.id,
+            "upstream_task_id": task_id,
+            "latency_ms": latency_ms,
+        },
+        "raw": resp.body,
+    }

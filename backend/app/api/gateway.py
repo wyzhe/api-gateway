@@ -14,7 +14,8 @@ from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from ..deps import get_api_key_user, get_db
-from ..models import ApiKey, ModelRow, RequestLog, User, VideoTask  # VideoTask used in get_task
+from ..enums import RequestType
+from ..models import ApiKey, ModelRow, RequestLog, User, VideoTask
 from ..services import cost_service, gateway_service
 
 router = APIRouter(prefix="/v1", tags=["gateway"])
@@ -305,74 +306,9 @@ async def images_generations(
     auth: tuple[User, ApiKey] = Depends(get_api_key_user),
 ) -> Any:
     user, api_key = auth
-    public_name = payload.get("model")
-    if not public_name or not isinstance(public_name, str):
-        raise HTTPException(status_code=400, detail="Missing 'model' field")
-    resolved = gateway_service.resolve_model(db, public_name, expected_type="image")
-    gateway_service.require_balance(user)
-
-    request_id = gateway_service.new_request_id()
-    provider_client = gateway_service.build_provider(resolved.provider)
-
-    upstream_payload = {**payload, "model": resolved.model.upstream_model}
-
-    started = time.perf_counter()
-    try:
-        resp = await provider_client.image_generation(upstream_payload)
-    except Exception as e:
-        latency_ms = int((time.perf_counter() - started) * 1000)
-        gateway_service.persist_failure(
-            db, user=user, api_key=api_key, provider=resolved.provider, model=resolved.model,
-            request_type="image", request_payload=payload, response_payload=None,
-            request_id=request_id, latency_ms=latency_ms, http_status=None,
-            error_code="upstream_exception", error_message=str(e)[:1000],
-        )
-        raise HTTPException(status_code=502, detail=f"Upstream image submit failed: {e}")
-    latency_ms = int((time.perf_counter() - started) * 1000)
-
-    if resp.http_status >= 400:
-        body_text = resp.body if isinstance(resp.body, (dict, list)) else {"raw": str(resp.body)}
-        gateway_service.persist_failure(
-            db, user=user, api_key=api_key, provider=resolved.provider, model=resolved.model,
-            request_type="image", request_payload=payload, response_payload=body_text,
-            request_id=request_id, latency_ms=latency_ms, http_status=resp.http_status,
-            error_code=f"upstream_{resp.http_status}", error_message=None,
-            upstream_request_id=resp.upstream_request_id,
-        )
-        raise HTTPException(status_code=resp.http_status, detail=body_text)
-
-    # APIMart returns a task_id (image generation is async).
-    task_id = provider_client.extract_task_id(resp.body)
-    if not task_id:
-        # Defensive: upstream did not include a task_id we recognize.
-        gateway_service.persist_failure(
-            db, user=user, api_key=api_key, provider=resolved.provider, model=resolved.model,
-            request_type="image", request_payload=payload, response_payload=resp.body,
-            request_id=request_id, latency_ms=latency_ms, http_status=resp.http_status,
-            error_code="no_task_id", error_message="Upstream response lacked a recognizable task_id",
-            upstream_request_id=resp.upstream_request_id,
-        )
-        raise HTTPException(status_code=502, detail="Upstream did not return a task_id")
-
-    log, task_row = gateway_service.persist_queued_task(
-        db, user=user, api_key=api_key, provider=resolved.provider, model=resolved.model,
-        request_type="image", request_payload=payload, response_payload=resp.body,
-        upstream_request_id=resp.upstream_request_id, request_id=request_id,
-        latency_ms=latency_ms, http_status=resp.http_status, upstream_task_id=task_id,
+    return await gateway_service.submit_async_task(
+        db, user=user, api_key=api_key, payload=payload, request_type=RequestType.IMAGE,
     )
-
-    return {
-        "task_id": f"task_{task_row.id}",
-        "status": "queued",
-        "type": "image",
-        "_gateway": {
-            "request_id": request_id,
-            "log_id": log.id,
-            "upstream_task_id": task_id,
-            "latency_ms": latency_ms,
-        },
-        "raw": resp.body,
-    }
 
 
 # ---------------- POST /v1/videos/generations (async — returns task_id) ----------------
@@ -385,72 +321,9 @@ async def videos_generations(
     auth: tuple[User, ApiKey] = Depends(get_api_key_user),
 ) -> Any:
     user, api_key = auth
-    public_name = payload.get("model")
-    if not public_name or not isinstance(public_name, str):
-        raise HTTPException(status_code=400, detail="Missing 'model' field")
-    resolved = gateway_service.resolve_model(db, public_name, expected_type="video")
-    gateway_service.require_balance(user)
-
-    request_id = gateway_service.new_request_id()
-    provider_client = gateway_service.build_provider(resolved.provider)
-
-    upstream_payload = {**payload, "model": resolved.model.upstream_model}
-
-    started = time.perf_counter()
-    try:
-        resp = await provider_client.video_generation(upstream_payload)
-    except Exception as e:
-        latency_ms = int((time.perf_counter() - started) * 1000)
-        gateway_service.persist_failure(
-            db, user=user, api_key=api_key, provider=resolved.provider, model=resolved.model,
-            request_type="video", request_payload=payload, response_payload=None,
-            request_id=request_id, latency_ms=latency_ms, http_status=None,
-            error_code="upstream_exception", error_message=str(e)[:1000],
-        )
-        raise HTTPException(status_code=502, detail=f"Upstream video submit failed: {e}")
-    latency_ms = int((time.perf_counter() - started) * 1000)
-
-    if resp.http_status >= 400:
-        body_text = resp.body if isinstance(resp.body, (dict, list)) else {"raw": str(resp.body)}
-        gateway_service.persist_failure(
-            db, user=user, api_key=api_key, provider=resolved.provider, model=resolved.model,
-            request_type="video", request_payload=payload, response_payload=body_text,
-            request_id=request_id, latency_ms=latency_ms, http_status=resp.http_status,
-            error_code=f"upstream_{resp.http_status}", error_message=None,
-            upstream_request_id=resp.upstream_request_id,
-        )
-        raise HTTPException(status_code=resp.http_status, detail=body_text)
-
-    task_id = provider_client.extract_task_id(resp.body)
-    if not task_id:
-        gateway_service.persist_failure(
-            db, user=user, api_key=api_key, provider=resolved.provider, model=resolved.model,
-            request_type="video", request_payload=payload, response_payload=resp.body,
-            request_id=request_id, latency_ms=latency_ms, http_status=resp.http_status,
-            error_code="no_task_id", error_message="Upstream response lacked a recognizable task_id",
-            upstream_request_id=resp.upstream_request_id,
-        )
-        raise HTTPException(status_code=502, detail="Upstream did not return a task_id")
-
-    log, task_row = gateway_service.persist_queued_task(
-        db, user=user, api_key=api_key, provider=resolved.provider, model=resolved.model,
-        request_type="video", request_payload=payload, response_payload=resp.body,
-        upstream_request_id=resp.upstream_request_id, request_id=request_id,
-        latency_ms=latency_ms, http_status=resp.http_status, upstream_task_id=task_id,
+    return await gateway_service.submit_async_task(
+        db, user=user, api_key=api_key, payload=payload, request_type=RequestType.VIDEO,
     )
-
-    return {
-        "task_id": f"task_{task_row.id}",
-        "status": "queued",
-        "type": "video",
-        "_gateway": {
-            "request_id": request_id,
-            "log_id": log.id,
-            "upstream_task_id": task_id,
-            "latency_ms": latency_ms,
-        },
-        "raw": resp.body,
-    }
 
 
 # ---------------- GET /v1/tasks/{task_id} (lazy poll + finalize) ----------------
