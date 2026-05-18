@@ -282,6 +282,14 @@ export const en = {
     emptySuffix: ".",
     pendingFailedTitle: "Pending / failed",
   },
+  docs: {
+    title: "Docs",
+    subtitle: "OpenAI-compatible — drop-in replacement for most SDKs.",
+    sectionAuthentication: "Authentication",
+    sectionChatCompletions: "Chat completions",
+    sectionImageGeneration: "Image generation (async)",
+    sectionVideoGeneration: "Video generation (async)",
+  },
 };
 
 export type EnDict = typeof en;

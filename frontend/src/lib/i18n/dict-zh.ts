@@ -283,4 +283,12 @@ export const zh: EnDict = {
     emptySuffix: " 试一下吧。",
     pendingFailedTitle: "进行中 / 失败",
   },
+  docs: {
+    title: "文档",
+    subtitle: "OpenAI 兼容网关 — 大多数 SDK 可直接替换接入。",
+    sectionAuthentication: "认证",
+    sectionChatCompletions: "Chat Completions",
+    sectionImageGeneration: "图像生成（异步）",
+    sectionVideoGeneration: "视频生成（异步）",
+  },
 };
