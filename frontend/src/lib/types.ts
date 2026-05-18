@@ -28,7 +28,40 @@ export type ApiKey = {
   key_prefix: string;
   status: "active" | "disabled";
   monthly_limit: string | null;
+  mtd_cost: string;
   last_used_at: string | null;
+  created_at: string;
+};
+
+export type Transaction = {
+  id: number;
+  user_id: number;
+  type: "recharge" | "debit" | "refund" | "adjustment";
+  amount: string;
+  balance_before: string;
+  balance_after: string;
+  request_log_id: number | null;
+  note: string | null;
+  created_by_admin_id: number | null;
+  created_at: string;
+};
+
+export type AdminUser = {
+  id: number;
+  email: string;
+  display_name: string | null;
+  role: "user" | "admin";
+  status: "active" | "disabled";
+  balance: string;
+  created_at: string;
+};
+
+export type Provider = {
+  id: number;
+  name: string;
+  display_name: string;
+  base_url: string;
+  status: "active" | "disabled";
   created_at: string;
 };
 

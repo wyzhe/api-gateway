@@ -13,12 +13,14 @@ from decimal import Decimal
 from typing import Any
 
 from fastapi import HTTPException
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
 from ..enums import RequestType
 from ..models import ApiKey, ModelRow, Provider, RequestLog, User
 from ..providers import APIMartProvider
+from ..utils.time import month_start_utc
 from . import billing_service
 
 settings = get_settings()
@@ -82,6 +84,30 @@ def require_balance(user: User) -> None:
     if Decimal(user.balance) <= 0:
         raise HTTPException(
             status_code=402, detail="Insufficient balance. Ask admin to add credit."
+        )
+
+
+def mtd_cost_for_api_key(db: Session, api_key_id: int) -> Decimal:
+    """Month-to-date cost charged through this API key (UTC month)."""
+    total = (
+        db.query(func.coalesce(func.sum(RequestLog.cost), 0))
+        .filter(RequestLog.api_key_id == api_key_id, RequestLog.created_at >= month_start_utc())
+        .scalar()
+    )
+    return Decimal(total or 0)
+
+
+def require_within_monthly_limit(db: Session, api_key: ApiKey) -> None:
+    if api_key.monthly_limit is None:
+        return
+    used = mtd_cost_for_api_key(db, api_key.id)
+    if used >= Decimal(api_key.monthly_limit):
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                f"API key monthly limit reached: spent ${used} of ${api_key.monthly_limit}. "
+                "Raise the limit or rotate the key."
+            ),
         )
 
 
@@ -272,6 +298,7 @@ async def submit_async_task(
         raise HTTPException(status_code=400, detail="Missing 'model' field")
     resolved = resolve_model(db, public_name, expected_type=request_type.value)
     require_balance(user)
+    require_within_monthly_limit(db, api_key)
 
     request_id = new_request_id()
     provider_client = build_provider(resolved.provider)

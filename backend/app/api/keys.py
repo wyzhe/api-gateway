@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
@@ -6,6 +8,7 @@ from ..deps import get_current_user, get_db
 from ..models import ApiKey, User
 from ..schemas.api_key import ApiKeyCreate, ApiKeyCreatedOut, ApiKeyOut, ApiKeyUpdate
 from ..security import generate_api_key
+from ..services.gateway_service import mtd_cost_for_api_key
 
 router = APIRouter(prefix="/api/keys", tags=["keys"])
 
@@ -15,6 +18,19 @@ def _get_owned(db: Session, user: User, key_id: int) -> ApiKey:
     if not obj or obj.user_id != user.id:
         raise HTTPException(status_code=404, detail="API key not found")
     return obj
+
+
+def _to_out(row: ApiKey, mtd: Decimal) -> ApiKeyOut:
+    return ApiKeyOut(
+        id=row.id,
+        name=row.name,
+        key_prefix=row.key_prefix,
+        status=row.status,
+        monthly_limit=row.monthly_limit,
+        mtd_cost=mtd,
+        last_used_at=row.last_used_at,
+        created_at=row.created_at,
+    )
 
 
 @router.get("", response_model=list[ApiKeyOut])
@@ -28,7 +44,7 @@ def list_keys(
         .order_by(desc(ApiKey.created_at))
         .all()
     )
-    return [ApiKeyOut.model_validate(r) for r in rows]
+    return [_to_out(r, mtd_cost_for_api_key(db, r.id)) for r in rows]
 
 
 @router.post("", response_model=ApiKeyCreatedOut, status_code=status.HTTP_201_CREATED)
@@ -55,6 +71,7 @@ def create_key(
         key_prefix=row.key_prefix,
         status=row.status,
         monthly_limit=row.monthly_limit,
+        mtd_cost=Decimal("0"),
         last_used_at=row.last_used_at,
         created_at=row.created_at,
         key=full,
@@ -74,7 +91,7 @@ def update_key(
         setattr(row, k, v)
     db.commit()
     db.refresh(row)
-    return ApiKeyOut.model_validate(row)
+    return _to_out(row, mtd_cost_for_api_key(db, row.id))
 
 
 @router.delete("/{key_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -98,7 +115,7 @@ def disable_key(
     row.status = "disabled"
     db.commit()
     db.refresh(row)
-    return ApiKeyOut.model_validate(row)
+    return _to_out(row, mtd_cost_for_api_key(db, row.id))
 
 
 @router.post("/{key_id}/enable", response_model=ApiKeyOut)
@@ -111,4 +128,4 @@ def enable_key(
     row.status = "active"
     db.commit()
     db.refresh(row)
-    return ApiKeyOut.model_validate(row)
+    return _to_out(row, mtd_cost_for_api_key(db, row.id))

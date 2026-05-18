@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CodeBlock } from "@/components/ui/code-block";
@@ -20,10 +21,12 @@ import type { LogDetail, LogSummary } from "@/lib/types";
 import { fmtCompactMoney, fmtDate, fmtRelative } from "@/lib/utils";
 
 export function UsageLogsPage() {
+  const [params] = useSearchParams();
   const [rows, setRows] = useState<LogSummary[]>([]);
-  const [type, setType] = useState<string>("__all__");
-  const [status, setStatus] = useState<string>("__all__");
-  const [model, setModel] = useState<string>("");
+  const [type, setType] = useState<string>(params.get("type") ?? "__all__");
+  const [status, setStatus] = useState<string>(params.get("status") ?? "__all__");
+  const [model, setModel] = useState<string>(params.get("model") ?? "");
+  const apiKeyId = params.get("api_key_id");
   const [selected, setSelected] = useState<LogDetail | null>(null);
 
   const refresh = async () => {
@@ -31,13 +34,14 @@ export function UsageLogsPage() {
     if (type !== "__all__") qs.set("type", type);
     if (status !== "__all__") qs.set("status", status);
     if (model) qs.set("model", model);
+    if (apiKeyId) qs.set("api_key_id", apiKeyId);
     const data = await api<LogSummary[]>(`/api/logs?${qs.toString()}`);
     setRows(data);
   };
 
   useEffect(() => {
     refresh().catch(() => {});
-  }, [type, status, model]);
+  }, [type, status, model, apiKeyId]);
 
   const openDetail = async (id: number) => {
     const d = await api<LogDetail>(`/api/logs/${id}`);

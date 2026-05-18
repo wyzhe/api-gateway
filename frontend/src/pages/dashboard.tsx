@@ -1,12 +1,16 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { KpiTile } from "@/components/kpi-tile";
 import { Badge } from "@/components/ui/badge";
+import { CodeBlock } from "@/components/ui/code-block";
+import { LabeledValue } from "@/components/ui/form-field";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { TypeBadge } from "@/components/type-badge";
 import { PageHeader } from "@/components/shell";
 import { api } from "@/lib/api";
-import { fmtCompactMoney, fmtRelative } from "@/lib/utils";
+import type { LogDetail, LogSummary } from "@/lib/types";
+import { fmtCompactMoney, fmtDate, fmtRelative } from "@/lib/utils";
 
 type DashboardOut = {
   balance: string;
@@ -15,18 +19,25 @@ type DashboardOut = {
   today_video_requests: number;
   today_spend: string;
   month_spend: string;
-  recent_failures: any[];
-  recent_logs: any[];
+  recent_failures: LogSummary[];
+  recent_logs: LogSummary[];
   top_models_by_cost: Array<{ model_id: number | null; model_name: string | null; cost: string; requests: number }>;
   top_api_keys_by_usage: Array<{ api_key_id: number | null; api_key_prefix: string | null; requests: number; cost: string }>;
 };
 
 export function DashboardPage() {
   const [data, setData] = useState<DashboardOut | null>(null);
+  const [selected, setSelected] = useState<LogDetail | null>(null);
+  const nav = useNavigate();
 
   useEffect(() => {
     api<DashboardOut>("/api/dashboard").then(setData).catch(() => {});
   }, []);
+
+  const openDetail = async (id: number) => {
+    const d = await api<LogDetail>(`/api/logs/${id}`);
+    setSelected(d);
+  };
 
   return (
     <div>
@@ -48,16 +59,25 @@ export function DashboardPage() {
           value={data?.today_text_requests ?? 0}
           hint={`${data?.today_image_requests ?? 0} image · ${data?.today_video_requests ?? 0} video`}
         />
-        <KpiTile
-          label="Failures (recent)"
-          value={data?.recent_failures.length ?? 0}
-        />
+        <button
+          type="button"
+          onClick={() => nav("/logs?status=failed")}
+          className="text-left focus:outline-none focus:ring-2 focus:ring-ring rounded-md"
+          title="View all failed requests"
+        >
+          <KpiTile
+            label="Failures (recent)"
+            value={data?.recent_failures.length ?? 0}
+            hint={<span className="text-primary hover:underline">View failed →</span>}
+          />
+        </button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <Card className="lg:col-span-2">
-          <CardHeader>
+          <CardHeader className="flex-row items-center justify-between">
             <CardTitle>Recent activity</CardTitle>
+            <Link to="/logs" className="text-xs text-primary hover:underline">All logs →</Link>
           </CardHeader>
           <CardContent className="p-0">
             {data && data.recent_logs.length === 0 ? (
@@ -67,7 +87,11 @@ export function DashboardPage() {
             ) : (
               <ul className="divide-y divide-border">
                 {data?.recent_logs.slice(0, 10).map((r) => (
-                  <li key={r.id} className="px-4 py-2.5 flex items-center gap-3 text-xs">
+                  <li
+                    key={r.id}
+                    onClick={() => openDetail(r.id)}
+                    className="px-4 py-2.5 flex items-center gap-3 text-xs cursor-pointer hover:bg-surface-2"
+                  >
                     <TypeBadge type={r.request_type} />
                     <span className="mono text-foreground">{r.model_name || r.upstream_model}</span>
                     <Badge variant={r.status === "success" ? "success" : r.status === "failed" ? "danger" : "info"}>
@@ -84,16 +108,18 @@ export function DashboardPage() {
 
         <div className="flex flex-col gap-4">
           <Card>
-            <CardHeader>
-              <CardTitle>Top models</CardTitle>
-            </CardHeader>
+            <CardHeader><CardTitle>Top models</CardTitle></CardHeader>
             <CardContent className="p-0">
               {data && data.top_models_by_cost.length === 0 ? (
                 <div className="p-4 text-xs text-muted-foreground">No data yet.</div>
               ) : (
                 <ul className="divide-y divide-border">
                   {data?.top_models_by_cost.map((m) => (
-                    <li key={m.model_id} className="px-4 py-2 flex items-center justify-between text-xs">
+                    <li
+                      key={m.model_id}
+                      onClick={() => m.model_name && nav(`/logs?model=${encodeURIComponent(m.model_name)}`)}
+                      className="px-4 py-2 flex items-center justify-between text-xs cursor-pointer hover:bg-surface-2"
+                    >
                       <span className="mono">{m.model_name || "—"}</span>
                       <span className="text-muted-foreground">{fmtCompactMoney(m.cost)} · {m.requests}</span>
                     </li>
@@ -104,16 +130,18 @@ export function DashboardPage() {
           </Card>
 
           <Card>
-            <CardHeader>
-              <CardTitle>Top API keys</CardTitle>
-            </CardHeader>
+            <CardHeader><CardTitle>Top API keys</CardTitle></CardHeader>
             <CardContent className="p-0">
               {data && data.top_api_keys_by_usage.length === 0 ? (
                 <div className="p-4 text-xs text-muted-foreground">No data yet.</div>
               ) : (
                 <ul className="divide-y divide-border">
                   {data?.top_api_keys_by_usage.map((k) => (
-                    <li key={k.api_key_id} className="px-4 py-2 flex items-center justify-between text-xs">
+                    <li
+                      key={k.api_key_id}
+                      onClick={() => k.api_key_id && nav(`/logs?api_key_id=${k.api_key_id}`)}
+                      className="px-4 py-2 flex items-center justify-between text-xs cursor-pointer hover:bg-surface-2"
+                    >
                       <span className="mono">{k.api_key_prefix}…</span>
                       <span className="text-muted-foreground">{k.requests} req · {fmtCompactMoney(k.cost)}</span>
                     </li>
@@ -124,6 +152,44 @@ export function DashboardPage() {
           </Card>
         </div>
       </div>
+
+      <Sheet open={!!selected} onOpenChange={(o) => !o && setSelected(null)}>
+        <SheetContent>
+          {selected && (
+            <>
+              <SheetHeader>
+                <SheetTitle className="flex items-center gap-2">
+                  <TypeBadge type={selected.request_type} />
+                  {selected.model_name || selected.upstream_model}
+                  <Badge variant={selected.status === "success" ? "success" : selected.status === "failed" ? "danger" : "info"}>
+                    {selected.status}
+                  </Badge>
+                </SheetTitle>
+                <SheetDescription className="mono">{selected.request_id}</SheetDescription>
+              </SheetHeader>
+              <div className="grid grid-cols-2 gap-3 mt-4 text-xs">
+                <LabeledValue label="Cost" value={fmtCompactMoney(selected.cost)} mono />
+                <LabeledValue label="Latency" value={`${selected.latency_ms ?? "—"} ms`} mono />
+                <LabeledValue label="HTTP" value={String(selected.http_status ?? "—")} mono />
+                <LabeledValue label="When" value={fmtDate(selected.created_at)} />
+              </div>
+              {selected.error_message && (
+                <div className="mt-3 text-xs border border-destructive/40 bg-destructive/10 text-destructive px-3 py-2 rounded-md">
+                  {selected.error_message}
+                </div>
+              )}
+              <div className="mt-4">
+                <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">Request</div>
+                <CodeBlock lang="json" code={JSON.stringify(selected.request_payload_json, null, 2)} maxHeight="14rem" />
+              </div>
+              <div className="mt-3">
+                <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">Response</div>
+                <CodeBlock lang="json" code={JSON.stringify(selected.response_payload_json, null, 2)} maxHeight="20rem" />
+              </div>
+            </>
+          )}
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

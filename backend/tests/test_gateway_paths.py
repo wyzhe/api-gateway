@@ -59,6 +59,34 @@ def test_task_id_malformed_returns_400(client, user_api_key_funded):
     assert r.status_code == 400
 
 
+def test_monthly_limit_returns_429(client, user_api_key_funded, test_user_funded, db_session):
+    """A key that has already spent up to its monthly limit gets 429."""
+    from decimal import Decimal as D
+
+    from app.models import ApiKey, RequestLog
+
+    key = db_session.query(ApiKey).filter(ApiKey.user_id == test_user_funded.id).first()
+    key.monthly_limit = D("0.01")
+    # Insert a synthetic prior debit that already used the full cap.
+    log = RequestLog(
+        user_id=test_user_funded.id,
+        api_key_id=key.id,
+        request_type="text",
+        status="success",
+        cost=D("0.01"),
+    )
+    db_session.add(log)
+    db_session.commit()
+
+    r = client.post(
+        "/v1/chat/completions",
+        headers={"Authorization": f"Bearer {user_api_key_funded}"},
+        json={"model": "gpt-4o", "messages": [{"role": "user", "content": "hi"}]},
+    )
+    assert r.status_code == 429
+    assert "monthly limit" in r.json()["detail"].lower()
+
+
 def test_task_id_unknown_returns_404(client, user_api_key_funded):
     r = client.get(
         "/v1/tasks/task_999999", headers={"Authorization": f"Bearer {user_api_key_funded}"}
