@@ -1,0 +1,38 @@
+export const en = {
+  common: {
+    save: "Save",
+    cancel: "Cancel",
+    confirm: "Confirm",
+    delete: "Delete",
+    close: "Close",
+    loading: "Loading…",
+    empty: "No data",
+    retry: "Retry",
+    copy: "Copy",
+    copied: "Copied",
+    error: "Error",
+  },
+  nav: {
+    sectionWorkspace: "Workspace",
+    sectionAdmin: "Admin",
+    sectionSwitch: "Switch",
+    dashboard: "Dashboard",
+    apiKeys: "API Keys",
+    usageLogs: "Usage / Logs",
+    playground: "Playground",
+    generations: "Generations",
+    billing: "Billing",
+    models: "Models",
+    docs: "Docs",
+    adminOverview: "Overview",
+    adminUsers: "Users",
+    adminModels: "Models",
+    adminProviders: "Providers",
+    adminLogs: "All Logs",
+    toAdmin: "Admin",
+    toWorkspace: "Workspace",
+    signOut: "Sign out",
+  },
+};
+
+export type EnDict = typeof en;

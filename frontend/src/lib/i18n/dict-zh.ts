@@ -1,0 +1,38 @@
+import type { EnDict } from "./dict-en";
+
+export const zh: EnDict = {
+  common: {
+    save: "保存",
+    cancel: "取消",
+    confirm: "确认",
+    delete: "删除",
+    close: "关闭",
+    loading: "加载中…",
+    empty: "暂无数据",
+    retry: "重试",
+    copy: "复制",
+    copied: "已复制",
+    error: "错误",
+  },
+  nav: {
+    sectionWorkspace: "工作区",
+    sectionAdmin: "管理后台",
+    sectionSwitch: "切换",
+    dashboard: "仪表盘",
+    apiKeys: "API Keys",
+    usageLogs: "用量 / 日志",
+    playground: "Playground",
+    generations: "生成记录",
+    billing: "计费",
+    models: "模型",
+    docs: "文档",
+    adminOverview: "总览",
+    adminUsers: "用户",
+    adminModels: "模型",
+    adminProviders: "服务商",
+    adminLogs: "全部日志",
+    toAdmin: "管理后台",
+    toWorkspace: "工作区",
+    signOut: "退出登录",
+  },
+};
