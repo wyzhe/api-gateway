@@ -22,7 +22,7 @@ from .config import get_settings
 from .database import SessionLocal, engine
 from .logging_config import configure_logging, get_logger
 from .metrics import render_metrics
-from .middleware import AccessLogMiddleware, RequestIdMiddleware
+from .middleware import AccessLogMiddleware, BodySizeLimitMiddleware, RequestIdMiddleware
 from .providers import close_client as close_httpx_client
 from .redis_client import close_redis, get_redis, ping as redis_ping
 from .seed import run_seed
@@ -70,6 +70,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="LLM API Gateway", version="0.2.0", lifespan=lifespan)
 
 # Middleware: outer-most is the last `add_middleware` call, so order matters.
+# BodySizeLimitMiddleware is last (outermost) so it short-circuits before logging.
 app.add_middleware(AccessLogMiddleware)
 app.add_middleware(RequestIdMiddleware)
 app.add_middleware(
@@ -80,6 +81,7 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type", "X-Request-ID", "Accept"],
     expose_headers=["X-Request-ID", "X-Gateway-Request-Id", "X-RateLimit-Limit", "X-RateLimit-Remaining"],
 )
+app.add_middleware(BodySizeLimitMiddleware, max_bytes=4 * 1024 * 1024)
 
 
 # ---------------- Security headers ----------------

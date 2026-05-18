@@ -7,6 +7,8 @@ import uuid
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
+from starlette.types import ASGIApp, Receive, Scope, Send
+from starlette.responses import PlainTextResponse
 
 from .logging_config import get_logger, request_id_var
 
@@ -62,3 +64,73 @@ class AccessLogMiddleware(BaseHTTPMiddleware):
                 latency_ms=latency_ms,
             )
         return response
+
+
+class BodySizeLimitMiddleware:
+    """Reject requests whose body exceeds `max_bytes`.
+
+    Two-stage check:
+    1. If `Content-Length` is present and > max_bytes, return 413 immediately.
+    2. Otherwise, count bytes as they stream in and abort once we cross the cap.
+
+    Implemented as a raw ASGI middleware (not BaseHTTPMiddleware) so we can
+    intercept the receive channel without buffering the full body in memory.
+    """
+
+    def __init__(self, app: ASGIApp, max_bytes: int) -> None:
+        self.app = app
+        self.max_bytes = max_bytes
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        # Stage 1: trust Content-Length when present.
+        cl = next(
+            (v for k, v in scope.get("headers", []) if k == b"content-length"),
+            None,
+        )
+        if cl is not None:
+            try:
+                if int(cl) > self.max_bytes:
+                    await PlainTextResponse(
+                        "Request body too large.",
+                        status_code=413,
+                    )(scope, receive, send)
+                    return
+            except ValueError:
+                pass
+
+        # Stage 2: stream-count and replay.
+        received = 0
+        body_chunks: list[bytes] = []
+        more_body = True
+        while more_body:
+            message = await receive()
+            if message["type"] == "http.request":
+                chunk = message.get("body", b"")
+                received += len(chunk)
+                if received > self.max_bytes:
+                    await PlainTextResponse(
+                        "Request body too large.",
+                        status_code=413,
+                    )(scope, receive, send)
+                    return
+                body_chunks.append(chunk)
+                more_body = message.get("more_body", False)
+            else:
+                body_chunks.append(b"")
+                more_body = False
+
+        joined = b"".join(body_chunks)
+        sent = False
+
+        async def replay_receive():
+            nonlocal sent
+            if not sent:
+                sent = True
+                return {"type": "http.request", "body": joined, "more_body": False}
+            return {"type": "http.disconnect"}
+
+        await self.app(scope, replay_receive, send)
