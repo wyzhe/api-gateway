@@ -34,7 +34,7 @@
 - `backend/tests/test_system_prompt.py`
 
 **Modified files:**
-- `backend/app/models/model.py` — add `max_input_tokens`, `cache_write_per_1k_input`, `cache_read_per_1k_input`
+- `backend/app/models/model.py` — add `max_input_tokens`, `cache_write_price`, `cache_read_price`
 - `backend/app/models/api_key.py` — add `rate_limit_tpm`, `max_concurrent_requests`
 - `backend/app/services/cost_service.py` — split text cost into cache buckets + update `price_snapshot`
 - `backend/app/middleware.py` — add `BodySizeLimitMiddleware`
