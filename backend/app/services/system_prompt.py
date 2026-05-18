@@ -23,7 +23,13 @@ def assemble_openai_messages(
     """Return a new messages list with gateway_system prepended (if non-empty)
     and any user-supplied system message wrapped with the separator marker.
 
-    Inputs are not mutated.
+    Returns a new list. Inner dicts are not deep-copied — callers must not
+    mutate the returned messages in place.
+
+    If the user supplied multiple `role: "system"` messages, they are joined
+    into one combined system block with a blank line between each.
+
+    An empty-string gateway_system is treated as "no injection" (same as None).
     """
     if not gateway_system:
         return list(user_messages)
@@ -35,6 +41,10 @@ def assemble_openai_messages(
         if isinstance(m, dict) and m.get("role") == "system" and isinstance(m.get("content"), str):
             user_system_blocks.append(m["content"])
         else:
+            # Non-string system content (e.g. multimodal content blocks) and all
+            # non-system messages are forwarded as-is, AFTER the assembled system
+            # section. We deliberately do NOT try to merge multimodal system
+            # blocks into the single-string user system bucket above.
             rest.append(m)
     if user_system_blocks:
         out.append(
@@ -53,7 +63,10 @@ def assemble_anthropic_system(
     gateway_system: str | None,
 ) -> str | None:
     """Anthropic `/v1/messages` has `system` as a top-level string. Concatenate
-    gateway_system + marker + user_system, returning None if both are empty."""
+    gateway_system + marker + user_system, returning None if both are empty.
+
+    An empty-string gateway_system is treated as "no injection" (same as None).
+    """
     if gateway_system and user_system:
         return gateway_system + "\n\n" + USER_SYSTEM_MARKER + user_system
     if gateway_system:
