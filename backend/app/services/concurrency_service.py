@@ -28,6 +28,10 @@ from redis.asyncio import Redis
 from redis.exceptions import RedisError
 
 
+class ConcurrencyBackendUnavailable(RuntimeError):
+    """Raised when Redis is unreachable in production mode."""
+
+
 DEFAULT_MAX_CONCURRENT = 10
 DEFAULT_HOLD_TIMEOUT = 600  # seconds - covers longest legitimate streaming chat
 # Retry-After cap: Anthropic SDK ignores Retry-After > 60s
@@ -59,6 +63,11 @@ async def acquire(
     if max_concurrent is None:
         return ConcurrencySlot(api_key_id=api_key_id, entry_id="")
 
+    # Local import: keeps the module importable in tests / contexts where the
+    # full settings env isn't loaded.
+    from ..config import get_settings
+    settings = get_settings()
+
     now = time.time()
     cutoff = now - hold_timeout_seconds
     key = _key(api_key_id)
@@ -68,11 +77,13 @@ async def acquire(
         pipe.zremrangebyscore(key, "-inf", cutoff)
         pipe.zcard(key)
         _, active = await pipe.execute()
-    except RedisError:
-        # Redis unreachable in dev/test — fall through and bypass the limit.
-        # Matches the reservation_service.try_reserve pattern (gateway must
-        # remain best-effort when Redis is degraded; under real load Redis is
-        # a hard dependency and will be up).
+    except RedisError as exc:
+        # Past MVP: silently bypassing a concurrency gate in production is
+        # unacceptable (matches reservation_service.try_reserve strict mode).
+        # In dev/test we still degrade silently so unit tests without Redis
+        # can exercise the surrounding logic.
+        if settings.is_production:
+            raise ConcurrencyBackendUnavailable(str(exc)) from exc
         return ConcurrencySlot(api_key_id=api_key_id, entry_id="")
     if int(active) >= max_concurrent:
         return None
@@ -83,7 +94,9 @@ async def acquire(
         pipe.zadd(key, {entry_id: now})
         pipe.expire(key, hold_timeout_seconds * 2)
         await pipe.execute()
-    except RedisError:
+    except RedisError as exc:
+        if settings.is_production:
+            raise ConcurrencyBackendUnavailable(str(exc)) from exc
         return ConcurrencySlot(api_key_id=api_key_id, entry_id="")
     return ConcurrencySlot(api_key_id=api_key_id, entry_id=entry_id)
 
@@ -100,6 +113,9 @@ async def active_count(
     api_key_id: int,
     hold_timeout_seconds: int = DEFAULT_HOLD_TIMEOUT,
 ) -> int:
+    from ..config import get_settings
+    settings = get_settings()
+
     now = time.time()
     cutoff = now - hold_timeout_seconds
     try:
@@ -107,7 +123,9 @@ async def active_count(
         pipe.zremrangebyscore(_key(api_key_id), "-inf", cutoff)
         pipe.zcard(_key(api_key_id))
         _, n = await pipe.execute()
-    except RedisError:
+    except RedisError as exc:
+        if settings.is_production:
+            raise ConcurrencyBackendUnavailable(str(exc)) from exc
         return 0
     return int(n)
 

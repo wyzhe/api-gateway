@@ -19,10 +19,10 @@ def _redis_reachable() -> bool:
         return False
 
 
-pytestmark = [
-    pytest.mark.asyncio,
-    pytest.mark.skipif(not _redis_reachable(), reason="Redis unreachable"),
-]
+# pytest-asyncio is configured in mode=auto (pyproject.toml), so async test
+# functions are auto-marked. No module-level pytestmark needed — using one
+# would wrongly mark the sync pure-function tests as asyncio too.
+_needs_redis = pytest.mark.skipif(not _redis_reachable(), reason="Redis unreachable")
 
 
 @pytest.fixture
@@ -34,6 +34,7 @@ async def clean_key():
     await r.delete(f"conc:k{key_id}")
 
 
+@_needs_redis
 async def test_acquire_under_limit(clean_key):
     r = get_redis()
     slot = await concurrency_service.acquire(
@@ -43,6 +44,7 @@ async def test_acquire_under_limit(clean_key):
     assert slot.entry_id != ""
 
 
+@_needs_redis
 async def test_acquire_blocks_at_limit(clean_key):
     r = get_redis()
     s1 = await concurrency_service.acquire(r, api_key_id=clean_key, max_concurrent=2)
@@ -52,6 +54,7 @@ async def test_acquire_blocks_at_limit(clean_key):
     assert s3 is None
 
 
+@_needs_redis
 async def test_release_frees_slot(clean_key):
     r = get_redis()
     s1 = await concurrency_service.acquire(r, api_key_id=clean_key, max_concurrent=1)
@@ -62,6 +65,7 @@ async def test_release_frees_slot(clean_key):
     assert s2 is not None
 
 
+@_needs_redis
 async def test_no_limit_always_acquires(clean_key):
     r = get_redis()
     slots = []
@@ -73,6 +77,7 @@ async def test_no_limit_always_acquires(clean_key):
     assert all(s.entry_id == "" for s in slots)
 
 
+@_needs_redis
 async def test_stale_slot_evicted_after_timeout(clean_key):
     r = get_redis()
     s1 = await concurrency_service.acquire(
@@ -86,6 +91,7 @@ async def test_stale_slot_evicted_after_timeout(clean_key):
     assert s2 is not None
 
 
+@_needs_redis
 async def test_active_count_reflects_acquired_slots(clean_key):
     r = get_redis()
     await concurrency_service.acquire(r, api_key_id=clean_key, max_concurrent=5)

@@ -90,11 +90,19 @@ async def _enforce_concurrency_limit(api_key: ApiKey) -> concurrency_service.Con
         if api_key.max_concurrent_requests is not None
         else concurrency_service.DEFAULT_MAX_CONCURRENT
     )
-    slot = await concurrency_service.acquire(
-        redis, api_key_id=api_key.id, max_concurrent=effective_max
-    )
+    try:
+        slot = await concurrency_service.acquire(
+            redis, api_key_id=api_key.id, max_concurrent=effective_max
+        )
+    except concurrency_service.ConcurrencyBackendUnavailable as exc:
+        log.error("concurrency_backend_unavailable", error=str(exc))
+        raise HTTPException(status_code=503, detail="Concurrency backend unavailable")
     if slot is None:
-        active = await concurrency_service.active_count(redis, api_key_id=api_key.id)
+        try:
+            active = await concurrency_service.active_count(redis, api_key_id=api_key.id)
+        except concurrency_service.ConcurrencyBackendUnavailable as exc:
+            log.error("concurrency_backend_unavailable", error=str(exc))
+            raise HTTPException(status_code=503, detail="Concurrency backend unavailable")
         retry_s = concurrency_service.compute_retry_after(
             active=active, max_concurrent=effective_max
         )
@@ -405,7 +413,6 @@ async def _chat_completions_stream(
         nonlocal_prompt_est = prompt_est
         nonlocal_max_completion = max_completion
         tpm_settled = False
-        slot_settled = False
         try:
             try:
                 async for chunk in provider_client.chat_completions_stream(upstream_payload):
@@ -512,11 +519,12 @@ async def _chat_completions_stream(
             # Always release the concurrency slot — success, failure, or
             # GeneratorExit on client cancellation. Without this, a cancelled
             # stream would burn a slot until the 10-minute hold timeout.
-            if not slot_settled:
-                try:
-                    await concurrency_service.release(get_redis(), conc_slot)
-                except Exception:
-                    pass
+            # release() is idempotent (ZREM on a missing member is a no-op
+            # and entry_id="" short-circuits), so no guard flag is needed.
+            try:
+                await concurrency_service.release(get_redis(), conc_slot)
+            except Exception:
+                pass
 
     return StreamingResponse(
         event_stream(),
@@ -748,7 +756,6 @@ async def _messages_stream(
         saw_usage = False
         upstream_error: dict[str, Any] | None = None
         tpm_settled = False
-        slot_settled = False
         try:
             try:
                 async for chunk in provider_client.messages_stream(upstream_payload):
@@ -869,11 +876,12 @@ async def _messages_stream(
             # Always release the concurrency slot — success, failure, or
             # GeneratorExit on client cancellation. Without this, a cancelled
             # stream would burn a slot until the 10-minute hold timeout.
-            if not slot_settled:
-                try:
-                    await concurrency_service.release(get_redis(), conc_slot)
-                except Exception:
-                    pass
+            # release() is idempotent (ZREM on a missing member is a no-op
+            # and entry_id="" short-circuits), so no guard flag is needed.
+            try:
+                await concurrency_service.release(get_redis(), conc_slot)
+            except Exception:
+                pass
 
     return StreamingResponse(
         event_stream(),

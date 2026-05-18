@@ -19,10 +19,9 @@ def _redis_reachable() -> bool:
         return False
 
 
-pytestmark = [
-    pytest.mark.asyncio,
-    pytest.mark.skipif(not _redis_reachable(), reason="Redis unreachable"),
-]
+# pytest-asyncio is configured in mode=auto (pyproject.toml), so async test
+# functions are auto-marked. No module-level pytestmark needed.
+_needs_redis = pytest.mark.skipif(not _redis_reachable(), reason="Redis unreachable")
 
 
 @pytest.fixture
@@ -34,6 +33,7 @@ async def clean_key():
     await r.delete(f"tpm:k{key_id}", f"tpm:h:k{key_id}")
 
 
+@_needs_redis
 async def test_prededuct_under_limit_returns_handle(clean_key):
     r = get_redis()
     handle = await tpm_service.try_prededuct(
@@ -43,6 +43,7 @@ async def test_prededuct_under_limit_returns_handle(clean_key):
     assert handle.prededucted == 1000
 
 
+@_needs_redis
 async def test_prededuct_over_limit_returns_none(clean_key):
     r = get_redis()
     h1 = await tpm_service.try_prededuct(
@@ -55,6 +56,7 @@ async def test_prededuct_over_limit_returns_none(clean_key):
     assert h2 is None
 
 
+@_needs_redis
 async def test_no_limit_returns_handle_with_zero(clean_key):
     r = get_redis()
     handle = await tpm_service.try_prededuct(
@@ -64,6 +66,7 @@ async def test_no_limit_returns_handle_with_zero(clean_key):
     assert handle.prededucted == 0
 
 
+@_needs_redis
 async def test_reconcile_adjusts_difference_down(clean_key):
     r = get_redis()
     handle = await tpm_service.try_prededuct(
@@ -76,6 +79,7 @@ async def test_reconcile_adjusts_difference_down(clean_key):
     assert h2 is not None  # 200 used, 1800 left; 1500 fits
 
 
+@_needs_redis
 async def test_reconcile_with_higher_actual_blocks_next(clean_key):
     r = get_redis()
     handle = await tpm_service.try_prededuct(
@@ -88,6 +92,7 @@ async def test_reconcile_with_higher_actual_blocks_next(clean_key):
     assert h2 is None
 
 
+@_needs_redis
 async def test_window_evicts_old_entries(clean_key):
     r = get_redis()
     handle = await tpm_service.try_prededuct(
@@ -101,6 +106,7 @@ async def test_window_evicts_old_entries(clean_key):
     assert h2 is not None
 
 
+@_needs_redis
 async def test_release_fully_returns_budget(clean_key):
     r = get_redis()
     handle = await tpm_service.try_prededuct(
