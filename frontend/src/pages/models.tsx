@@ -6,24 +6,8 @@ import { TypeBadge } from "@/components/type-badge";
 import { ProviderTag } from "@/components/provider-tag";
 import { PageHeader } from "@/components/shell";
 import { api } from "@/lib/api";
+import type { Model } from "@/lib/types";
 import { priceLabel } from "@/lib/utils";
-
-type Model = {
-  id: number;
-  public_name: string;
-  upstream_model: string;
-  display_provider: string | null;
-  type: string;
-  display_name: string | null;
-  description: string | null;
-  pricing_mode: string;
-  input_price: string | null;
-  output_price: string | null;
-  image_price: string | null;
-  video_second_price: string | null;
-  generation_price: string | null;
-  capabilities: any;
-};
 
 function ModelGrid({ models }: { models: Model[] }) {
   if (models.length === 0)

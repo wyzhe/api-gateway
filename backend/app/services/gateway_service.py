@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from ..config import get_settings
 from ..enums import RequestType
 from ..models import ApiKey, ModelRow, Provider, RequestLog, User
-from ..providers import APIMartProvider, BaseProvider
+from ..providers import APIMartProvider
 from . import billing_service
 
 settings = get_settings()
@@ -65,6 +65,17 @@ def build_provider(provider: Provider) -> APIMartProvider:
 
 def new_request_id() -> str:
     return f"req_{uuid.uuid4().hex[:24]}"
+
+
+def extract_upstream_error_message(body: object) -> str:
+    """Best-effort extraction of a human-readable error message from an
+    upstream response body. Falls back to a stringified body."""
+    if isinstance(body, dict):
+        err = body.get("error")
+        if isinstance(err, dict):
+            return str(err.get("message") or err)[:300]
+        return str(body.get("message") or body.get("detail") or body)[:300]
+    return str(body)[:300]
 
 
 def require_balance(user: User) -> None:
@@ -266,10 +277,11 @@ async def submit_async_task(
     provider_client = build_provider(resolved.provider)
     upstream_payload = {**payload, "model": resolved.model.upstream_model}
 
-    method_name = (
-        "image_generation" if request_type == RequestType.IMAGE else "video_generation"
+    upstream_call = (
+        provider_client.image_generation
+        if request_type is RequestType.IMAGE
+        else provider_client.video_generation
     )
-    upstream_call = getattr(provider_client, method_name)
 
     started = time.perf_counter()
     try:

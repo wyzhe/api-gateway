@@ -12,38 +12,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { LabeledValue } from "@/components/ui/form-field";
 import { TypeBadge } from "@/components/type-badge";
 import { PageHeader } from "@/components/shell";
 import { api } from "@/lib/api";
+import type { LogDetail, LogSummary } from "@/lib/types";
 import { fmtCompactMoney, fmtDate, fmtRelative } from "@/lib/utils";
-
-type LogSummary = {
-  id: number;
-  api_key_prefix: string | null;
-  model_name: string | null;
-  request_type: string;
-  upstream_model: string | null;
-  status: string;
-  task_status: string | null;
-  prompt_tokens: number | null;
-  completion_tokens: number | null;
-  total_tokens: number | null;
-  image_count: number | null;
-  video_duration: string | null;
-  cost: string;
-  latency_ms: number | null;
-  http_status: number | null;
-  request_id: string | null;
-  error_message: string | null;
-  asset_url: string | null;
-  created_at: string;
-};
-
-type LogDetail = LogSummary & {
-  upstream_request_id: string | null;
-  request_payload_json: any;
-  response_payload_json: any;
-};
 
 export function UsageLogsPage() {
   const [rows, setRows] = useState<LogSummary[]>([]);
@@ -173,14 +147,14 @@ export function UsageLogsPage() {
               </SheetHeader>
 
               <div className="grid grid-cols-2 gap-3 mt-4 text-xs">
-                <Field label="Cost" value={fmtCompactMoney(selected.cost)} mono />
-                <Field label="Latency" value={`${selected.latency_ms ?? "—"} ms`} mono />
-                <Field label="HTTP" value={String(selected.http_status ?? "—")} mono />
-                <Field label="Tokens" value={selected.total_tokens ? `${selected.prompt_tokens} → ${selected.completion_tokens}` : "—"} mono />
-                <Field label="API key" value={selected.api_key_prefix || "—"} mono />
-                <Field label="Upstream" value={selected.upstream_model || "—"} mono />
-                <Field label="When" value={fmtDate(selected.created_at)} />
-                <Field label="Upstream request id" value={selected.upstream_request_id || "—"} mono />
+                <LabeledValue label="Cost" value={fmtCompactMoney(selected.cost)} mono />
+                <LabeledValue label="Latency" value={`${selected.latency_ms ?? "—"} ms`} mono />
+                <LabeledValue label="HTTP" value={String(selected.http_status ?? "—")} mono />
+                <LabeledValue label="Tokens" value={selected.total_tokens ? `${selected.prompt_tokens} → ${selected.completion_tokens}` : "—"} mono />
+                <LabeledValue label="API key" value={selected.api_key_prefix || "—"} mono />
+                <LabeledValue label="Upstream" value={selected.upstream_model || "—"} mono />
+                <LabeledValue label="When" value={fmtDate(selected.created_at)} />
+                <LabeledValue label="Upstream request id" value={selected.upstream_request_id || "—"} mono />
               </div>
 
               {selected.error_message && (
@@ -226,11 +200,3 @@ export function UsageLogsPage() {
   );
 }
 
-function Field({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
-  return (
-    <div className="flex flex-col">
-      <span className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</span>
-      <span className={mono ? "mono" : ""}>{value}</span>
-    </div>
-  );
-}

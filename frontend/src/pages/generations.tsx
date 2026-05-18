@@ -4,20 +4,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/shell";
 import { TypeBadge } from "@/components/type-badge";
 import { api } from "@/lib/api";
+import type { LogSummary as Log } from "@/lib/types";
 import { fmtCompactMoney, fmtRelative } from "@/lib/utils";
-
-type Log = {
-  id: number;
-  request_type: string;
-  model_name: string | null;
-  upstream_model: string | null;
-  status: string;
-  task_status: string | null;
-  cost: string;
-  asset_url: string | null;
-  request_payload_json?: any;
-  created_at: string;
-};
 
 export function GenerationsPage() {
   const [items, setItems] = useState<Log[]>([]);
@@ -72,7 +60,8 @@ export function GenerationsPage() {
                   <span className="mono text-xs">{it.model_name || it.upstream_model}</span>
                 </div>
                 <p className="text-xs text-muted-foreground line-clamp-2">
-                  {it.request_payload_json?.prompt || ""}
+                  {/* prompt lives in request_payload_json which is only in detail view; show model instead */}
+                  {it.upstream_model || ""}
                 </p>
                 <div className="flex items-center justify-between text-[10px] text-muted-foreground">
                   <span>{fmtCompactMoney(it.cost)}</span>

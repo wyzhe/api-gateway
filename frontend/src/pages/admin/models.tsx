@@ -1,6 +1,5 @@
 import { Activity } from "lucide-react";
-import { useState } from "react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -9,36 +8,12 @@ import { TypeBadge } from "@/components/type-badge";
 import { ProviderTag } from "@/components/provider-tag";
 import { PageHeader } from "@/components/shell";
 import { api } from "@/lib/api";
+import type { HealthCheckResult, Model } from "@/lib/types";
 import { priceLabel } from "@/lib/utils";
-
-type Model = {
-  id: number;
-  public_name: string;
-  upstream_model: string;
-  display_provider: string | null;
-  provider_name: string | null;
-  type: string;
-  status: string;
-  visible: boolean;
-  pricing_mode: string;
-  input_price: string | null;
-  output_price: string | null;
-  image_price: string | null;
-  video_second_price: string | null;
-  generation_price: string | null;
-};
-
-type Health = {
-  ok: boolean;
-  status_code: number | null;
-  latency_ms: number;
-  error: string | null;
-  sample: string | null;
-};
 
 export function AdminModelsPage() {
   const [rows, setRows] = useState<Model[]>([]);
-  const [health, setHealth] = useState<Record<number, Health | "pending">>({});
+  const [health, setHealth] = useState<Record<number, HealthCheckResult | "pending">>({});
 
   const refresh = async () => {
     const data = await api<Model[]>("/api/admin/models");
@@ -58,12 +33,25 @@ export function AdminModelsPage() {
   const ping = async (m: Model) => {
     setHealth((h) => ({ ...h, [m.id]: "pending" }));
     try {
-      const result = await api<Health>(`/api/admin/models/${m.id}/healthcheck`, { method: "POST" });
+      const result = await api<HealthCheckResult>(`/api/admin/models/${m.id}/healthcheck`, { method: "POST" });
       setHealth((h) => ({ ...h, [m.id]: result }));
       if (result.ok) toast.success(`${m.public_name}: ${result.latency_ms}ms ✓`);
       else toast.error(`${m.public_name}: ${result.error || "failed"}`);
     } catch (e: any) {
-      setHealth((h) => ({ ...h, [m.id]: { ok: false, status_code: null, latency_ms: 0, error: String(e?.message || e), sample: null } }));
+      setHealth((h) => ({
+        ...h,
+        [m.id]: {
+          model_id: m.id,
+          public_name: m.public_name,
+          upstream_model: m.upstream_model,
+          type: m.type,
+          ok: false,
+          status_code: null,
+          latency_ms: 0,
+          error: String(e?.message || e),
+          sample: null,
+        },
+      }));
     }
   };
 

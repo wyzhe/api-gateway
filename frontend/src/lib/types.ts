@@ -64,3 +64,15 @@ export type LogDetail = LogSummary & {
   request_payload_json: any;
   response_payload_json: any;
 };
+
+export type HealthCheckResult = {
+  model_id: number;
+  public_name: string;
+  upstream_model: string;
+  type: string;
+  ok: boolean;
+  status_code: number | null;
+  latency_ms: number;
+  error: string | null;
+  sample: string | null;
+};

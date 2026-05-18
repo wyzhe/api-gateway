@@ -16,17 +16,8 @@ import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { PageHeader } from "@/components/shell";
 import { api } from "@/lib/api";
+import type { ApiKey } from "@/lib/types";
 import { fmtDate } from "@/lib/utils";
-
-type ApiKey = {
-  id: number;
-  name: string;
-  key_prefix: string;
-  status: string;
-  monthly_limit: string | null;
-  last_used_at: string | null;
-  created_at: string;
-};
 
 type CreatedKey = ApiKey & { key: string };
 

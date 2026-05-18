@@ -15,27 +15,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { TypeBadge } from "@/components/type-badge";
 import { PageHeader } from "@/components/shell";
 import { api } from "@/lib/api";
+import type { LogDetail as Detail, LogSummary as Log } from "@/lib/types";
 import { fmtCompactMoney, fmtDate, fmtRelative } from "@/lib/utils";
-
-type Log = {
-  id: number;
-  user_id: number;
-  api_key_prefix: string | null;
-  model_name: string | null;
-  request_type: string;
-  upstream_model: string | null;
-  status: string;
-  task_status: string | null;
-  total_tokens: number | null;
-  cost: string;
-  latency_ms: number | null;
-  request_id: string | null;
-  created_at: string;
-  error_message: string | null;
-  asset_url: string | null;
-};
-
-type Detail = Log & { request_payload_json: any; response_payload_json: any; upstream_request_id: string | null };
 
 export function AdminLogsPage() {
   const [rows, setRows] = useState<Log[]>([]);

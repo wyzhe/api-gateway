@@ -7,6 +7,7 @@ from decimal import Decimal
 from sqlalchemy.orm import Session
 
 from .config import get_settings
+from .enums import AccountStatus
 from .models import ModelRow, Provider, User
 from .security import hash_password
 
@@ -213,8 +214,8 @@ def ensure_default_models(db: Session, provider: Provider) -> None:
     # Soft-disable models we no longer want exposed.
     for name in DISABLE_ON_BOOT:
         row = db.query(ModelRow).filter(ModelRow.public_name == name).one_or_none()
-        if row and row.status != "disabled":
-            row.status = "disabled"
+        if row and row.status != AccountStatus.DISABLED.value:
+            row.status = AccountStatus.DISABLED.value
             row.visible = False
 
     # Make rename/disable visible to the next query in this transaction.

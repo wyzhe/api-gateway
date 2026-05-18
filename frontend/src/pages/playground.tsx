@@ -294,7 +294,7 @@ function ImageTab({ models, apiKey }: { models: Model[]; apiKey: string }) {
   const cancelRef = useRef({ cancelled: false });
   useUnmountCleanup(() => (cancelRef.current.cancelled = true));
 
-  useDefaultModel(models, model, setModel, "gpt-4o");
+  useDefaultModel(models, model, setModel, "gpt-image-2");
 
   const buildPayload = () => ({ model, prompt, size, n, resolution: "1k" });
 
@@ -458,7 +458,7 @@ function VideoTab({ models, apiKey }: { models: Model[]; apiKey: string }) {
   const cancelRef = useRef({ cancelled: false });
   useUnmountCleanup(() => (cancelRef.current.cancelled = true));
 
-  useDefaultModel(models, model, setModel, "gpt-4o");
+  useDefaultModel(models, model, setModel, "veo3");
 
   const buildPayload = () => ({ model, prompt, duration, aspect_ratio: aspect, resolution });
 

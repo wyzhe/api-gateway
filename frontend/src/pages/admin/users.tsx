@@ -9,8 +9,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { PageHeader } from "@/components/shell";
 import { api } from "@/lib/api";
@@ -138,10 +138,10 @@ export function AdminUsersPage() {
         <DialogContent>
           <DialogHeader><DialogTitle>Create user</DialogTitle></DialogHeader>
           <div className="flex flex-col gap-3">
-            <Field label="Email"><Input value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
-            <Field label="Password"><Input type="password" value={pw} onChange={(e) => setPw(e.target.value)} /></Field>
-            <Field label="Display name (optional)"><Input value={name} onChange={(e) => setName(e.target.value)} /></Field>
-            <Field label="Initial balance (USD)"><Input value={initBalance} onChange={(e) => setInitBalance(e.target.value)} /></Field>
+            <FormField label="Email"><Input value={email} onChange={(e) => setEmail(e.target.value)} /></FormField>
+            <FormField label="Password"><Input type="password" value={pw} onChange={(e) => setPw(e.target.value)} /></FormField>
+            <FormField label="Display name (optional)"><Input value={name} onChange={(e) => setName(e.target.value)} /></FormField>
+            <FormField label="Initial balance (USD)"><Input value={initBalance} onChange={(e) => setInitBalance(e.target.value)} /></FormField>
           </div>
           <div className="flex justify-end gap-2 mt-3">
             <Button variant="outline" onClick={() => setOpenCreate(false)}>Cancel</Button>
@@ -157,12 +157,12 @@ export function AdminUsersPage() {
             <DialogTitle>Recharge {openRecharge?.email}</DialogTitle>
           </DialogHeader>
           <div className="flex flex-col gap-3">
-            <Field label="Amount (USD, can be decimal)">
+            <FormField label="Amount (USD, can be decimal)">
               <Input value={rechargeAmount} onChange={(e) => setRechargeAmount(e.target.value)} placeholder="10" />
-            </Field>
-            <Field label="Note (optional)">
+            </FormField>
+            <FormField label="Note (optional)">
               <Input value={rechargeNote} onChange={(e) => setRechargeNote(e.target.value)} />
-            </Field>
+            </FormField>
           </div>
           <div className="flex justify-end gap-2 mt-3">
             <Button variant="outline" onClick={() => setOpenRecharge(null)}>Cancel</Button>
@@ -174,11 +174,3 @@ export function AdminUsersPage() {
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex flex-col gap-1.5">
-      <Label>{label}</Label>
-      {children}
-    </div>
-  );
-}
