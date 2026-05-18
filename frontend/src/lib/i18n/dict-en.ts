@@ -37,6 +37,19 @@ export const en = {
       adjustment: "Adjustment",
       refund: "Refund",
     },
+    pricingMode: {
+      per_token: "per token",
+      per_image: "per image",
+      per_second: "per second",
+      per_generation: "per generation",
+    },
+    relativeTime: {
+      justNow: "just now",
+      secAgo: "{n}s ago",
+      minAgo: "{n}m ago",
+      hourAgo: "{n}h ago",
+      dayAgo: "{n}d ago",
+    },
   },
   nav: {
     sectionWorkspace: "Workspace",

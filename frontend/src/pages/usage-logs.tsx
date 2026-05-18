@@ -108,7 +108,7 @@ export function UsageLogsPage() {
                 <TableCell className="mono text-xs">{r.model_name || r.upstream_model}</TableCell>
                 <TableCell>
                   <Badge variant={statusBadgeVariant(r.status)}>{t(reqStatusKey(r.status))}</Badge>{" "}
-                  {r.task_status && (
+                  {r.task_status && r.task_status !== r.status && (
                     <Badge variant="outline" className="ml-1">{t(reqStatusKey(r.task_status))}</Badge>
                   )}
                 </TableCell>
@@ -121,7 +121,7 @@ export function UsageLogsPage() {
                 <TableCell className="mono text-xs">{fmtCompactMoney(r.cost)}</TableCell>
                 <TableCell className="text-xs text-muted-foreground">{r.latency_ms ?? "—"}{t("usageLogs.latencyMs")}</TableCell>
                 <TableCell className="mono text-xs">{r.api_key_prefix || "—"}</TableCell>
-                <TableCell className="text-xs text-muted-foreground">{fmtRelative(r.created_at)}</TableCell>
+                <TableCell className="text-xs text-muted-foreground">{fmtRelative(r.created_at, t)}</TableCell>
               </TableRow>
             ))}
           </TableBody>

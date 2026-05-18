@@ -90,7 +90,7 @@ export function AdminLogsPage() {
                 </TableCell>
                 <TableCell className="mono text-xs">{fmtCompactMoney(r.cost)}</TableCell>
                 <TableCell className="text-xs text-muted-foreground">{r.latency_ms ?? "—"}{t("admin.logs.latencyMs")}</TableCell>
-                <TableCell className="text-xs text-muted-foreground">{fmtRelative(r.created_at)}</TableCell>
+                <TableCell className="text-xs text-muted-foreground">{fmtRelative(r.created_at, t)}</TableCell>
               </TableRow>
             ))}
           </TableBody>

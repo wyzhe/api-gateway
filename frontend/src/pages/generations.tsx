@@ -8,7 +8,7 @@ import { TypeBadge } from "@/components/type-badge";
 import { api } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import type { LogSummary as Log } from "@/lib/types";
-import { fmtCompactMoney, fmtRelative } from "@/lib/utils";
+import { fmtCompactMoney, fmtRelative, reqStatusKey } from "@/lib/utils";
 
 export function GenerationsPage() {
   const t = useT();
@@ -80,7 +80,7 @@ export function GenerationsPage() {
                 </div>
                 <div className="flex items-center justify-between text-[10px] text-muted-foreground">
                   <span>{fmtCompactMoney(it.cost)}</span>
-                  <span>{fmtRelative(it.created_at)}</span>
+                  <span>{fmtRelative(it.created_at, t)}</span>
                 </div>
               </CardContent>
             </Card>
@@ -102,9 +102,9 @@ export function GenerationsPage() {
                   <TypeBadge type={it.request_type} />
                   <span className="mono">{it.model_name || it.upstream_model}</span>
                   <Badge variant={it.status === "failed" ? "danger" : "info"}>
-                    {it.task_status || it.status}
+                    {t(reqStatusKey(it.task_status || it.status))}
                   </Badge>
-                  <span className="text-muted-foreground ml-auto">{fmtRelative(it.created_at)}</span>
+                  <span className="text-muted-foreground ml-auto">{fmtRelative(it.created_at, t)}</span>
                 </li>
               ))}
             </ul>

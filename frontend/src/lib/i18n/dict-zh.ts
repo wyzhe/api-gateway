@@ -39,6 +39,19 @@ export const zh: EnDict = {
       adjustment: "调整",
       refund: "退款",
     },
+    pricingMode: {
+      per_token: "按 token",
+      per_image: "按图像",
+      per_second: "按秒",
+      per_generation: "按次",
+    },
+    relativeTime: {
+      justNow: "刚刚",
+      secAgo: "{n} 秒前",
+      minAgo: "{n} 分钟前",
+      hourAgo: "{n} 小时前",
+      dayAgo: "{n} 天前",
+    },
   },
   nav: {
     sectionWorkspace: "工作区",

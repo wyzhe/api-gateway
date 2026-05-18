@@ -103,7 +103,7 @@ export function BillingPage() {
                   </TableCell>
                   <TableCell className="mono text-xs">
                     {tx.type === "debit" ? "−" : "+"}
-                    {fmtCompactMoney(tx.amount)}
+                    {fmtCompactMoney(Math.abs(Number(tx.amount)))}
                   </TableCell>
                   <TableCell className="mono text-xs">{fmtCompactMoney(tx.balance_after)}</TableCell>
                   <TableCell className="text-xs text-muted-foreground">{tx.note || "—"}</TableCell>

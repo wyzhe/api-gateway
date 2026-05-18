@@ -8,7 +8,7 @@ import { PageHeader } from "@/components/shell";
 import { api } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import type { Model } from "@/lib/types";
-import { priceLabel } from "@/lib/utils";
+import { priceLabel, pricingModeKey } from "@/lib/utils";
 
 function ModelGrid({ models }: { models: Model[] }) {
   const t = useT();
@@ -26,7 +26,7 @@ function ModelGrid({ models }: { models: Model[] }) {
                 <ProviderTag provider={m.display_provider} />
               </div>
             </div>
-            <Badge variant="outline">{m.pricing_mode.replace("_", " ")}</Badge>
+            <Badge variant="outline">{t(pricingModeKey(m.pricing_mode))}</Badge>
           </CardHeader>
           <CardContent className="flex flex-col gap-2">
             {m.description && (

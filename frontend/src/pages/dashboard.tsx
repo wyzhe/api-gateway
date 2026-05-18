@@ -96,7 +96,7 @@ export function DashboardPage() {
                     <span className="mono text-foreground">{r.model_name || r.upstream_model}</span>
                     <Badge variant={statusBadgeVariant(r.status)}>{t(reqStatusKey(r.status))}</Badge>
                     <span className="text-muted-foreground ml-auto">{fmtCompactMoney(r.cost)}</span>
-                    <span className="text-muted-foreground w-20 text-right">{fmtRelative(r.created_at)}</span>
+                    <span className="text-muted-foreground w-20 text-right">{fmtRelative(r.created_at, t)}</span>
                   </li>
                 ))}
               </ul>
