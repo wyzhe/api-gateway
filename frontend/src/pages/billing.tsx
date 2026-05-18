@@ -5,6 +5,7 @@ import { KpiTile } from "@/components/kpi-tile";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { PageHeader } from "@/components/shell";
 import { api } from "@/lib/api";
+import { useT } from "@/lib/i18n";
 import { fmtCompactMoney, fmtDate } from "@/lib/utils";
 
 type Summary = {
@@ -27,6 +28,7 @@ type Txn = {
 };
 
 export function BillingPage() {
+  const t = useT();
   const [summary, setSummary] = useState<Summary | null>(null);
   const [txns, setTxns] = useState<Txn[]>([]);
 
@@ -35,24 +37,40 @@ export function BillingPage() {
     api<Txn[]>("/api/billing/transactions").then(setTxns).catch(() => {});
   }, []);
 
+  const txnTypeLabel = (type: string) => {
+    if (type === "recharge") return t("billing.typeRecharge");
+    if (type === "debit") return t("billing.typeDebit");
+    if (type === "adjustment") return t("billing.typeAdjustment");
+    if (type === "refund") return t("billing.typeRefund");
+    return type;
+  };
+
   return (
     <div>
       <PageHeader
-        title="Billing"
-        subtitle="Pay-as-you-go credit. Contact admin to request more."
+        title={t("billing.title")}
+        subtitle={t("billing.subtitle")}
       />
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-        <KpiTile label="Balance" value={fmtCompactMoney(summary?.balance)} />
-        <KpiTile label="Today spend" value={fmtCompactMoney(summary?.today_spend)} hint={`${summary?.today_requests ?? 0} requests`} />
-        <KpiTile label="Month spend" value={fmtCompactMoney(summary?.month_spend)} hint={`${summary?.month_requests ?? 0} requests`} />
+        <KpiTile label={t("billing.kpiBalance")} value={fmtCompactMoney(summary?.balance)} />
         <KpiTile
-          label="By type (month)"
+          label={t("billing.kpiTodaySpend")}
+          value={fmtCompactMoney(summary?.today_spend)}
+          hint={t("billing.kpiRequestsHint", { count: summary?.today_requests ?? 0 })}
+        />
+        <KpiTile
+          label={t("billing.kpiMonthSpend")}
+          value={fmtCompactMoney(summary?.month_spend)}
+          hint={t("billing.kpiRequestsHint", { count: summary?.month_requests ?? 0 })}
+        />
+        <KpiTile
+          label={t("billing.kpiByTypeMonth")}
           value={
             <div className="text-sm font-normal mt-1 flex flex-col gap-0.5">
-              <Row label="text" v={summary?.spend_by_type.text} />
-              <Row label="image" v={summary?.spend_by_type.image} />
-              <Row label="video" v={summary?.spend_by_type.video} />
+              <Row label={t("billing.rowText")} v={summary?.spend_by_type.text} />
+              <Row label={t("billing.rowImage")} v={summary?.spend_by_type.image} />
+              <Row label={t("billing.rowVideo")} v={summary?.spend_by_type.video} />
             </div>
           }
         />
@@ -60,44 +78,44 @@ export function BillingPage() {
 
       <Card>
         <CardHeader className="flex-row items-center justify-between">
-          <CardTitle>Transactions</CardTitle>
+          <CardTitle>{t("billing.transactionsTitle")}</CardTitle>
           <div className="text-xs text-muted-foreground">
-            Need more credit? Contact your admin or request via Slack.
+            {t("billing.transactionsHint")}
           </div>
         </CardHeader>
         <CardContent className="p-0">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Type</TableHead>
-                <TableHead>Amount</TableHead>
-                <TableHead>Balance after</TableHead>
-                <TableHead>Note</TableHead>
-                <TableHead>When</TableHead>
+                <TableHead>{t("billing.colType")}</TableHead>
+                <TableHead>{t("billing.colAmount")}</TableHead>
+                <TableHead>{t("billing.colBalanceAfter")}</TableHead>
+                <TableHead>{t("billing.colNote")}</TableHead>
+                <TableHead>{t("billing.colWhen")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {txns.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={5} className="text-center text-sm text-muted-foreground py-8">
-                    No transactions yet.
+                    {t("billing.emptyTxns")}
                   </TableCell>
                 </TableRow>
               )}
-              {txns.map((t) => (
-                <TableRow key={t.id}>
+              {txns.map((tx) => (
+                <TableRow key={tx.id}>
                   <TableCell>
-                    <Badge variant={t.type === "recharge" ? "success" : t.type === "debit" ? "warn" : "default"}>
-                      {t.type}
+                    <Badge variant={tx.type === "recharge" ? "success" : tx.type === "debit" ? "warn" : "default"}>
+                      {txnTypeLabel(tx.type)}
                     </Badge>
                   </TableCell>
                   <TableCell className="mono text-xs">
-                    {t.type === "debit" ? "−" : "+"}
-                    {fmtCompactMoney(t.amount)}
+                    {tx.type === "debit" ? "−" : "+"}
+                    {fmtCompactMoney(tx.amount)}
                   </TableCell>
-                  <TableCell className="mono text-xs">{fmtCompactMoney(t.balance_after)}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground">{t.note || "—"}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground">{fmtDate(t.created_at)}</TableCell>
+                  <TableCell className="mono text-xs">{fmtCompactMoney(tx.balance_after)}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{tx.note || "—"}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{fmtDate(tx.created_at)}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
