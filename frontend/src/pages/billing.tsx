@@ -6,7 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { PageHeader } from "@/components/shell";
 import { api } from "@/lib/api";
 import { useT } from "@/lib/i18n";
-import { fmtCompactMoney, fmtDate } from "@/lib/utils";
+import { fmtCompactMoney, fmtDate, txnBadgeVariant, txnTypeKey } from "@/lib/utils";
 
 type Summary = {
   balance: string;
@@ -37,14 +37,6 @@ export function BillingPage() {
     api<Txn[]>("/api/billing/transactions").then(setTxns).catch(() => {});
   }, []);
 
-  const txnTypeLabel = (type: string) => {
-    if (type === "recharge") return t("billing.typeRecharge");
-    if (type === "debit") return t("billing.typeDebit");
-    if (type === "adjustment") return t("billing.typeAdjustment");
-    if (type === "refund") return t("billing.typeRefund");
-    return type;
-  };
-
   return (
     <div>
       <PageHeader
@@ -68,9 +60,9 @@ export function BillingPage() {
           label={t("billing.kpiByTypeMonth")}
           value={
             <div className="text-sm font-normal mt-1 flex flex-col gap-0.5">
-              <Row label={t("billing.rowText")} v={summary?.spend_by_type.text} />
-              <Row label={t("billing.rowImage")} v={summary?.spend_by_type.image} />
-              <Row label={t("billing.rowVideo")} v={summary?.spend_by_type.video} />
+              <Row label={t("common.reqType.text")} v={summary?.spend_by_type.text} />
+              <Row label={t("common.reqType.image")} v={summary?.spend_by_type.image} />
+              <Row label={t("common.reqType.video")} v={summary?.spend_by_type.video} />
             </div>
           }
         />
@@ -105,8 +97,8 @@ export function BillingPage() {
               {txns.map((tx) => (
                 <TableRow key={tx.id}>
                   <TableCell>
-                    <Badge variant={tx.type === "recharge" ? "success" : tx.type === "debit" ? "warn" : "default"}>
-                      {txnTypeLabel(tx.type)}
+                    <Badge variant={txnBadgeVariant(tx.type)}>
+                      {t(txnTypeKey(tx.type))}
                     </Badge>
                   </TableCell>
                   <TableCell className="mono text-xs">

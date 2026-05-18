@@ -30,7 +30,7 @@ import { PageHeader } from "@/components/shell";
 import { api } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import type { AdminUser, Transaction } from "@/lib/types";
-import { fmtCompactMoney, fmtDate } from "@/lib/utils";
+import { fmtCompactMoney, fmtDate, txnBadgeVariant, txnTypeKey } from "@/lib/utils";
 
 export function AdminUsersPage() {
   const t = useT();
@@ -139,21 +139,6 @@ export function AdminUsersPage() {
     void refresh();
   };
 
-  const txnTypeLabel = (type: Transaction["type"]): string => {
-    switch (type) {
-      case "recharge":
-        return t("admin.users.txnsDrawer.typeRecharge");
-      case "debit":
-        return t("admin.users.txnsDrawer.typeDebit");
-      case "adjustment":
-        return t("admin.users.txnsDrawer.typeAdjustment");
-      case "refund":
-        return t("admin.users.txnsDrawer.typeRefund");
-      default:
-        return type;
-    }
-  };
-
   return (
     <div>
       <PageHeader
@@ -189,8 +174,8 @@ export function AdminUsersPage() {
                 <TableCell>
                   <Badge variant={u.status === "active" ? "success" : "warn"}>
                     {u.status === "active"
-                      ? t("admin.users.statusActive")
-                      : t("admin.users.statusDisabled")}
+                      ? t("common.status.active")
+                      : t("common.status.disabled")}
                   </Badge>
                 </TableCell>
                 <TableCell className="mono text-xs">{fmtCompactMoney(u.balance)}</TableCell>
@@ -352,8 +337,8 @@ export function AdminUsersPage() {
                       {txns.map((tx) => (
                         <TableRow key={tx.id}>
                           <TableCell>
-                            <Badge variant={tx.type === "recharge" ? "success" : tx.type === "debit" ? "warn" : "default"}>
-                              {txnTypeLabel(tx.type)}
+                            <Badge variant={txnBadgeVariant(tx.type)}>
+                              {t(txnTypeKey(tx.type))}
                             </Badge>
                           </TableCell>
                           <TableCell className="mono text-xs">

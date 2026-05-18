@@ -8,7 +8,7 @@ import { TypeBadge } from "@/components/type-badge";
 import { PageHeader } from "@/components/shell";
 import { api } from "@/lib/api";
 import type { LogSummary } from "@/lib/types";
-import { fmtCompactMoney, fmtRelative, statusBadgeVariant } from "@/lib/utils";
+import { fmtCompactMoney, fmtRelative, reqStatusKey, statusBadgeVariant } from "@/lib/utils";
 import { useT } from "@/lib/i18n";
 
 type DashboardOut = {
@@ -94,7 +94,7 @@ export function DashboardPage() {
                   >
                     <TypeBadge type={r.request_type} />
                     <span className="mono text-foreground">{r.model_name || r.upstream_model}</span>
-                    <Badge variant={statusBadgeVariant(r.status)}>{r.status}</Badge>
+                    <Badge variant={statusBadgeVariant(r.status)}>{t(reqStatusKey(r.status))}</Badge>
                     <span className="text-muted-foreground ml-auto">{fmtCompactMoney(r.cost)}</span>
                     <span className="text-muted-foreground w-20 text-right">{fmtRelative(r.created_at)}</span>
                   </li>

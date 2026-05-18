@@ -78,8 +78,8 @@ export function AdminProvidersPage() {
               <div className="flex items-center gap-2">
                 <Badge variant={p.status === "active" ? "success" : "warn"}>
                   {p.status === "active"
-                    ? t("admin.providers.statusActive")
-                    : t("admin.providers.statusDisabled")}
+                    ? t("common.status.active")
+                    : t("common.status.disabled")}
                 </Badge>
                 <Button variant="ghost" size="icon" onClick={() => startEdit(p)} title={t("admin.providers.editTitle")}>
                   <Pencil className="h-3.5 w-3.5" />
@@ -116,8 +116,8 @@ export function AdminProvidersPage() {
               <Select value={editStatus} onValueChange={(v) => setEditStatus(v as "active" | "disabled")}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="active">{t("admin.providers.editDialog.statusActive")}</SelectItem>
-                  <SelectItem value="disabled">{t("admin.providers.editDialog.statusDisabled")}</SelectItem>
+                  <SelectItem value="active">{t("common.status.active")}</SelectItem>
+                  <SelectItem value="disabled">{t("admin.providers.editDialog.disabledLongHint")}</SelectItem>
                 </SelectContent>
               </Select>
             </FormField>

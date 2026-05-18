@@ -23,7 +23,7 @@ import { api, gateway, gatewayStream } from "@/lib/api";
 import { useDefaultModel } from "@/lib/hooks";
 import { useT } from "@/lib/i18n";
 import type { ApiKey, Model } from "@/lib/types";
-import { fmtCompactMoney } from "@/lib/utils";
+import { fmtCompactMoney, reqStatusKey } from "@/lib/utils";
 
 export function PlaygroundPage() {
   const t = useT();
@@ -85,15 +85,10 @@ export function PlaygroundPage() {
             <span className="text-[10px] text-muted-foreground">
               {t("playground.apiKeySessionWarning")}
               {keys.length > 0 &&
-                t(
-                  keys.length > 1
-                    ? "playground.apiKeyActiveMany"
-                    : "playground.apiKeyActiveSingle",
-                  {
-                    count: keys.length,
-                    prefixes: keys.map((k) => k.key_prefix).join(", "),
-                  },
-                )}
+                t("playground.apiKeyActive", {
+                  count: keys.length,
+                  prefixes: keys.map((k) => k.key_prefix).join(", "),
+                })}
             </span>
           </div>
         </CardContent>
@@ -427,7 +422,7 @@ function ImageTab({ models, apiKey }: { models: Model[]; apiKey: string }) {
           <CardTitle>{t("playground.cardResult")}</CardTitle>
           {taskStatus && (
             <Badge variant={taskStatus === "succeeded" ? "success" : taskStatus === "failed" ? "danger" : "info"}>
-              {taskStatus}
+              {t(reqStatusKey(taskStatus))}
             </Badge>
           )}
         </CardHeader>
@@ -603,7 +598,7 @@ function VideoTab({ models, apiKey }: { models: Model[]; apiKey: string }) {
           <CardTitle>{t("playground.cardResult")}</CardTitle>
           {taskStatus && (
             <Badge variant={taskStatus === "succeeded" ? "success" : taskStatus === "failed" ? "danger" : "info"}>
-              {taskStatus}
+              {t(reqStatusKey(taskStatus))}
             </Badge>
           )}
         </CardHeader>

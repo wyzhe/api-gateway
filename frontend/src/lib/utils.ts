@@ -1,5 +1,6 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
+import type { TKey } from "@/lib/i18n";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -51,6 +52,44 @@ export function statusBadgeVariant(
   if (status === "success" || status === "succeeded" || status === "active") return "success";
   if (status === "failed" || status === "disabled") return "danger";
   if (status === "running" || status === "queued") return "info";
+  return "default";
+}
+
+/**
+ * Translation key for a backend request/task status badge label.
+ * Falls back to "failed" if the value isn't one of the known enum members
+ * (keeps the badge readable even if upstream adds a new status).
+ */
+export function reqStatusKey(status: string | null | undefined): TKey {
+  const known = [
+    "success",
+    "failed",
+    "queued",
+    "running",
+    "succeeded",
+    "pending",
+    "cancelled",
+    "submitting",
+  ];
+  return (
+    known.includes(status ?? "")
+      ? `common.reqStatus.${status}`
+      : `common.reqStatus.failed`
+  ) as TKey;
+}
+
+/** Translation key for a transaction type label. */
+export function txnTypeKey(type: string): TKey {
+  const known = ["recharge", "debit", "adjustment", "refund"];
+  return (
+    known.includes(type) ? `common.txnType.${type}` : `common.txnType.adjustment`
+  ) as TKey;
+}
+
+/** Badge variant for a transaction type. */
+export function txnBadgeVariant(type: string): "success" | "warn" | "default" {
+  if (type === "recharge") return "success";
+  if (type === "debit") return "warn";
   return "default";
 }
 

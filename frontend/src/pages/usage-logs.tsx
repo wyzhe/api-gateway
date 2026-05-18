@@ -17,7 +17,7 @@ import { PageHeader } from "@/components/shell";
 import { api } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import type { LogSummary } from "@/lib/types";
-import { fmtCompactMoney, fmtRelative, statusBadgeVariant } from "@/lib/utils";
+import { fmtCompactMoney, fmtRelative, reqStatusKey, statusBadgeVariant } from "@/lib/utils";
 
 export function UsageLogsPage() {
   const t = useT();
@@ -52,9 +52,9 @@ export function UsageLogsPage() {
           <SelectTrigger className="w-32"><SelectValue placeholder={t("usageLogs.filterTypePlaceholder")} /></SelectTrigger>
           <SelectContent>
             <SelectItem value="__all__">{t("usageLogs.filterAllTypes")}</SelectItem>
-            <SelectItem value="text">{t("usageLogs.typeText")}</SelectItem>
-            <SelectItem value="image">{t("usageLogs.typeImage")}</SelectItem>
-            <SelectItem value="video">{t("usageLogs.typeVideo")}</SelectItem>
+            <SelectItem value="text">{t("common.reqType.text")}</SelectItem>
+            <SelectItem value="image">{t("common.reqType.image")}</SelectItem>
+            <SelectItem value="video">{t("common.reqType.video")}</SelectItem>
           </SelectContent>
         </Select>
         <Select value={status} onValueChange={setStatus}>
@@ -107,9 +107,9 @@ export function UsageLogsPage() {
                 <TableCell><TypeBadge type={r.request_type} /></TableCell>
                 <TableCell className="mono text-xs">{r.model_name || r.upstream_model}</TableCell>
                 <TableCell>
-                  <Badge variant={statusBadgeVariant(r.status)}>{r.status}</Badge>{" "}
+                  <Badge variant={statusBadgeVariant(r.status)}>{t(reqStatusKey(r.status))}</Badge>{" "}
                   {r.task_status && (
-                    <Badge variant="outline" className="ml-1">{r.task_status}</Badge>
+                    <Badge variant="outline" className="ml-1">{t(reqStatusKey(r.task_status))}</Badge>
                   )}
                 </TableCell>
                 <TableCell className="text-xs text-muted-foreground">

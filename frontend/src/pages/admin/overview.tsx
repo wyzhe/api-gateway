@@ -40,9 +40,9 @@ export function AdminOverviewPage() {
       <Card className="mt-4">
         <CardHeader><CardTitle>{t("admin.overview.todayByTypeTitle")}</CardTitle></CardHeader>
         <CardContent className="grid grid-cols-3 gap-3">
-          <KpiTile label={t("admin.overview.typeText")} value={data?.usage_today.text ?? 0} />
-          <KpiTile label={t("admin.overview.typeImage")} value={data?.usage_today.image ?? 0} />
-          <KpiTile label={t("admin.overview.typeVideo")} value={data?.usage_today.video ?? 0} />
+          <KpiTile label={t("common.reqType.text")} value={data?.usage_today.text ?? 0} />
+          <KpiTile label={t("common.reqType.image")} value={data?.usage_today.image ?? 0} />
+          <KpiTile label={t("common.reqType.video")} value={data?.usage_today.video ?? 0} />
         </CardContent>
       </Card>
     </div>

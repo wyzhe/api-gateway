@@ -1,5 +1,11 @@
+import type { Lang } from "@/lib/i18n";
 import { useLang } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
+
+const OPTIONS: ReadonlyArray<readonly [Lang, string]> = [
+  ["en", "EN"],
+  ["zh", "中文"],
+];
 
 export function LanguageSwitcher({ className }: { className?: string }) {
   const { lang, setLang } = useLang();
@@ -12,32 +18,22 @@ export function LanguageSwitcher({ className }: { className?: string }) {
       role="group"
       aria-label="Language"
     >
-      <button
-        type="button"
-        onClick={() => setLang("en")}
-        className={cn(
-          "px-2 py-0.5 rounded-sm transition-colors",
-          lang === "en"
-            ? "bg-accent text-accent-foreground"
-            : "text-muted-foreground hover:text-foreground",
-        )}
-        aria-pressed={lang === "en"}
-      >
-        EN
-      </button>
-      <button
-        type="button"
-        onClick={() => setLang("zh")}
-        className={cn(
-          "px-2 py-0.5 rounded-sm transition-colors",
-          lang === "zh"
-            ? "bg-accent text-accent-foreground"
-            : "text-muted-foreground hover:text-foreground",
-        )}
-        aria-pressed={lang === "zh"}
-      >
-        中文
-      </button>
+      {OPTIONS.map(([code, label]) => (
+        <button
+          key={code}
+          type="button"
+          onClick={() => setLang(code)}
+          aria-pressed={lang === code}
+          className={cn(
+            "px-2 py-0.5 rounded-sm transition-colors",
+            lang === code
+              ? "bg-accent text-accent-foreground"
+              : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          {label}
+        </button>
+      ))}
     </div>
   );
 }

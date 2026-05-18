@@ -17,7 +17,7 @@ import { PageHeader } from "@/components/shell";
 import { api } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import type { LogDetail as Detail, LogSummary as Log } from "@/lib/types";
-import { fmtCompactMoney, fmtDate, fmtRelative, statusBadgeVariant } from "@/lib/utils";
+import { fmtCompactMoney, fmtDate, fmtRelative, reqStatusKey, statusBadgeVariant } from "@/lib/utils";
 
 export function AdminLogsPage() {
   const t = useT();
@@ -47,9 +47,9 @@ export function AdminLogsPage() {
           <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="__all__">{t("admin.logs.filterAllTypes")}</SelectItem>
-            <SelectItem value="text">{t("admin.logs.typeText")}</SelectItem>
-            <SelectItem value="image">{t("admin.logs.typeImage")}</SelectItem>
-            <SelectItem value="video">{t("admin.logs.typeVideo")}</SelectItem>
+            <SelectItem value="text">{t("common.reqType.text")}</SelectItem>
+            <SelectItem value="image">{t("common.reqType.image")}</SelectItem>
+            <SelectItem value="video">{t("common.reqType.video")}</SelectItem>
           </SelectContent>
         </Select>
         <Select value={status} onValueChange={setStatus}>
@@ -86,7 +86,7 @@ export function AdminLogsPage() {
                 <TableCell className="text-xs">#{r.user_id}</TableCell>
                 <TableCell className="mono text-xs">{r.model_name || r.upstream_model}</TableCell>
                 <TableCell>
-                  <Badge variant={statusBadgeVariant(r.status)}>{r.status}</Badge>
+                  <Badge variant={statusBadgeVariant(r.status)}>{t(reqStatusKey(r.status))}</Badge>
                 </TableCell>
                 <TableCell className="mono text-xs">{fmtCompactMoney(r.cost)}</TableCell>
                 <TableCell className="text-xs text-muted-foreground">{r.latency_ms ?? "—"}{t("admin.logs.latencyMs")}</TableCell>

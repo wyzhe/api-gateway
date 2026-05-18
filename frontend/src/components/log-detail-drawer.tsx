@@ -14,7 +14,7 @@ import { TypeBadge } from "@/components/type-badge";
 import { api } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import type { LogDetail } from "@/lib/types";
-import { fmtCompactMoney, fmtDate, statusBadgeVariant } from "@/lib/utils";
+import { fmtCompactMoney, fmtDate, reqStatusKey, statusBadgeVariant } from "@/lib/utils";
 
 export function useLogDetail() {
   const [selected, setSelected] = useState<LogDetail | null>(null);
@@ -45,7 +45,7 @@ export function LogDetailDrawer({
               <SheetTitle className="flex items-center gap-2">
                 <TypeBadge type={log.request_type} />
                 {log.model_name || log.upstream_model}
-                <Badge variant={statusBadgeVariant(log.status)}>{log.status}</Badge>
+                <Badge variant={statusBadgeVariant(log.status)}>{t(reqStatusKey(log.status))}</Badge>
               </SheetTitle>
               <SheetDescription className="mono">{log.request_id}</SheetDescription>
             </SheetHeader>

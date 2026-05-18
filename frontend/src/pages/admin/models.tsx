@@ -275,8 +275,8 @@ export function AdminModelsPage() {
                   <TableCell>
                     <Badge variant={m.status === "active" ? "success" : "warn"}>
                       {m.status === "active"
-                        ? t("admin.models.statusActive")
-                        : t("admin.models.statusDisabled")}
+                        ? t("common.status.active")
+                        : t("common.status.disabled")}
                     </Badge>
                     {!m.visible && (
                       <Badge variant="outline" className="ml-1">{t("admin.models.badgeHidden")}</Badge>
@@ -493,8 +493,8 @@ function ModelFormBody({
           <Select value={form.status} onValueChange={(v) => set("status", v as ModelFormState["status"])}>
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="active">{t("admin.models.dialog.statusActive")}</SelectItem>
-              <SelectItem value="disabled">{t("admin.models.dialog.statusDisabled")}</SelectItem>
+              <SelectItem value="active">{t("common.status.active")}</SelectItem>
+              <SelectItem value="disabled">{t("common.status.disabled")}</SelectItem>
             </SelectContent>
           </Select>
         </FormField>

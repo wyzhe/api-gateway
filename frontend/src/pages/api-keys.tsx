@@ -104,8 +104,9 @@ export function ApiKeysPage() {
   };
 
   const statusLabel = (s: ApiKey["status"]): string => {
-    if (s === "active") return t("apiKeys.statusActive");
-    if (s === "disabled") return t("apiKeys.statusDisabled");
+    if (s === "active") return t("common.status.active");
+    if (s === "disabled") return t("common.status.disabled");
+    if (s === "revoked") return t("common.status.revoked");
     return s;
   };
 
