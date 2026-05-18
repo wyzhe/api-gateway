@@ -64,6 +64,24 @@ def _enforce_input_token_limit(model, prompt_tokens: int) -> None:
         )
 
 
+def _extract_cache_tokens(usage: dict | None) -> tuple[int, int]:
+    """Read cache_read / cache_write token counts out of either OpenAI or
+    Anthropic usage payloads. Returns (cached_tokens, cache_creation_tokens).
+
+    OpenAI shape: usage.prompt_tokens_details.cached_tokens (and 0 for cache_creation)
+    Anthropic shape: usage.cache_read_input_tokens / cache_creation_input_tokens
+    Returns (0, 0) if usage is missing or malformed."""
+    if not usage:
+        return 0, 0
+    cached = (
+        (usage.get("prompt_tokens_details") or {}).get("cached_tokens")
+        or usage.get("cache_read_input_tokens")
+        or 0
+    )
+    creation = usage.get("cache_creation_input_tokens") or 0
+    return int(cached), int(creation)
+
+
 async def _api_key_rate_identifier(request: Request) -> str:
     """Rate-limit key for /v1/*: prefer the api key hash; fall back to client IP."""
     auth = request.headers.get("authorization", "")
@@ -179,17 +197,12 @@ async def chat_completions(
     prompt_tokens = int(usage.get("prompt_tokens") or 0)
     completion_tokens = int(usage.get("completion_tokens") or 0)
     total_tokens = int(usage.get("total_tokens") or (prompt_tokens + completion_tokens))
-    cached_tokens = (
-        (usage.get("prompt_tokens_details") or {}).get("cached_tokens")
-        or usage.get("cache_read_input_tokens")
-        or 0
-    )
-    cache_creation_tokens = usage.get("cache_creation_input_tokens") or 0
+    cached_tokens, cache_creation_tokens = _extract_cache_tokens(usage)
 
     cost, pricing_missing = cost_service.calc_text_cost_with_cache(
         resolved.model, prompt_tokens, completion_tokens,
-        cached_tokens=int(cached_tokens),
-        cache_creation_tokens=int(cache_creation_tokens),
+        cached_tokens=cached_tokens,
+        cache_creation_tokens=cache_creation_tokens,
     )
     usage_source = (UsageSource.MISSING if pricing_missing else UsageSource.UPSTREAM).value
     pricing_source_total.labels(source=usage_source).inc()
@@ -322,17 +335,12 @@ async def _chat_completions_stream(
             total_tokens = int(
                 (final_usage or {}).get("total_tokens") or (prompt_tokens + completion_tokens)
             )
-            cached_tokens = (
-                ((final_usage or {}).get("prompt_tokens_details") or {}).get("cached_tokens")
-                or (final_usage or {}).get("cache_read_input_tokens")
-                or 0
-            )
-            cache_creation_tokens = (final_usage or {}).get("cache_creation_input_tokens") or 0
+            cached_tokens, cache_creation_tokens = _extract_cache_tokens(final_usage)
 
         cost, pricing_missing = cost_service.calc_text_cost_with_cache(
             resolved.model, prompt_tokens, completion_tokens,
-            cached_tokens=int(cached_tokens),
-            cache_creation_tokens=int(cache_creation_tokens),
+            cached_tokens=cached_tokens,
+            cache_creation_tokens=cache_creation_tokens,
         )
         if pricing_missing:
             usage_source = UsageSource.MISSING.value
@@ -454,9 +462,7 @@ async def messages(
         prompt_tokens = usage.input_tokens
         completion_tokens = usage.output_tokens
         usage_source = UsageSource.UPSTREAM.value
-        raw_usage = body.get("usage") or {}
-        cached_tokens = raw_usage.get("cache_read_input_tokens") or 0
-        cache_creation_tokens = raw_usage.get("cache_creation_input_tokens") or 0
+        cached_tokens, cache_creation_tokens = _extract_cache_tokens(body.get("usage"))
     else:
         prompt_tokens, completion_tokens = prompt_est, max_completion
         usage_source = UsageSource.ESTIMATED.value
@@ -471,8 +477,8 @@ async def messages(
 
     cost, pricing_missing = cost_service.calc_text_cost_with_cache(
         resolved.model, prompt_tokens, completion_tokens,
-        cached_tokens=int(cached_tokens),
-        cache_creation_tokens=int(cache_creation_tokens),
+        cached_tokens=cached_tokens,
+        cache_creation_tokens=cache_creation_tokens,
     )
     if pricing_missing:
         usage_source = UsageSource.MISSING.value
@@ -572,8 +578,7 @@ async def _messages_stream(
                         try:
                             input_tokens = int(u.get("input_tokens") or 0)
                             output_tokens = int(u.get("output_tokens") or 0)
-                            cached_tokens = int(u.get("cache_read_input_tokens") or 0)
-                            cache_creation_tokens = int(u.get("cache_creation_input_tokens") or 0)
+                            cached_tokens, cache_creation_tokens = _extract_cache_tokens(u)
                             saw_usage = True
                         except Exception:
                             pass
@@ -584,6 +589,10 @@ async def _messages_stream(
                             yield (f"event: {ev_type}\ndata: {json.dumps(chunk.parsed)}\n\n").encode()
                             continue
                     elif ev_type == "message_delta":
+                        # cache tokens come from message_start only — don't add them in message_delta.
+                        # cache_creation_input_tokens / cache_read_input_tokens are reported only in
+                        # message_start (Anthropic's streaming protocol). message_delta carries only
+                        # output growth; accumulating cache counts here would double-bill cache tokens.
                         u = chunk.parsed.get("usage") or {}
                         try:
                             output_tokens = int(u.get("output_tokens") or output_tokens)

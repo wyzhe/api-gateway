@@ -6,10 +6,10 @@ from app.services import cost_service
 
 def _model(input_p="3.00", output_p="15.00", cw=None, cr=None):
     m = MagicMock()
-    m.input_price = Decimal(input_p) if input_p else None
-    m.output_price = Decimal(output_p) if output_p else None
-    m.cache_write_price = Decimal(cw) if cw else None
-    m.cache_read_price = Decimal(cr) if cr else None
+    m.input_price = Decimal(input_p) if input_p is not None else None
+    m.output_price = Decimal(output_p) if output_p is not None else None
+    m.cache_write_price = Decimal(cw) if cw is not None else None
+    m.cache_read_price = Decimal(cr) if cr is not None else None
     return m
 
 
@@ -85,6 +85,34 @@ def test_price_snapshot_includes_cache_columns():
     snap = cost_service.price_snapshot(m)
     assert snap["cache_write_price"] == "3.75"
     assert snap["cache_read_price"] == "0.30"
+
+
+def test_underflow_when_prompt_tokens_less_than_cache_buckets():
+    # Defensive: if upstream reports prompt_tokens=200 but cached_tokens=300,
+    # the regular bucket must clamp to 0 (no negative billing).
+    cost, _ = cost_service.calc_text_cost_with_cache(
+        _model(cw="3.75", cr="0.30"),
+        prompt_tokens=200,
+        completion_tokens=0,
+        cached_tokens=300,
+        cache_creation_tokens=0,
+    )
+    # regular = max(0, 200 - 300 - 0) = 0
+    # cache_read = 300 @ $0.30/M
+    expected = Decimal("300") / Decimal("1000000") * Decimal("0.30")
+    assert cost == expected
+
+
+def test_missing_all_prices_returns_zero_with_missing_flag():
+    cost, missing = cost_service.calc_text_cost_with_cache(
+        _model(input_p=None, output_p=None),
+        prompt_tokens=1000,
+        completion_tokens=500,
+        cached_tokens=100,
+        cache_creation_tokens=50,
+    )
+    assert cost == Decimal("0")
+    assert missing is True
 
 
 def test_recompute_from_snapshot_uses_cache_fields():

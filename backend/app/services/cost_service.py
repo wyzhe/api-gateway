@@ -182,11 +182,11 @@ def recompute_text_cost_from_snapshot(
     regular = max(0, int(prompt_tokens or 0) - cache_read - cache_write)
 
     cost = Decimal(regular) / MILLION * ip
-    if cr:
+    if cr is not None:
         cost += Decimal(cache_read) / MILLION * Decimal(cr)
     else:
         cost += Decimal(cache_read) / MILLION * ip
-    if cw:
+    if cw is not None:
         cost += Decimal(cache_write) / MILLION * Decimal(cw)
     else:
         cost += Decimal(cache_write) / MILLION * ip
