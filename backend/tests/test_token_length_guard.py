@@ -36,3 +36,13 @@ def test_over_threshold_rejects_400():
     # Error message must contain the actual numbers for debuggability.
     assert "96" in exc_info.value.detail
     assert "95" in exc_info.value.detail or "100" in exc_info.value.detail
+
+
+def test_over_threshold_emits_warning_log():
+    import structlog
+
+    with structlog.testing.capture_logs() as logs:
+        with pytest.raises(HTTPException):
+            _enforce_input_token_limit(_model(100), prompt_tokens=200)
+    assert any(e.get("event") == "input_token_limit_exceeded" for e in logs)
+    assert any(e.get("prompt_tokens") == 200 for e in logs)

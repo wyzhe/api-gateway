@@ -48,6 +48,13 @@ def _enforce_input_token_limit(model, prompt_tokens: int) -> None:
         return
     effective = int(cap * _INPUT_TOKEN_BUFFER)
     if prompt_tokens > effective:
+        log.warning(
+            "input_token_limit_exceeded",
+            model=getattr(model, "public_name", None),
+            prompt_tokens=prompt_tokens,
+            effective_limit=effective,
+            model_cap=cap,
+        )
         raise HTTPException(
             status_code=400,
             detail=(
