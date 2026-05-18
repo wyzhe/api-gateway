@@ -46,10 +46,9 @@ _settings = get_settings()
 # to the upstream as a confusing 422.
 _INPUT_TOKEN_BUFFER = 0.95
 
-# Retry-After hint for TPM 429s. Anthropic SDK ignores Retry-After > 60s
-# (see anthropic-sdk-python/_base_client.py:1097); we use 30s for safety,
-# also serving as a reasonable midpoint of the 60s sliding window.
-_TPM_RETRY_AFTER_SECONDS = 30
+# Fallback when the client doesn't declare a completion ceiling. Used by the
+# TPM prededuct estimate (which must be an upper bound) and nowhere else.
+_DEFAULT_MAX_COMPLETION_TOKENS = 4096
 
 
 def _enforce_input_token_limit(model, prompt_tokens: int) -> None:
@@ -77,9 +76,11 @@ def _enforce_input_token_limit(model, prompt_tokens: int) -> None:
 
 
 async def _enforce_concurrency_limit(api_key: ApiKey) -> concurrency_service.ConcurrencySlot:
-    """Acquire a per-api_key concurrency slot. Returns the slot handle on
-    success (entry_id="" means no limit was applied). Raises 429 with
-    Retry-After and Retry-After-Ms headers on rejection.
+    """Acquire a per-api_key concurrency slot. Called as the FIRST guard in
+    every /v1/* POST handler — cheaper to reject here than to count tokens or
+    pre-reserve spend. Returns the slot handle on success (entry_id="" means
+    no limit was applied). Raises 429 with Retry-After + Retry-After-Ms
+    headers on rejection.
 
     NULL `max_concurrent_requests` falls back to DEFAULT_MAX_CONCURRENT (10).
     Callers MUST eventually call `concurrency_service.release()` for handles
@@ -135,11 +136,10 @@ async def _enforce_tpm_limit(api_key: ApiKey, tokens_requested: int) -> tpm_serv
 
     Returns a handle (always non-None) on success — handle.entry_id is "" when
     the key has no TPM limit configured. Raises 429 with
-    Retry-After: _TPM_RETRY_AFTER_SECONDS on rejection. Callers MUST eventually
-    call `tpm_service.reconcile()` (with
-    actual usage) or `tpm_service.release_fully()` (on failure) for handles
-    that carry a non-empty entry_id, otherwise the prededuct leaks for the
-    full window."""
+    Retry-After = concurrency_service.RETRY_AFTER_CAP_SECONDS on rejection.
+    Callers MUST eventually call `tpm_service.reconcile()` (with actual usage)
+    or `tpm_service.release_fully()` (on failure) for handles that carry a
+    non-empty entry_id, otherwise the prededuct leaks for the full window."""
     redis = get_redis()
     handle = await tpm_service.try_prededuct(
         redis,
@@ -157,7 +157,7 @@ async def _enforce_tpm_limit(api_key: ApiKey, tokens_requested: int) -> tpm_serv
         raise HTTPException(
             status_code=429,
             detail="TPM (tokens-per-minute) limit exceeded for this API key.",
-            headers={"Retry-After": str(_TPM_RETRY_AFTER_SECONDS)},
+            headers={"Retry-After": str(concurrency_service.RETRY_AFTER_CAP_SECONDS)},
         )
     return handle
 
@@ -238,8 +238,7 @@ async def chat_completions(
     if payload.get("stream") is True:
         return await _chat_completions_stream(payload, db, auth)
 
-    # Concurrency gate is the FIRST guard: cheaper to reject than to count
-    # tokens or pre-reserve spend. Released in the outer try/finally below.
+    # Released in the outer try/finally below.
     conc_slot = await _enforce_concurrency_limit(api_key)
     try:
         public_name = payload.get("model")
@@ -251,7 +250,11 @@ async def chat_completions(
         # Pre-authorize a pessimistic upper bound against the monthly cap.
         prompt_est = count_message_tokens(payload.get("messages") or [], resolved.model.public_name)
         _enforce_input_token_limit(resolved.model, prompt_est)
-        max_completion = int(payload.get("max_tokens") or payload.get("max_completion_tokens") or 4096)
+        max_completion = int(
+            payload.get("max_tokens")
+            or payload.get("max_completion_tokens")
+            or _DEFAULT_MAX_COMPLETION_TOKENS
+        )
         tpm_handle = await _enforce_tpm_limit(api_key, prompt_est + max_completion)
         redis = get_redis()
         estimate = cost_service.estimate_text_cost_upper_bound(resolved.model, prompt_est, max_completion)
@@ -367,10 +370,8 @@ async def _chat_completions_stream(
     auth: tuple[User, ApiKey],
 ) -> StreamingResponse:
     user, api_key = auth
-    # Concurrency gate is the FIRST guard (before token counting / preauth).
-    # Released inside the streaming generator's finally; if anything below
-    # raises before we hand the generator back to the framework, the local
-    # try/except releases too.
+    # Released inside the streaming generator's finally; setup-time failures
+    # below release via this outer try/except before the generator is built.
     conc_slot = await _enforce_concurrency_limit(api_key)
     try:
         public_name = payload.get("model")
@@ -380,7 +381,11 @@ async def _chat_completions_stream(
 
         prompt_est = count_message_tokens(payload.get("messages") or [], resolved.model.public_name)
         _enforce_input_token_limit(resolved.model, prompt_est)
-        max_completion = int(payload.get("max_tokens") or payload.get("max_completion_tokens") or 4096)
+        max_completion = int(
+            payload.get("max_tokens")
+            or payload.get("max_completion_tokens")
+            or _DEFAULT_MAX_COMPLETION_TOKENS
+        )
         tpm_handle = await _enforce_tpm_limit(api_key, prompt_est + max_completion)
         redis = get_redis()
         estimate = cost_service.estimate_text_cost_upper_bound(resolved.model, prompt_est, max_completion)
@@ -558,7 +563,7 @@ async def messages(
     if payload.get("stream") is True:
         return await _messages_stream(payload, db, auth)
 
-    # Concurrency gate is the FIRST guard. Released in the outer finally.
+    # Released in the outer try/finally below.
     conc_slot = await _enforce_concurrency_limit(api_key)
     try:
         public_name = payload.get("model")
@@ -705,8 +710,8 @@ async def _messages_stream(
     auth: tuple[User, ApiKey],
 ) -> StreamingResponse:
     user, api_key = auth
-    # Concurrency gate is the FIRST guard. Released inside the generator's
-    # finally; failures during setup are caught below to free the slot.
+    # Released inside the streaming generator's finally; setup-time failures
+    # below release via this outer try/except before the generator is built.
     conc_slot = await _enforce_concurrency_limit(api_key)
     try:
         public_name = payload.get("model")

@@ -6,22 +6,9 @@ import pytest
 from app.redis_client import get_redis
 from app.services import tpm_service
 
-
-def _redis_reachable() -> bool:
-    import os, socket
-    from urllib.parse import urlparse
-    url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
-    p = urlparse(url)
-    try:
-        with socket.create_connection((p.hostname or "localhost", p.port or 6379), 0.5):
-            return True
-    except OSError:
-        return False
-
-
 # pytest-asyncio is configured in mode=auto (pyproject.toml), so async test
 # functions are auto-marked. No module-level pytestmark needed.
-_needs_redis = pytest.mark.skipif(not _redis_reachable(), reason="Redis unreachable")
+from .conftest import needs_redis as _needs_redis
 
 
 @pytest.fixture

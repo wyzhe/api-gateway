@@ -27,6 +27,23 @@ def _db_reachable() -> bool:
         return False
 
 
+def _redis_reachable() -> bool:
+    import os
+    import socket
+    from urllib.parse import urlparse
+
+    url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+    p = urlparse(url)
+    try:
+        with socket.create_connection((p.hostname or "localhost", p.port or 6379), 0.5):
+            return True
+    except OSError:
+        return False
+
+
+needs_redis = pytest.mark.skipif(not _redis_reachable(), reason="Redis unreachable")
+
+
 @pytest.fixture(scope="session")
 def settings():
     return get_settings()
