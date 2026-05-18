@@ -33,6 +33,29 @@ router = APIRouter(prefix="/v1", tags=["gateway"])
 log = get_logger(__name__)
 _settings = get_settings()
 
+# Hard-coded buffer: gateway rejects at 95% of model.max_input_tokens.
+# Reason: tiktoken counts diverge from upstream tokenizers (especially Anthropic)
+# by a few percent. 5% guards against false negatives that would otherwise leak
+# to the upstream as a confusing 422.
+_INPUT_TOKEN_BUFFER = 0.95
+
+
+def _enforce_input_token_limit(model, prompt_tokens: int) -> None:
+    """Raise HTTPException(400) if estimated prompt tokens exceed 95% of
+    `model.max_input_tokens`. NULL max_input_tokens means no limit."""
+    cap = getattr(model, "max_input_tokens", None)
+    if cap is None:
+        return
+    effective = int(cap * _INPUT_TOKEN_BUFFER)
+    if prompt_tokens > effective:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Input length ({prompt_tokens} tokens) exceeds gateway limit "
+                f"({effective} = 95% of model cap {cap}). Reduce prompt size."
+            ),
+        )
+
 
 async def _api_key_rate_identifier(request: Request) -> str:
     """Rate-limit key for /v1/*: prefer the api key hash; fall back to client IP."""
@@ -100,6 +123,7 @@ async def chat_completions(
 
     # Pre-authorize a pessimistic upper bound against the monthly cap.
     prompt_est = count_message_tokens(payload.get("messages") or [], resolved.model.public_name)
+    _enforce_input_token_limit(resolved.model, prompt_est)
     max_completion = int(payload.get("max_tokens") or payload.get("max_completion_tokens") or 4096)
     estimate = cost_service.estimate_text_cost_upper_bound(resolved.model, prompt_est, max_completion)
     reservation = await gateway_service.preauthorize_spend(
@@ -199,6 +223,7 @@ async def _chat_completions_stream(
     resolved = gateway_service.resolve_model(db, public_name, expected_type="text")
 
     prompt_est = count_message_tokens(payload.get("messages") or [], resolved.model.public_name)
+    _enforce_input_token_limit(resolved.model, prompt_est)
     max_completion = int(payload.get("max_tokens") or payload.get("max_completion_tokens") or 4096)
     estimate = cost_service.estimate_text_cost_upper_bound(resolved.model, prompt_est, max_completion)
     reservation = await gateway_service.preauthorize_spend(
@@ -344,6 +369,7 @@ async def messages(
     prompt_est, max_completion, _ = estimate_anthropic_messages_usage(
         payload, resolved.model.public_name
     )
+    _enforce_input_token_limit(resolved.model, prompt_est)
     estimate = cost_service.estimate_text_cost_upper_bound(resolved.model, prompt_est, max_completion)
     reservation = await gateway_service.preauthorize_spend(
         db, user=user, api_key=api_key, estimated_cost=estimate
@@ -464,6 +490,7 @@ async def _messages_stream(
     prompt_est, max_completion, _ = estimate_anthropic_messages_usage(
         payload, resolved.model.public_name
     )
+    _enforce_input_token_limit(resolved.model, prompt_est)
     estimate = cost_service.estimate_text_cost_upper_bound(resolved.model, prompt_est, max_completion)
     reservation = await gateway_service.preauthorize_spend(
         db, user=user, api_key=api_key, estimated_cost=estimate
