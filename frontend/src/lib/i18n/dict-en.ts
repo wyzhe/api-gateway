@@ -273,6 +273,15 @@ export const en = {
     statusActive: "Active",
     statusDisabled: "Disabled",
   },
+  generations: {
+    title: "Generations",
+    subtitle: "Image and video outputs from your gateway calls.",
+    refreshBtn: "Refresh",
+    emptyPrefix: "No generations yet. Try the ",
+    emptyLink: "Playground",
+    emptySuffix: ".",
+    pendingFailedTitle: "Pending / failed",
+  },
 };
 
 export type EnDict = typeof en;

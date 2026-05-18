@@ -274,4 +274,13 @@ export const zh: EnDict = {
     statusActive: "启用",
     statusDisabled: "禁用",
   },
+  generations: {
+    title: "生成记录",
+    subtitle: "通过网关调用产生的图像与视频结果。",
+    refreshBtn: "刷新",
+    emptyPrefix: "还没有生成记录，去 ",
+    emptyLink: "Playground",
+    emptySuffix: " 试一下吧。",
+    pendingFailedTitle: "进行中 / 失败",
+  },
 };
