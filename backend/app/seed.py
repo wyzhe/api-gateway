@@ -39,6 +39,9 @@ DEFAULT_MODELS: list[dict] = [
         "input_price": Decimal("5.0"),
         "output_price": Decimal("15.0"),
         "capabilities": {"stream": True, "tools": True, "vision": True, "ctx": 256000},
+        "max_input_tokens": 400000,
+        "cache_write_per_1k_input": None,
+        "cache_read_per_1k_input": None,
     },
     {
         "public_name": "gpt-4o",
@@ -51,6 +54,9 @@ DEFAULT_MODELS: list[dict] = [
         "input_price": Decimal("2.5"),
         "output_price": Decimal("10.0"),
         "capabilities": {"stream": True, "tools": True, "vision": True, "ctx": 128000},
+        "max_input_tokens": 128000,
+        "cache_write_per_1k_input": None,
+        "cache_read_per_1k_input": None,
     },
     {
         "public_name": "claude-sonnet-4.6",
@@ -63,6 +69,11 @@ DEFAULT_MODELS: list[dict] = [
         "input_price": Decimal("3.0"),
         "output_price": Decimal("15.0"),
         "capabilities": {"stream": True, "tools": True, "vision": True, "ctx": 200000},
+        "max_input_tokens": 200000,
+        # Cache pricing per 1K input tokens (divide $/M by 1000):
+        # write = $3.75/1M → 0.00375/1K; read = $0.30/1M → 0.0003/1K
+        "cache_write_per_1k_input": Decimal("0.00375"),
+        "cache_read_per_1k_input": Decimal("0.0003"),
     },
     {
         "public_name": "gemini-2.0-flash",
@@ -75,6 +86,9 @@ DEFAULT_MODELS: list[dict] = [
         "input_price": Decimal("0.3"),
         "output_price": Decimal("2.5"),
         "capabilities": {"stream": True, "tools": True, "vision": True, "ctx": 1000000},
+        "max_input_tokens": 1000000,
+        "cache_write_per_1k_input": None,
+        "cache_read_per_1k_input": None,
     },
     # ------------ Image ------------
     {

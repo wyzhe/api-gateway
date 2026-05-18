@@ -18,6 +18,8 @@ class ApiKey(Base):
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="active")  # active | disabled
     monthly_limit: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
     rate_limit_rpm: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    rate_limit_tpm: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    max_concurrent_requests: Mapped[int | None] = mapped_column(Integer, nullable=True)
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
