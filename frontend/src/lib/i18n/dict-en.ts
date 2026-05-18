@@ -33,6 +33,15 @@ export const en = {
     toWorkspace: "Workspace",
     signOut: "Sign out",
   },
+  login: {
+    title: "Sign in",
+    emailLabel: "Email",
+    passwordLabel: "Password",
+    submit: "Sign in",
+    submitting: "Signing in…",
+    failedFallback: "Login failed",
+    defaultHint: "Default admin (from .env): {email} / {password}",
+  },
 };
 
 export type EnDict = typeof en;

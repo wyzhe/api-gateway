@@ -35,4 +35,13 @@ export const zh: EnDict = {
     toWorkspace: "工作区",
     signOut: "退出登录",
   },
+  login: {
+    title: "登录",
+    emailLabel: "邮箱",
+    passwordLabel: "密码",
+    submit: "登录",
+    submitting: "登录中…",
+    failedFallback: "登录失败",
+    defaultHint: "默认管理员（来自 .env）：{email} / {password}",
+  },
 };

@@ -4,12 +4,15 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { LanguageSwitcher } from "@/components/language-switcher";
 import { useAuth } from "@/lib/auth";
+import { useT } from "@/lib/i18n";
 
 export function LoginPage() {
   const { login, user } = useAuth();
   const nav = useNavigate();
   const loc = useLocation();
+  const t = useT();
   const redirectTo = (loc.state as { from?: string } | null)?.from ?? "/dashboard";
   const [email, setEmail] = useState("admin@example.com");
   const [password, setPassword] = useState("admin123");
@@ -25,15 +28,19 @@ export function LoginPage() {
     try {
       await login(email, password);
       nav(redirectTo, { replace: true });
-    } catch (err: any) {
-      setError(err?.message || "Login failed");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : null;
+      setError(msg || t("login.failedFallback"));
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4">
+    <div className="min-h-screen flex items-center justify-center p-4 relative">
+      <div className="absolute top-4 right-4">
+        <LanguageSwitcher />
+      </div>
       <div className="w-full max-w-sm">
         <div className="flex items-center justify-center gap-2 mb-6">
           <div
@@ -52,12 +59,12 @@ export function LoginPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Sign in</CardTitle>
+            <CardTitle>{t("login.title")}</CardTitle>
           </CardHeader>
           <CardContent>
             <form onSubmit={onSubmit} className="flex flex-col gap-3">
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="email">Email</Label>
+                <Label htmlFor="email">{t("login.emailLabel")}</Label>
                 <Input
                   id="email"
                   type="email"
@@ -68,7 +75,7 @@ export function LoginPage() {
                 />
               </div>
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="password">Password</Label>
+                <Label htmlFor="password">{t("login.passwordLabel")}</Label>
                 <Input
                   id="password"
                   type="password"
@@ -84,11 +91,11 @@ export function LoginPage() {
                 </div>
               )}
               <Button type="submit" disabled={busy}>
-                {busy ? "Signing in…" : "Sign in"}
+                {busy ? t("login.submitting") : t("login.submit")}
               </Button>
             </form>
             <p className="text-xs text-muted-foreground mt-4">
-              Default admin (from .env): admin@example.com / admin123
+              {t("login.defaultHint", { email: "admin@example.com", password: "admin123" })}
             </p>
           </CardContent>
         </Card>
