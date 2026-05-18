@@ -21,6 +21,7 @@ class ModelRow(Base):
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="active")  # active | disabled
     visible: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     capabilities: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    max_input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     pricing_mode: Mapped[str] = mapped_column(String(32), nullable=False)
     # per_token | per_image | per_second | per_generation
     input_price: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
@@ -28,14 +29,12 @@ class ModelRow(Base):
     image_price: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
     video_second_price: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
     generation_price: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
-    max_input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    # Cache pricing per Anthropic and OpenAI conventions:
-    # - cache_write_per_1k_input: price for tokens written to prompt cache (Anthropic only emits this)
-    # - cache_read_per_1k_input: price for tokens served from prompt cache (Anthropic + OpenAI cached_tokens)
-    # Both expressed per 1K *input* tokens, parallel to input_price (which is per 1M).
-    # We intentionally use per-1K to match upstream price-sheet conventions; cost_service handles the math.
-    cache_write_per_1k_input: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
-    cache_read_per_1k_input: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    # Cache pricing per Anthropic and OpenAI conventions, expressed per 1M tokens
+    # to match input_price / output_price denomination (both are per 1M tokens).
+    # - cache_write_price: price per 1M tokens written to prompt cache (Anthropic only)
+    # - cache_read_price: price per 1M tokens served from prompt cache (Anthropic + OpenAI cached_tokens)
+    cache_write_price: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    cache_read_price: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
     # Display-only tag for the provider color in the UI (openai/anthropic/gemini/xai/veo/apimart...).
     # Lets us keep multi-color provider tags in the UI while every model still routes through APIMart.
     display_provider: Mapped[str | None] = mapped_column(String(32), nullable=True)

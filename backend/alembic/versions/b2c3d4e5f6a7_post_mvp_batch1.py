@@ -21,11 +21,11 @@ def upgrade() -> None:
     op.add_column("models", sa.Column("max_input_tokens", sa.Integer(), nullable=True))
     op.add_column(
         "models",
-        sa.Column("cache_write_per_1k_input", sa.Numeric(precision=18, scale=8), nullable=True),
+        sa.Column("cache_write_price", sa.Numeric(precision=18, scale=8), nullable=True),
     )
     op.add_column(
         "models",
-        sa.Column("cache_read_per_1k_input", sa.Numeric(precision=18, scale=8), nullable=True),
+        sa.Column("cache_read_price", sa.Numeric(precision=18, scale=8), nullable=True),
     )
 
     # --- api_keys: TPM limit + concurrency cap ---
@@ -47,6 +47,6 @@ def downgrade() -> None:
     op.drop_column("api_keys", "max_concurrent_requests")
     op.drop_column("api_keys", "rate_limit_tpm")
 
-    op.drop_column("models", "cache_read_per_1k_input")
-    op.drop_column("models", "cache_write_per_1k_input")
+    op.drop_column("models", "cache_read_price")
+    op.drop_column("models", "cache_write_price")
     op.drop_column("models", "max_input_tokens")

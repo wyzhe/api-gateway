@@ -14,7 +14,7 @@
 - Retry-After cap = **30 seconds** (Anthropic SDK ignores Retry-After > 60s per `anthropic-sdk-python/_base_client.py:1097`; we use 30s for safety). Also emit `Retry-After-Ms` (millisecond precision) since Anthropic SDK reads it first.
 - Body byte cap = **4 MiB** (returns 413).
 - Token length pre-reject = `models.max_input_tokens × 0.95` (5% buffer hard-coded; not configurable).
-- Cache pricing schema = absolute prices in two new columns (`cache_write_per_1k_input` / `cache_read_per_1k_input`). NOT a multiplier. Cover both OpenAI `cached_tokens` and Anthropic `cache_creation_input_tokens` / `cache_read_input_tokens`.
+- Cache pricing schema = absolute prices in two new columns (`cache_write_price` / `cache_read_price`). NOT a multiplier. **Per-1M tokens to match the existing `input_price` / `output_price` columns** (this was changed from per-1K during Task 1 review — Anthropic and OpenAI both publish per-MTok pricing). Cover both OpenAI `cached_tokens` and Anthropic `cache_creation_input_tokens` / `cache_read_input_tokens`.
 - System prompt hardening = ORDER only, no injected text from gateway.
 
 ---
@@ -71,17 +71,18 @@ Recommended order: **Task 2 → 1 → 3 → 4 → 5 → 6 → 7**. Task 2 ships 
 - Create: `backend/alembic/versions/b2c3d4e5f6a7_post_mvp_batch1.py`
 - Modify: `backend/app/seed.py`
 
-- [ ] **Step 1: Edit `backend/app/models/model.py`** — add three new columns after `generation_price` (around line 30):
+- [ ] **Step 1: Edit `backend/app/models/model.py`** — add columns. Place `max_input_tokens` near `capabilities` (it's a capacity field, not pricing). Place the two cache pricing columns alongside `input_price` / `output_price`:
 
 ```python
+    # ── inside the capability block, near `capabilities` ─────────────────
     max_input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    # Cache pricing per Anthropic and OpenAI conventions:
-    # - cache_write_per_1k_input: price for tokens written to prompt cache (Anthropic only emits this)
-    # - cache_read_per_1k_input: price for tokens served from prompt cache (Anthropic + OpenAI cached_tokens)
-    # Both expressed per 1K *input* tokens, parallel to input_price (which is per 1M).
-    # We intentionally use per-1K to match upstream price-sheet conventions; cost_service handles the math.
-    cache_write_per_1k_input: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
-    cache_read_per_1k_input: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+
+    # ── inside the pricing block, alongside input_price / output_price ───
+    # Cache pricing — both expressed per 1M tokens to match input_price / output_price.
+    # cache_write_price: price for tokens written to prompt cache (Anthropic emits cache_creation_input_tokens).
+    # cache_read_price: price for tokens served from prompt cache (Anthropic cache_read_input_tokens + OpenAI cached_tokens).
+    cache_write_price: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    cache_read_price: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
 ```
 
 Add `Integer` to the existing `sqlalchemy` import line.
@@ -127,11 +128,16 @@ Expected: no errors. Confirm with:
 ```bash
 .venv/bin/python -c "from sqlalchemy import create_engine, inspect; import os; e=create_engine(os.environ['DATABASE_URL']); insp=inspect(e); print([c['name'] for c in insp.get_columns('models')])"
 ```
-Expected output contains `max_input_tokens`, `cache_write_per_1k_input`, `cache_read_per_1k_input`.
+Expected output contains `max_input_tokens`, `cache_write_price`, `cache_read_price`.
 
 - [ ] **Step 7: Update `backend/app/seed.py` defaults**
 
-Find each model seed entry and add sensible defaults for `max_input_tokens` (e.g. 200000 for claude-sonnet-4.5, 1000000 for gpt-4.1, etc — check each model's real context window) and `cache_write_per_1k_input` / `cache_read_per_1k_input` where known (Anthropic Claude Sonnet 4.5: write=$3.75/1M ÷ 1000 = $0.00375, read=$0.30/1M ÷ 1000 = $0.0003). Leave NULL for models without public cache pricing.
+Find each TEXT-type model seed entry (image / video / generation models do NOT get `max_input_tokens` or cache prices — leave them untouched) and add:
+- `max_input_tokens`: must match `capabilities.ctx` for the same entry if `ctx` is present (the two fields must not drift). Use the existing `ctx` value, or pick a real context-window value and update `ctx` to match. Use Python integer literal underscores for readability (`200_000`, `1_000_000`).
+- `cache_write_price` / `cache_read_price`: per-1M tokens, matching `input_price` / `output_price` units. Known values:
+  - Anthropic Claude Sonnet 4.x / 3.5: write=`3.75`, read=`0.30`
+  - Anthropic Claude Haiku 4.5 / 3.5: write=`1.00`, read=`0.08`
+  - Leave NULL for models without published cache pricing (GPT, Gemini, etc.).
 
 - [ ] **Step 8: Commit**
 
@@ -630,8 +636,10 @@ git commit -m "feat(gateway): pre-reject prompts above 95% of model.max_input_to
 
 Goal: account for three buckets of input tokens, not one:
 1. Regular input tokens → `input_price` per 1M
-2. Cache-write tokens (Anthropic only emits this) → `cache_write_per_1k_input` per 1K
-3. Cache-read tokens (Anthropic + OpenAI `cached_tokens`) → `cache_read_per_1k_input` per 1K
+2. Cache-write tokens (Anthropic only emits this) → `cache_write_price` per 1M
+3. Cache-read tokens (Anthropic + OpenAI `cached_tokens`) → `cache_read_price` per 1M
+
+All three buckets are priced **per 1M tokens** — same unit as `input_price` / `output_price`. No mixed denominators in this file.
 
 When a model has no cache prices set (NULL), fall back to `input_price` for both cache buckets (so we never undercharge if the column is missing).
 
@@ -648,8 +656,8 @@ def _model(input_p="3.00", output_p="15.00", cw=None, cr=None):
     m = MagicMock()
     m.input_price = Decimal(input_p) if input_p else None
     m.output_price = Decimal(output_p) if output_p else None
-    m.cache_write_per_1k_input = Decimal(cw) if cw else None
-    m.cache_read_per_1k_input = Decimal(cr) if cr else None
+    m.cache_write_price = Decimal(cw) if cw else None
+    m.cache_read_price = Decimal(cr) if cr else None
     return m
 
 
@@ -671,18 +679,18 @@ def test_no_cache_fields_matches_legacy_cost():
 
 def test_cache_read_priced_separately():
     # 800 regular + 200 cache_read + 500 output
-    # Sonnet-style: write=$3.75/M, read=$0.30/M → per-1k: $0.00375 / $0.0003
+    # Sonnet-style: write=$3.75/M, read=$0.30/M
     cost, _ = cost_service.calc_text_cost_with_cache(
-        _model(cw="0.00375", cr="0.0003"),
+        _model(cw="3.75", cr="0.30"),
         prompt_tokens=1000,  # total input (incl. cache)
         completion_tokens=500,
         cached_tokens=200,
         cache_creation_tokens=0,
     )
-    # 800 regular @ $3/M + 200 cache_read @ $0.0003/1k + 500 output @ $15/M
+    # 800 regular @ $3/M + 200 cache_read @ $0.30/M + 500 output @ $15/M
     expected = (
         Decimal("800") / Decimal("1000000") * Decimal("3.00")
-        + Decimal("200") / Decimal("1000") * Decimal("0.0003")
+        + Decimal("200") / Decimal("1000000") * Decimal("0.30")
         + Decimal("500") / Decimal("1000000") * Decimal("15.00")
     )
     assert cost == expected
@@ -690,7 +698,7 @@ def test_cache_read_priced_separately():
 
 def test_cache_write_priced_separately():
     cost, _ = cost_service.calc_text_cost_with_cache(
-        _model(cw="0.00375", cr="0.0003"),
+        _model(cw="3.75", cr="0.30"),
         prompt_tokens=1000,
         completion_tokens=500,
         cached_tokens=0,
@@ -699,7 +707,7 @@ def test_cache_write_priced_separately():
     # 700 regular + 300 cache_write + 500 output
     expected = (
         Decimal("700") / Decimal("1000000") * Decimal("3.00")
-        + Decimal("300") / Decimal("1000") * Decimal("0.00375")
+        + Decimal("300") / Decimal("1000000") * Decimal("3.75")
         + Decimal("500") / Decimal("1000000") * Decimal("15.00")
     )
     assert cost == expected
@@ -721,7 +729,7 @@ def test_cache_columns_null_falls_back_to_input_price():
 
 
 def test_price_snapshot_includes_cache_columns():
-    m = _model(cw="0.00375", cr="0.0003")
+    m = _model(cw="3.75", cr="0.30")
     m.id = 1
     m.public_name = "x"
     m.upstream_model = "x"
@@ -731,16 +739,16 @@ def test_price_snapshot_includes_cache_columns():
     m.video_second_price = None
     m.generation_price = None
     snap = cost_service.price_snapshot(m)
-    assert snap["cache_write_per_1k_input"] == "0.00375"
-    assert snap["cache_read_per_1k_input"] == "0.0003"
+    assert snap["cache_write_price"] == "3.75"
+    assert snap["cache_read_price"] == "0.30"
 
 
 def test_recompute_from_snapshot_uses_cache_fields():
     snap = {
         "input_price": "3.00",
         "output_price": "15.00",
-        "cache_write_per_1k_input": "0.00375",
-        "cache_read_per_1k_input": "0.0003",
+        "cache_write_price": "3.75",
+        "cache_read_price": "0.30",
     }
     cost = cost_service.recompute_text_cost_from_snapshot(
         snap,
@@ -751,8 +759,8 @@ def test_recompute_from_snapshot_uses_cache_fields():
     )
     expected = (
         Decimal("500") / Decimal("1000000") * Decimal("3.00")  # 1000 - 200 - 300
-        + Decimal("200") / Decimal("1000") * Decimal("0.0003")
-        + Decimal("300") / Decimal("1000") * Decimal("0.00375")
+        + Decimal("200") / Decimal("1000000") * Decimal("0.30")
+        + Decimal("300") / Decimal("1000000") * Decimal("3.75")
         + Decimal("500") / Decimal("1000000") * Decimal("15.00")
     )
     assert cost == expected
@@ -768,12 +776,9 @@ Expected: `AttributeError: module 'cost_service' has no attribute 'calc_text_cos
 
 - [ ] **Step 3: Update `backend/app/services/cost_service.py`**
 
-Add the new function:
+Add the new function (all three buckets priced per-1M, same denominator as `input_price`):
 
 ```python
-THOUSAND = Decimal("1000")
-
-
 def calc_text_cost_with_cache(
     model: ModelRow,
     prompt_tokens: int,
@@ -786,14 +791,15 @@ def calc_text_cost_with_cache(
 
     `prompt_tokens` is the **total** input tokens (already includes the
     cached + cache_creation portions, per Anthropic + OpenAI conventions).
+    All prices are per 1M tokens.
     """
     input_p = model.input_price
     output_p = model.output_price
     if input_p is None and output_p is None:
         return Decimal("0"), True
 
-    cw = model.cache_write_per_1k_input
-    cr = model.cache_read_per_1k_input
+    cw = model.cache_write_price
+    cr = model.cache_read_price
 
     # Tokens go through three priced buckets. Any missing cache price falls
     # back to regular input_price (never free).
@@ -810,9 +816,9 @@ def calc_text_cost_with_cache(
         if cache_write and cw is None:
             cost += Decimal(cache_write) / MILLION * Decimal(input_p)
     if cr is not None and cache_read:
-        cost += Decimal(cache_read) / THOUSAND * Decimal(cr)
+        cost += Decimal(cache_read) / MILLION * Decimal(cr)
     if cw is not None and cache_write:
-        cost += Decimal(cache_write) / THOUSAND * Decimal(cw)
+        cost += Decimal(cache_write) / MILLION * Decimal(cw)
     if output_p is not None and completion_tokens:
         cost += Decimal(completion_tokens) / MILLION * Decimal(output_p)
     return cost, False
@@ -821,8 +827,8 @@ def calc_text_cost_with_cache(
 Update `price_snapshot` to include the two new fields:
 
 ```python
-        "cache_write_per_1k_input": s(model.cache_write_per_1k_input),
-        "cache_read_per_1k_input": s(model.cache_read_per_1k_input),
+        "cache_write_price": s(model.cache_write_price),
+        "cache_read_price": s(model.cache_read_price),
 ```
 
 Add a new recompute helper:
@@ -841,19 +847,19 @@ def recompute_text_cost_from_snapshot(
     cache kwargs see identical behavior to the original."""
     ip = Decimal(snapshot.get("input_price") or "0")
     op = Decimal(snapshot.get("output_price") or "0")
-    cw = snapshot.get("cache_write_per_1k_input")
-    cr = snapshot.get("cache_read_per_1k_input")
+    cw = snapshot.get("cache_write_price")
+    cr = snapshot.get("cache_read_price")
     cache_read = max(0, int(cached_tokens or 0))
     cache_write = max(0, int(cache_creation_tokens or 0))
     regular = max(0, int(prompt_tokens or 0) - cache_read - cache_write)
 
     cost = Decimal(regular) / MILLION * ip
     if cr:
-        cost += Decimal(cache_read) / THOUSAND * Decimal(cr)
+        cost += Decimal(cache_read) / MILLION * Decimal(cr)
     else:
         cost += Decimal(cache_read) / MILLION * ip
     if cw:
-        cost += Decimal(cache_write) / THOUSAND * Decimal(cw)
+        cost += Decimal(cache_write) / MILLION * Decimal(cw)
     else:
         cost += Decimal(cache_write) / MILLION * ip
     cost += Decimal(completion_tokens) / MILLION * op
