@@ -147,11 +147,15 @@ async def metrics() -> Response:
 @app.exception_handler(StarletteHTTPException)
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     # Mirror OpenAI's `{"error": {...}}` shape so SDK clients can parse uniformly.
+    # Preserve any headers set on the HTTPException (e.g. Retry-After /
+    # Retry-After-Ms from the rate-limit gates) — without forwarding them
+    # here, the Anthropic SDK would never see the retry hint.
+    headers = getattr(exc, "headers", None)
     detail = exc.detail
     if isinstance(detail, dict) and "error" in detail:
-        return JSONResponse(status_code=exc.status_code, content=detail)
+        return JSONResponse(status_code=exc.status_code, content=detail, headers=headers)
     if isinstance(detail, dict):
-        return JSONResponse(status_code=exc.status_code, content={"error": detail})
+        return JSONResponse(status_code=exc.status_code, content={"error": detail}, headers=headers)
     return JSONResponse(
         status_code=exc.status_code,
         content={
@@ -161,6 +165,7 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
                 "code": f"http_{exc.status_code}",
             }
         },
+        headers=headers,
     )
 
 

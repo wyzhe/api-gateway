@@ -21,16 +21,32 @@ import { fmtCompactMoney, fmtDate, limitBarColor, parseLimit } from "@/lib/utils
 
 type CreatedKey = ApiKey & { key: string };
 
+type IntFieldResult = { ok: true; value: number | null } | { ok: false };
+
+function parsePositiveInt(s: string): IntFieldResult {
+  const t = s.trim();
+  if (t === "") return { ok: true, value: null };
+  const n = Number(t);
+  if (!Number.isFinite(n) || !Number.isInteger(n) || n < 1) return { ok: false };
+  return { ok: true, value: n };
+}
+
 export function ApiKeysPage() {
   const [keys, setKeys] = useState<ApiKey[]>([]);
   const [openCreate, setOpenCreate] = useState(false);
   const [newName, setNewName] = useState("");
   const [newLimit, setNewLimit] = useState("");
+  const [newRpm, setNewRpm] = useState("");
+  const [newTpm, setNewTpm] = useState("");
+  const [newConc, setNewConc] = useState("");
   const [busy, setBusy] = useState(false);
   const [createdKey, setCreatedKey] = useState<CreatedKey | null>(null);
   const [editing, setEditing] = useState<ApiKey | null>(null);
   const [editName, setEditName] = useState("");
   const [editLimit, setEditLimit] = useState("");
+  const [editRpm, setEditRpm] = useState("");
+  const [editTpm, setEditTpm] = useState("");
+  const [editConc, setEditConc] = useState("");
 
   const refresh = async () => {
     const rows = await api<ApiKey[]>("/api/keys");
@@ -48,15 +64,31 @@ export function ApiKeysPage() {
       toast.error("Monthly limit must be a non-negative number");
       return;
     }
+    const rpm = parsePositiveInt(newRpm);
+    const tpm = parsePositiveInt(newTpm);
+    const conc = parsePositiveInt(newConc);
+    if (!rpm.ok || !tpm.ok || !conc.ok) {
+      toast.error("Limits must be positive integers (blank = use default)");
+      return;
+    }
     setBusy(true);
     try {
       const k = await api<CreatedKey>("/api/keys", {
         method: "POST",
-        body: { name: newName.trim(), monthly_limit: limit.value },
+        body: {
+          name: newName.trim(),
+          monthly_limit: limit.value,
+          rate_limit_rpm: rpm.value,
+          rate_limit_tpm: tpm.value,
+          max_concurrent_requests: conc.value,
+        },
       });
       setOpenCreate(false);
       setNewName("");
       setNewLimit("");
+      setNewRpm("");
+      setNewTpm("");
+      setNewConc("");
       setCreatedKey(k);
       void refresh();
     } finally {
@@ -68,6 +100,9 @@ export function ApiKeysPage() {
     setEditing(k);
     setEditName(k.name);
     setEditLimit(k.monthly_limit ?? "");
+    setEditRpm(k.rate_limit_rpm?.toString() ?? "");
+    setEditTpm(k.rate_limit_tpm?.toString() ?? "");
+    setEditConc(k.max_concurrent_requests?.toString() ?? "");
   };
 
   const onSaveEdit = async () => {
@@ -78,9 +113,22 @@ export function ApiKeysPage() {
       toast.error("Monthly limit must be a non-negative number");
       return;
     }
+    const rpm = parsePositiveInt(editRpm);
+    const tpm = parsePositiveInt(editTpm);
+    const conc = parsePositiveInt(editConc);
+    if (!rpm.ok || !tpm.ok || !conc.ok) {
+      toast.error("Limits must be positive integers (blank = clear)");
+      return;
+    }
     await api(`/api/keys/${editing.id}`, {
       method: "PATCH",
-      body: { name: editName.trim(), monthly_limit: limit.value },
+      body: {
+        name: editName.trim(),
+        monthly_limit: limit.value,
+        rate_limit_rpm: rpm.value,
+        rate_limit_tpm: tpm.value,
+        max_concurrent_requests: conc.value,
+      },
     });
     toast.success("Updated");
     setEditing(null);
@@ -121,6 +169,7 @@ export function ApiKeysPage() {
               <TableHead>Prefix</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>This month / limit</TableHead>
+              <TableHead>Rate limits</TableHead>
               <TableHead>Last used</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
@@ -128,7 +177,7 @@ export function ApiKeysPage() {
           <TableBody>
             {keys.length === 0 && (
               <TableRow>
-                <TableCell colSpan={6} className="text-center text-sm text-muted-foreground py-8">
+                <TableCell colSpan={7} className="text-center text-sm text-muted-foreground py-8">
                   No keys yet. Create one to start using the gateway.
                 </TableCell>
               </TableRow>
@@ -157,6 +206,13 @@ export function ApiKeysPage() {
                         />
                       </div>
                     )}
+                  </TableCell>
+                  <TableCell className="text-xs text-muted-foreground">
+                    <div className="flex flex-col gap-0.5 mono">
+                      <span title="Requests / minute">RPM: {k.rate_limit_rpm ?? <span className="text-muted-foreground/60">default</span>}</span>
+                      <span title="Tokens / minute">TPM: {k.rate_limit_tpm ?? <span className="text-muted-foreground/60">unlimited</span>}</span>
+                      <span title="Concurrent in-flight requests">Conc: {k.max_concurrent_requests ?? <span className="text-muted-foreground/60">default</span>}</span>
+                    </div>
                   </TableCell>
                   <TableCell className="text-muted-foreground text-xs">
                     {k.last_used_at ? fmtDate(k.last_used_at) : "Never"}
@@ -207,6 +263,17 @@ export function ApiKeysPage() {
                 onChange={(e) => setNewLimit(e.target.value)}
               />
             </FormField>
+            <div className="grid grid-cols-3 gap-2">
+              <FormField label="RPM (req/min, blank = default 60)">
+                <Input placeholder="e.g. 120" value={newRpm} onChange={(e) => setNewRpm(e.target.value)} />
+              </FormField>
+              <FormField label="TPM (tokens/min, blank = unlimited)">
+                <Input placeholder="e.g. 100000" value={newTpm} onChange={(e) => setNewTpm(e.target.value)} />
+              </FormField>
+              <FormField label="Concurrency (blank = default 10)">
+                <Input placeholder="e.g. 20" value={newConc} onChange={(e) => setNewConc(e.target.value)} />
+              </FormField>
+            </div>
           </div>
           <div className="flex justify-end gap-2 mt-2">
             <Button variant="outline" onClick={() => setOpenCreate(false)}>Cancel</Button>
@@ -233,6 +300,17 @@ export function ApiKeysPage() {
             <FormField label="Monthly spend limit (USD, blank = no cap)">
               <Input value={editLimit} onChange={(e) => setEditLimit(e.target.value)} placeholder="e.g. 10" />
             </FormField>
+            <div className="grid grid-cols-3 gap-2">
+              <FormField label="RPM (blank = clear)">
+                <Input placeholder="60" value={editRpm} onChange={(e) => setEditRpm(e.target.value)} />
+              </FormField>
+              <FormField label="TPM (blank = clear)">
+                <Input placeholder="100000" value={editTpm} onChange={(e) => setEditTpm(e.target.value)} />
+              </FormField>
+              <FormField label="Concurrency (blank = clear)">
+                <Input placeholder="10" value={editConc} onChange={(e) => setEditConc(e.target.value)} />
+              </FormField>
+            </div>
           </div>
           <div className="flex justify-end gap-2 mt-2">
             <Button variant="outline" onClick={() => setEditing(null)}>Cancel</Button>

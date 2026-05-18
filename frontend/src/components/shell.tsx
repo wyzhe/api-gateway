@@ -63,9 +63,6 @@ export function Shell({ children }: { children: ReactNode }) {
               </span>
             </div>
             <span className="font-semibold text-sm">Relay</span>
-            <span className="text-[10px] text-muted-foreground border border-border px-1.5 py-0.5 rounded mono">
-              MVP
-            </span>
           </Link>
         </div>
 

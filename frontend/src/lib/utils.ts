@@ -25,6 +25,8 @@ export type PricedModel = {
   pricing_mode: string;
   input_price?: string | null;
   output_price?: string | null;
+  cache_write_price?: string | null;
+  cache_read_price?: string | null;
   image_price?: string | null;
   video_second_price?: string | null;
   generation_price?: string | null;
@@ -32,8 +34,15 @@ export type PricedModel = {
 
 export function priceLabel(m: PricedModel): string {
   switch (m.pricing_mode) {
-    case "per_token":
-      return `$${m.input_price ?? "0"} in · $${m.output_price ?? "0"} out / 1M tokens`;
+    case "per_token": {
+      const base = `$${m.input_price ?? "0"} in · $${m.output_price ?? "0"} out / 1M`;
+      if (m.cache_write_price || m.cache_read_price) {
+        const cw = m.cache_write_price ?? m.input_price ?? "0";
+        const cr = m.cache_read_price ?? m.input_price ?? "0";
+        return `${base} (cache: $${cw} w · $${cr} r)`;
+      }
+      return `${base} tokens`;
+    }
     case "per_image":
       return `$${m.image_price ?? m.generation_price ?? "0"} / image`;
     case "per_second":
