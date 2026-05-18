@@ -16,12 +16,14 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { PageHeader } from "@/components/shell";
 import { api } from "@/lib/api";
+import { useT } from "@/lib/i18n";
 import type { ApiKey } from "@/lib/types";
 import { fmtCompactMoney, fmtDate, limitBarColor, parseLimit } from "@/lib/utils";
 
 type CreatedKey = ApiKey & { key: string };
 
 export function ApiKeysPage() {
+  const t = useT();
   const [keys, setKeys] = useState<ApiKey[]>([]);
   const [openCreate, setOpenCreate] = useState(false);
   const [newName, setNewName] = useState("");
@@ -45,7 +47,7 @@ export function ApiKeysPage() {
     if (!newName.trim()) return;
     const limit = parseLimit(newLimit);
     if (!limit.ok) {
-      toast.error("Monthly limit must be a non-negative number");
+      toast.error(t("apiKeys.toastInvalidLimit"));
       return;
     }
     setBusy(true);
@@ -75,14 +77,14 @@ export function ApiKeysPage() {
     if (!editName.trim()) return;
     const limit = parseLimit(editLimit);
     if (!limit.ok) {
-      toast.error("Monthly limit must be a non-negative number");
+      toast.error(t("apiKeys.toastInvalidLimit"));
       return;
     }
     await api(`/api/keys/${editing.id}`, {
       method: "PATCH",
       body: { name: editName.trim(), monthly_limit: limit.value },
     });
-    toast.success("Updated");
+    toast.success(t("apiKeys.toastUpdated"));
     setEditing(null);
     void refresh();
   };
@@ -90,25 +92,31 @@ export function ApiKeysPage() {
   const onToggle = async (k: ApiKey) => {
     const action = k.status === "active" ? "disable" : "enable";
     await api(`/api/keys/${k.id}/${action}`, { method: "POST" });
-    toast.success(`Key ${action}d`);
+    toast.success(action === "disable" ? t("apiKeys.toastDisabled") : t("apiKeys.toastEnabled"));
     void refresh();
   };
 
   const onDelete = async (k: ApiKey) => {
-    if (!confirm(`Delete key "${k.name}"? This cannot be undone.`)) return;
+    if (!confirm(t("apiKeys.confirmDelete", { name: k.name }))) return;
     await api(`/api/keys/${k.id}`, { method: "DELETE" });
-    toast.success("Deleted");
+    toast.success(t("apiKeys.toastDeleted"));
     void refresh();
+  };
+
+  const statusLabel = (s: ApiKey["status"]): string => {
+    if (s === "active") return t("apiKeys.statusActive");
+    if (s === "disabled") return t("apiKeys.statusDisabled");
+    return s;
   };
 
   return (
     <div>
       <PageHeader
-        title="API Keys"
-        subtitle="Used for /v1/* requests (chat, image, video). Full key is shown only once."
+        title={t("apiKeys.title")}
+        subtitle={t("apiKeys.subtitle")}
         actions={
           <Button onClick={() => setOpenCreate(true)}>
-            <Plus className="h-4 w-4" /> Create key
+            <Plus className="h-4 w-4" /> {t("apiKeys.createBtn")}
           </Button>
         }
       />
@@ -117,19 +125,19 @@ export function ApiKeysPage() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Prefix</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>This month / limit</TableHead>
-              <TableHead>Last used</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
+              <TableHead>{t("apiKeys.colName")}</TableHead>
+              <TableHead>{t("apiKeys.colPrefix")}</TableHead>
+              <TableHead>{t("apiKeys.colStatus")}</TableHead>
+              <TableHead>{t("apiKeys.colMonthLimit")}</TableHead>
+              <TableHead>{t("apiKeys.colLastUsed")}</TableHead>
+              <TableHead className="text-right">{t("apiKeys.colActions")}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {keys.length === 0 && (
               <TableRow>
                 <TableCell colSpan={6} className="text-center text-sm text-muted-foreground py-8">
-                  No keys yet. Create one to start using the gateway.
+                  {t("apiKeys.empty")}
                 </TableCell>
               </TableRow>
             )}
@@ -142,12 +150,12 @@ export function ApiKeysPage() {
                   <TableCell className="font-medium">{k.name}</TableCell>
                   <TableCell className="mono text-xs">{k.key_prefix}…</TableCell>
                   <TableCell>
-                    <Badge variant={k.status === "active" ? "success" : "warn"}>{k.status}</Badge>
+                    <Badge variant={k.status === "active" ? "success" : "warn"}>{statusLabel(k.status)}</Badge>
                   </TableCell>
                   <TableCell className="text-xs">
                     <div className="mono">
                       {fmtCompactMoney(k.mtd_cost)} {limit !== null && <span className="text-muted-foreground">/ {fmtCompactMoney(limit)}</span>}
-                      {limit === null && <span className="text-muted-foreground"> (no cap)</span>}
+                      {limit === null && <span className="text-muted-foreground"> {t("apiKeys.noCap")}</span>}
                     </div>
                     {limit !== null && (
                       <div className="h-1 mt-1 rounded bg-surface-3 overflow-hidden w-32">
@@ -159,17 +167,17 @@ export function ApiKeysPage() {
                     )}
                   </TableCell>
                   <TableCell className="text-muted-foreground text-xs">
-                    {k.last_used_at ? fmtDate(k.last_used_at) : "Never"}
+                    {k.last_used_at ? fmtDate(k.last_used_at) : t("apiKeys.never")}
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="inline-flex gap-1">
-                      <Button variant="ghost" size="icon" onClick={() => openEdit(k)} title="Edit">
+                      <Button variant="ghost" size="icon" onClick={() => openEdit(k)} title={t("apiKeys.editTitle")}>
                         <Pencil className="h-3.5 w-3.5" />
                       </Button>
                       <Button variant="outline" size="sm" onClick={() => onToggle(k)}>
-                        {k.status === "active" ? "Disable" : "Enable"}
+                        {k.status === "active" ? t("apiKeys.disable") : t("apiKeys.enable")}
                       </Button>
-                      <Button variant="ghost" size="icon" onClick={() => onDelete(k)} title="Delete">
+                      <Button variant="ghost" size="icon" onClick={() => onDelete(k)} title={t("apiKeys.deleteTitle")}>
                         <Trash2 className="h-3.5 w-3.5 text-destructive" />
                       </Button>
                     </div>
@@ -185,33 +193,33 @@ export function ApiKeysPage() {
       <Dialog open={openCreate} onOpenChange={setOpenCreate}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Create API Key</DialogTitle>
+            <DialogTitle>{t("apiKeys.createDialog.title")}</DialogTitle>
             <DialogDescription>
-              The full key value is shown once on the next screen.
+              {t("apiKeys.createDialog.description")}
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-3">
-            <FormField label="Name">
+            <FormField label={t("apiKeys.createDialog.nameLabel")}>
               <Input
                 autoFocus
-                placeholder="e.g. local-dev"
+                placeholder={t("apiKeys.createDialog.namePlaceholder")}
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && onCreate()}
               />
             </FormField>
-            <FormField label="Monthly spend limit (USD, optional)">
+            <FormField label={t("apiKeys.createDialog.limitLabel")}>
               <Input
-                placeholder="leave blank for no cap"
+                placeholder={t("apiKeys.createDialog.limitPlaceholder")}
                 value={newLimit}
                 onChange={(e) => setNewLimit(e.target.value)}
               />
             </FormField>
           </div>
           <div className="flex justify-end gap-2 mt-2">
-            <Button variant="outline" onClick={() => setOpenCreate(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setOpenCreate(false)}>{t("common.cancel")}</Button>
             <Button onClick={onCreate} disabled={busy || !newName.trim()}>
-              {busy ? "Creating…" : "Create"}
+              {busy ? t("apiKeys.createDialog.submitting") : t("apiKeys.createDialog.submit")}
             </Button>
           </div>
         </DialogContent>
@@ -221,22 +229,22 @@ export function ApiKeysPage() {
       <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Edit API Key</DialogTitle>
+            <DialogTitle>{t("apiKeys.editDialog.title")}</DialogTitle>
             <DialogDescription>
-              Rename or change the monthly spend cap. The key value cannot be revealed again.
+              {t("apiKeys.editDialog.description")}
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-3">
-            <FormField label="Name">
+            <FormField label={t("apiKeys.editDialog.nameLabel")}>
               <Input value={editName} onChange={(e) => setEditName(e.target.value)} />
             </FormField>
-            <FormField label="Monthly spend limit (USD, blank = no cap)">
-              <Input value={editLimit} onChange={(e) => setEditLimit(e.target.value)} placeholder="e.g. 10" />
+            <FormField label={t("apiKeys.editDialog.limitLabel")}>
+              <Input value={editLimit} onChange={(e) => setEditLimit(e.target.value)} placeholder={t("apiKeys.editDialog.limitPlaceholder")} />
             </FormField>
           </div>
           <div className="flex justify-end gap-2 mt-2">
-            <Button variant="outline" onClick={() => setEditing(null)}>Cancel</Button>
-            <Button onClick={onSaveEdit} disabled={!editName.trim()}>Save</Button>
+            <Button variant="outline" onClick={() => setEditing(null)}>{t("common.cancel")}</Button>
+            <Button onClick={onSaveEdit} disabled={!editName.trim()}>{t("apiKeys.editDialog.save")}</Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -245,24 +253,24 @@ export function ApiKeysPage() {
       <Dialog open={!!createdKey} onOpenChange={(o) => !o && setCreatedKey(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>API key created</DialogTitle>
+            <DialogTitle>{t("apiKeys.revealDialog.title")}</DialogTitle>
             <DialogDescription>
-              <span className="text-warn">Copy it now.</span> This is the only time the full value is shown.
+              <span className="text-warn">{t("apiKeys.revealDialog.warning")}</span> {t("apiKeys.revealDialog.warningRest")}
             </DialogDescription>
           </DialogHeader>
           {createdKey && (
             <div className="flex flex-col gap-3">
               <div className="text-xs text-muted-foreground">
-                Name: <span className="text-foreground mono">{createdKey.name}</span>
+                {t("apiKeys.revealDialog.nameLabel")}: <span className="text-foreground mono">{createdKey.name}</span>
                 {createdKey.monthly_limit !== null && (
-                  <> · Monthly limit: <span className="text-foreground mono">{fmtCompactMoney(createdKey.monthly_limit)}</span></>
+                  <> · {t("apiKeys.revealDialog.monthlyLimitLabel")}: <span className="text-foreground mono">{fmtCompactMoney(createdKey.monthly_limit)}</span></>
                 )}
               </div>
               <CodeBlock code={createdKey.key} lang="apikey" />
             </div>
           )}
           <div className="flex justify-end mt-2">
-            <Button onClick={() => setCreatedKey(null)}>I have saved it</Button>
+            <Button onClick={() => setCreatedKey(null)}>{t("apiKeys.revealDialog.acknowledge")}</Button>
           </div>
         </DialogContent>
       </Dialog>
