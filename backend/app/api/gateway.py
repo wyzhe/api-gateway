@@ -24,7 +24,13 @@ from ..models import ApiKey, ModelRow, RequestLog, User, VideoTask
 from ..rate_limit import make_limiter
 from ..redis_client import get_redis
 from ..security import hash_api_key
-from ..services import cost_service, gateway_service, task_service, tpm_service
+from ..services import (
+    concurrency_service,
+    cost_service,
+    gateway_service,
+    task_service,
+    tpm_service,
+)
 from ..services.token_estimator import (
     count_message_tokens,
     estimate_anthropic_messages_usage,
@@ -68,6 +74,52 @@ def _enforce_input_token_limit(model, prompt_tokens: int) -> None:
                 f"({effective} = 95% of model cap {cap}). Reduce prompt size."
             ),
         )
+
+
+async def _enforce_concurrency_limit(api_key: ApiKey) -> concurrency_service.ConcurrencySlot:
+    """Acquire a per-api_key concurrency slot. Returns the slot handle on
+    success (entry_id="" means no limit was applied). Raises 429 with
+    Retry-After and Retry-After-Ms headers on rejection.
+
+    NULL `max_concurrent_requests` falls back to DEFAULT_MAX_CONCURRENT (10).
+    Callers MUST eventually call `concurrency_service.release()` for handles
+    with a non-empty entry_id on every exit path."""
+    redis = get_redis()
+    effective_max = (
+        api_key.max_concurrent_requests
+        if api_key.max_concurrent_requests is not None
+        else concurrency_service.DEFAULT_MAX_CONCURRENT
+    )
+    slot = await concurrency_service.acquire(
+        redis, api_key_id=api_key.id, max_concurrent=effective_max
+    )
+    if slot is None:
+        active = await concurrency_service.active_count(redis, api_key_id=api_key.id)
+        retry_s = concurrency_service.compute_retry_after(
+            active=active, max_concurrent=effective_max
+        )
+        retry_ms = concurrency_service.compute_retry_after_ms(
+            active=active, max_concurrent=effective_max
+        )
+        log.warning(
+            "concurrency_limit_exceeded",
+            api_key_id=api_key.id,
+            max_concurrent=effective_max,
+            active=active,
+        )
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "error": "concurrency_limit_exceeded",
+                "max_concurrent": effective_max,
+                "active": active,
+            },
+            headers={
+                "Retry-After": str(retry_s),
+                "Retry-After-Ms": str(retry_ms),
+            },
+        )
+    return slot
 
 
 async def _enforce_tpm_limit(api_key: ApiKey, tokens_requested: int) -> tpm_service.TpmHandle:
@@ -178,113 +230,124 @@ async def chat_completions(
     if payload.get("stream") is True:
         return await _chat_completions_stream(payload, db, auth)
 
-    public_name = payload.get("model")
-    if not public_name or not isinstance(public_name, str):
-        raise HTTPException(status_code=400, detail="Missing 'model' field")
-
-    resolved = gateway_service.resolve_model(db, public_name, expected_type="text")
-
-    # Pre-authorize a pessimistic upper bound against the monthly cap.
-    prompt_est = count_message_tokens(payload.get("messages") or [], resolved.model.public_name)
-    _enforce_input_token_limit(resolved.model, prompt_est)
-    max_completion = int(payload.get("max_tokens") or payload.get("max_completion_tokens") or 4096)
-    tpm_handle = await _enforce_tpm_limit(api_key, prompt_est + max_completion)
-    redis = get_redis()
-    estimate = cost_service.estimate_text_cost_upper_bound(resolved.model, prompt_est, max_completion)
+    # Concurrency gate is the FIRST guard: cheaper to reject than to count
+    # tokens or pre-reserve spend. Released in the outer try/finally below.
+    conc_slot = await _enforce_concurrency_limit(api_key)
     try:
-        reservation = await gateway_service.preauthorize_spend(
-            db, user=user, api_key=api_key, estimated_cost=estimate
-        )
-    except BaseException:  # incl. asyncio.CancelledError — must release TPM/reservation on cancellation
-        await tpm_service.release_fully(redis, tpm_handle)
-        raise
+        public_name = payload.get("model")
+        if not public_name or not isinstance(public_name, str):
+            raise HTTPException(status_code=400, detail="Missing 'model' field")
 
-    request_id = gateway_service.new_request_id()
-    provider_client = gateway_service.build_provider(resolved.provider)
+        resolved = gateway_service.resolve_model(db, public_name, expected_type="text")
 
-    upstream_payload = {**payload, "model": resolved.model.upstream_model}
-    upstream_payload.pop("stream", None)
+        # Pre-authorize a pessimistic upper bound against the monthly cap.
+        prompt_est = count_message_tokens(payload.get("messages") or [], resolved.model.public_name)
+        _enforce_input_token_limit(resolved.model, prompt_est)
+        max_completion = int(payload.get("max_tokens") or payload.get("max_completion_tokens") or 4096)
+        tpm_handle = await _enforce_tpm_limit(api_key, prompt_est + max_completion)
+        redis = get_redis()
+        estimate = cost_service.estimate_text_cost_upper_bound(resolved.model, prompt_est, max_completion)
+        try:
+            reservation = await gateway_service.preauthorize_spend(
+                db, user=user, api_key=api_key, estimated_cost=estimate
+            )
+        except BaseException:  # incl. asyncio.CancelledError — must release TPM/reservation on cancellation
+            await tpm_service.release_fully(redis, tpm_handle)
+            raise
 
-    started = time.perf_counter()
-    try:
-        resp = await provider_client.chat_completions(upstream_payload, stream=False)
-    except Exception as e:
+        request_id = gateway_service.new_request_id()
+        provider_client = gateway_service.build_provider(resolved.provider)
+
+        upstream_payload = {**payload, "model": resolved.model.upstream_model}
+        upstream_payload.pop("stream", None)
+
+        started = time.perf_counter()
+        try:
+            resp = await provider_client.chat_completions(upstream_payload, stream=False)
+        except Exception as e:
+            latency_ms = int((time.perf_counter() - started) * 1000)
+            gateway_service.persist_failure(
+                db, user=user, api_key=api_key, provider=resolved.provider, model=resolved.model,
+                request_type="text", request_payload=payload, response_payload=None,
+                request_id=request_id, latency_ms=latency_ms, http_status=None,
+                error_code="upstream_exception", error_message=str(e)[:1000],
+            )
+            await gateway_service.release_reservation_fully(reservation)
+            await tpm_service.release_fully(redis, tpm_handle)
+            gateway_requests_total.labels(type="text", model=resolved.model.public_name, status="failed").inc()
+            raise HTTPException(status_code=502, detail=f"Upstream request failed: {e}")
+
         latency_ms = int((time.perf_counter() - started) * 1000)
-        gateway_service.persist_failure(
-            db, user=user, api_key=api_key, provider=resolved.provider, model=resolved.model,
-            request_type="text", request_payload=payload, response_payload=None,
-            request_id=request_id, latency_ms=latency_ms, http_status=None,
-            error_code="upstream_exception", error_message=str(e)[:1000],
+
+        if resp.http_status >= 400:
+            body_text = resp.body if isinstance(resp.body, (dict, list)) else {"raw": str(resp.body)}
+            err_msg = gateway_service.extract_upstream_error_message(resp.body)
+            gateway_service.persist_failure(
+                db, user=user, api_key=api_key, provider=resolved.provider, model=resolved.model,
+                request_type="text", request_payload=payload, response_payload=body_text,
+                request_id=request_id, latency_ms=latency_ms, http_status=resp.http_status,
+                error_code=f"upstream_{resp.http_status}", error_message=err_msg[:1000] if err_msg else None,
+                upstream_request_id=resp.upstream_request_id,
+            )
+            await gateway_service.release_reservation_fully(reservation)
+            await tpm_service.release_fully(redis, tpm_handle)
+            gateway_requests_total.labels(type="text", model=resolved.model.public_name, status="upstream_error").inc()
+            raise HTTPException(status_code=resp.http_status, detail=_normalize_error_body(body_text))
+
+        body = resp.body if isinstance(resp.body, dict) else {}
+        usage = body.get("usage") or {}
+        prompt_tokens = int(usage.get("prompt_tokens") or 0)
+        completion_tokens = int(usage.get("completion_tokens") or 0)
+        total_tokens = int(usage.get("total_tokens") or (prompt_tokens + completion_tokens))
+        cached_tokens, cache_creation_tokens = _extract_cache_tokens(usage)
+
+        cost, pricing_missing = cost_service.calc_text_cost_with_cache(
+            resolved.model, prompt_tokens, completion_tokens,
+            cached_tokens=cached_tokens,
+            cache_creation_tokens=cache_creation_tokens,
         )
-        await gateway_service.release_reservation_fully(reservation)
-        await tpm_service.release_fully(redis, tpm_handle)
-        gateway_requests_total.labels(type="text", model=resolved.model.public_name, status="failed").inc()
-        raise HTTPException(status_code=502, detail=f"Upstream request failed: {e}")
+        usage_source = (UsageSource.MISSING if pricing_missing else UsageSource.UPSTREAM).value
+        pricing_source_total.labels(source=usage_source).inc()
 
-    latency_ms = int((time.perf_counter() - started) * 1000)
-
-    if resp.http_status >= 400:
-        body_text = resp.body if isinstance(resp.body, (dict, list)) else {"raw": str(resp.body)}
-        err_msg = gateway_service.extract_upstream_error_message(resp.body)
-        gateway_service.persist_failure(
+        log_row = gateway_service.persist_success(
             db, user=user, api_key=api_key, provider=resolved.provider, model=resolved.model,
-            request_type="text", request_payload=payload, response_payload=body_text,
-            request_id=request_id, latency_ms=latency_ms, http_status=resp.http_status,
-            error_code=f"upstream_{resp.http_status}", error_message=err_msg[:1000] if err_msg else None,
-            upstream_request_id=resp.upstream_request_id,
+            request_type="text", request_payload=payload, response_payload=body,
+            upstream_request_id=resp.upstream_request_id, request_id=request_id,
+            latency_ms=latency_ms, http_status=resp.http_status,
+            cost=cost, usage_source=usage_source,
+            prompt_tokens=prompt_tokens or None, completion_tokens=completion_tokens or None,
+            total_tokens=total_tokens or None,
+            prompt_cached_tokens=int(cached_tokens) or None,
+            prompt_cache_creation_tokens=int(cache_creation_tokens) or None,
         )
-        await gateway_service.release_reservation_fully(reservation)
-        await tpm_service.release_fully(redis, tpm_handle)
-        gateway_requests_total.labels(type="text", model=resolved.model.public_name, status="upstream_error").inc()
-        raise HTTPException(status_code=resp.http_status, detail=_normalize_error_body(body_text))
 
-    body = resp.body if isinstance(resp.body, dict) else {}
-    usage = body.get("usage") or {}
-    prompt_tokens = int(usage.get("prompt_tokens") or 0)
-    completion_tokens = int(usage.get("completion_tokens") or 0)
-    total_tokens = int(usage.get("total_tokens") or (prompt_tokens + completion_tokens))
-    cached_tokens, cache_creation_tokens = _extract_cache_tokens(usage)
+        await gateway_service.finalize_reservation(reservation, actual_cost=cost)
+        # TPM counts gross tokens through the system; the cache discount only
+        # applies to billing, not the rate-limit measurement.
+        await tpm_service.reconcile(redis, tpm_handle, actual_tokens=prompt_tokens + completion_tokens)
+        gateway_requests_total.labels(type="text", model=resolved.model.public_name, status="success").inc()
+        gateway_cost_usd_total.labels(type="text", model=resolved.model.public_name).inc(float(cost))
+        gateway_latency_ms.labels(type="text", model=resolved.model.public_name).observe(latency_ms)
 
-    cost, pricing_missing = cost_service.calc_text_cost_with_cache(
-        resolved.model, prompt_tokens, completion_tokens,
-        cached_tokens=cached_tokens,
-        cache_creation_tokens=cache_creation_tokens,
-    )
-    usage_source = (UsageSource.MISSING if pricing_missing else UsageSource.UPSTREAM).value
-    pricing_source_total.labels(source=usage_source).inc()
-
-    log_row = gateway_service.persist_success(
-        db, user=user, api_key=api_key, provider=resolved.provider, model=resolved.model,
-        request_type="text", request_payload=payload, response_payload=body,
-        upstream_request_id=resp.upstream_request_id, request_id=request_id,
-        latency_ms=latency_ms, http_status=resp.http_status,
-        cost=cost, usage_source=usage_source,
-        prompt_tokens=prompt_tokens or None, completion_tokens=completion_tokens or None,
-        total_tokens=total_tokens or None,
-        prompt_cached_tokens=int(cached_tokens) or None,
-        prompt_cache_creation_tokens=int(cache_creation_tokens) or None,
-    )
-
-    await gateway_service.finalize_reservation(reservation, actual_cost=cost)
-    # TPM counts gross tokens through the system; the cache discount only
-    # applies to billing, not the rate-limit measurement.
-    await tpm_service.reconcile(redis, tpm_handle, actual_tokens=prompt_tokens + completion_tokens)
-    gateway_requests_total.labels(type="text", model=resolved.model.public_name, status="success").inc()
-    gateway_cost_usd_total.labels(type="text", model=resolved.model.public_name).inc(float(cost))
-    gateway_latency_ms.labels(type="text", model=resolved.model.public_name).observe(latency_ms)
-
-    if isinstance(body, dict):
-        body = {**body, "model": resolved.model.public_name}
-        body.setdefault("id", f"chatcmpl-{request_id}")
-        body["_gateway"] = {
-            "request_id": request_id,
-            "log_id": log_row.id,
-            "cost": str(cost),
-            "latency_ms": latency_ms,
-            "pricing_missing": pricing_missing,
-            "usage_source": usage_source,
-        }
-    return body
+        if isinstance(body, dict):
+            body = {**body, "model": resolved.model.public_name}
+            body.setdefault("id", f"chatcmpl-{request_id}")
+            body["_gateway"] = {
+                "request_id": request_id,
+                "log_id": log_row.id,
+                "cost": str(cost),
+                "latency_ms": latency_ms,
+                "pricing_missing": pricing_missing,
+                "usage_source": usage_source,
+            }
+        return body
+    finally:
+        # Release the concurrency slot on every exit (success, 4xx, 5xx,
+        # cancellation). No-op if entry_id is empty.
+        try:
+            await concurrency_service.release(get_redis(), conc_slot)
+        except Exception:
+            pass
 
 
 # ---------------- POST /v1/chat/completions (streaming) ----------------
@@ -296,23 +359,36 @@ async def _chat_completions_stream(
     auth: tuple[User, ApiKey],
 ) -> StreamingResponse:
     user, api_key = auth
-    public_name = payload.get("model")
-    if not public_name or not isinstance(public_name, str):
-        raise HTTPException(status_code=400, detail="Missing 'model' field")
-    resolved = gateway_service.resolve_model(db, public_name, expected_type="text")
-
-    prompt_est = count_message_tokens(payload.get("messages") or [], resolved.model.public_name)
-    _enforce_input_token_limit(resolved.model, prompt_est)
-    max_completion = int(payload.get("max_tokens") or payload.get("max_completion_tokens") or 4096)
-    tpm_handle = await _enforce_tpm_limit(api_key, prompt_est + max_completion)
-    redis = get_redis()
-    estimate = cost_service.estimate_text_cost_upper_bound(resolved.model, prompt_est, max_completion)
+    # Concurrency gate is the FIRST guard (before token counting / preauth).
+    # Released inside the streaming generator's finally; if anything below
+    # raises before we hand the generator back to the framework, the local
+    # try/except releases too.
+    conc_slot = await _enforce_concurrency_limit(api_key)
     try:
-        reservation = await gateway_service.preauthorize_spend(
-            db, user=user, api_key=api_key, estimated_cost=estimate
-        )
-    except BaseException:  # incl. asyncio.CancelledError — must release TPM/reservation on cancellation
-        await tpm_service.release_fully(redis, tpm_handle)
+        public_name = payload.get("model")
+        if not public_name or not isinstance(public_name, str):
+            raise HTTPException(status_code=400, detail="Missing 'model' field")
+        resolved = gateway_service.resolve_model(db, public_name, expected_type="text")
+
+        prompt_est = count_message_tokens(payload.get("messages") or [], resolved.model.public_name)
+        _enforce_input_token_limit(resolved.model, prompt_est)
+        max_completion = int(payload.get("max_tokens") or payload.get("max_completion_tokens") or 4096)
+        tpm_handle = await _enforce_tpm_limit(api_key, prompt_est + max_completion)
+        redis = get_redis()
+        estimate = cost_service.estimate_text_cost_upper_bound(resolved.model, prompt_est, max_completion)
+        try:
+            reservation = await gateway_service.preauthorize_spend(
+                db, user=user, api_key=api_key, estimated_cost=estimate
+            )
+        except BaseException:  # incl. asyncio.CancelledError — must release TPM/reservation on cancellation
+            await tpm_service.release_fully(redis, tpm_handle)
+            raise
+    except BaseException:
+        # Any failure during setup must free the slot before propagating.
+        try:
+            await concurrency_service.release(get_redis(), conc_slot)
+        except Exception:
+            pass
         raise
 
     request_id = gateway_service.new_request_id()
@@ -329,6 +405,7 @@ async def _chat_completions_stream(
         nonlocal_prompt_est = prompt_est
         nonlocal_max_completion = max_completion
         tpm_settled = False
+        slot_settled = False
         try:
             try:
                 async for chunk in provider_client.chat_completions_stream(upstream_payload):
@@ -432,6 +509,14 @@ async def _chat_completions_stream(
                     await tpm_service.release_fully(redis, tpm_handle)
                 except Exception:
                     pass
+            # Always release the concurrency slot — success, failure, or
+            # GeneratorExit on client cancellation. Without this, a cancelled
+            # stream would burn a slot until the 10-minute hold timeout.
+            if not slot_settled:
+                try:
+                    await concurrency_service.release(get_redis(), conc_slot)
+                except Exception:
+                    pass
 
     return StreamingResponse(
         event_stream(),
@@ -465,137 +550,145 @@ async def messages(
     if payload.get("stream") is True:
         return await _messages_stream(payload, db, auth)
 
-    public_name = payload.get("model")
-    if not public_name or not isinstance(public_name, str):
-        raise HTTPException(status_code=400, detail="Missing 'model' field")
-
-    resolved = await gateway_service.resolve_for_request(
-        db, public_name, expected_type="text",
-        session_key=gateway_service.session_key_for_request(api_key),
-    )
-
-    prompt_est, max_completion, _ = estimate_anthropic_messages_usage(
-        payload, resolved.model.public_name
-    )
-    _enforce_input_token_limit(resolved.model, prompt_est)
-    tpm_handle = await _enforce_tpm_limit(api_key, prompt_est + max_completion)
-    redis = get_redis()
-    estimate = cost_service.estimate_text_cost_upper_bound(resolved.model, prompt_est, max_completion)
+    # Concurrency gate is the FIRST guard. Released in the outer finally.
+    conc_slot = await _enforce_concurrency_limit(api_key)
     try:
-        reservation = await gateway_service.preauthorize_spend(
-            db, user=user, api_key=api_key, estimated_cost=estimate
+        public_name = payload.get("model")
+        if not public_name or not isinstance(public_name, str):
+            raise HTTPException(status_code=400, detail="Missing 'model' field")
+
+        resolved = await gateway_service.resolve_for_request(
+            db, public_name, expected_type="text",
+            session_key=gateway_service.session_key_for_request(api_key),
         )
-    except BaseException:  # incl. asyncio.CancelledError — must release TPM/reservation on cancellation
-        await tpm_service.release_fully(redis, tpm_handle)
-        raise
 
-    request_id = gateway_service.new_request_id()
-    provider_client = gateway_service.build_provider(resolved.provider)
-
-    upstream_payload = {**payload, "model": resolved.model.upstream_model}
-    upstream_payload.pop("stream", None)
-
-    started = time.perf_counter()
-    try:
-        resp = await provider_client.messages(upstream_payload)
-    except NotImplementedError:
-        await gateway_service.release_reservation_fully(reservation)
-        await tpm_service.release_fully(redis, tpm_handle)
-        raise HTTPException(
-            status_code=501,
-            detail=f"Provider '{resolved.provider.name}' does not implement the Messages API",
+        prompt_est, max_completion, _ = estimate_anthropic_messages_usage(
+            payload, resolved.model.public_name
         )
-    except Exception as e:
+        _enforce_input_token_limit(resolved.model, prompt_est)
+        tpm_handle = await _enforce_tpm_limit(api_key, prompt_est + max_completion)
+        redis = get_redis()
+        estimate = cost_service.estimate_text_cost_upper_bound(resolved.model, prompt_est, max_completion)
+        try:
+            reservation = await gateway_service.preauthorize_spend(
+                db, user=user, api_key=api_key, estimated_cost=estimate
+            )
+        except BaseException:  # incl. asyncio.CancelledError — must release TPM/reservation on cancellation
+            await tpm_service.release_fully(redis, tpm_handle)
+            raise
+
+        request_id = gateway_service.new_request_id()
+        provider_client = gateway_service.build_provider(resolved.provider)
+
+        upstream_payload = {**payload, "model": resolved.model.upstream_model}
+        upstream_payload.pop("stream", None)
+
+        started = time.perf_counter()
+        try:
+            resp = await provider_client.messages(upstream_payload)
+        except NotImplementedError:
+            await gateway_service.release_reservation_fully(reservation)
+            await tpm_service.release_fully(redis, tpm_handle)
+            raise HTTPException(
+                status_code=501,
+                detail=f"Provider '{resolved.provider.name}' does not implement the Messages API",
+            )
+        except Exception as e:
+            latency_ms = int((time.perf_counter() - started) * 1000)
+            gateway_service.persist_failure(
+                db, user=user, api_key=api_key, provider=resolved.provider, model=resolved.model,
+                request_type="text", request_payload=payload, response_payload=None,
+                request_id=request_id, latency_ms=latency_ms, http_status=None,
+                error_code="upstream_exception", error_message=str(e)[:1000],
+            )
+            await gateway_service.release_reservation_fully(reservation)
+            await tpm_service.release_fully(redis, tpm_handle)
+            gateway_requests_total.labels(type="text", model=resolved.model.public_name, status="failed").inc()
+            raise HTTPException(status_code=502, detail=f"Upstream request failed: {e}")
+
         latency_ms = int((time.perf_counter() - started) * 1000)
-        gateway_service.persist_failure(
+
+        if resp.http_status >= 400:
+            body_text = resp.body if isinstance(resp.body, (dict, list)) else {"raw": str(resp.body)}
+            err_msg = gateway_service.extract_upstream_error_message(resp.body)
+            gateway_service.persist_failure(
+                db, user=user, api_key=api_key, provider=resolved.provider, model=resolved.model,
+                request_type="text", request_payload=payload, response_payload=body_text,
+                request_id=request_id, latency_ms=latency_ms, http_status=resp.http_status,
+                error_code=f"upstream_{resp.http_status}", error_message=err_msg[:1000] if err_msg else None,
+                upstream_request_id=resp.upstream_request_id,
+            )
+            await gateway_service.release_reservation_fully(reservation)
+            await tpm_service.release_fully(redis, tpm_handle)
+            gateway_requests_total.labels(type="text", model=resolved.model.public_name, status="upstream_error").inc()
+            raise HTTPException(status_code=resp.http_status, detail=_normalize_error_body(body_text))
+
+        body = resp.body if isinstance(resp.body, dict) else {}
+        usage = provider_client.extract_messages_usage(body)
+
+        if usage is not None:
+            prompt_tokens = usage.input_tokens
+            completion_tokens = usage.output_tokens
+            usage_source = UsageSource.UPSTREAM.value
+            cached_tokens, cache_creation_tokens = _extract_cache_tokens(body.get("usage"))
+        else:
+            prompt_tokens, completion_tokens = prompt_est, max_completion
+            usage_source = UsageSource.ESTIMATED.value
+            cached_tokens = 0
+            cache_creation_tokens = 0
+            log.warning(
+                "messages_usage_missing",
+                model=resolved.model.public_name,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+            )
+
+        cost, pricing_missing = cost_service.calc_text_cost_with_cache(
+            resolved.model, prompt_tokens, completion_tokens,
+            cached_tokens=cached_tokens,
+            cache_creation_tokens=cache_creation_tokens,
+        )
+        if pricing_missing:
+            usage_source = UsageSource.MISSING.value
+        pricing_source_total.labels(source=usage_source).inc()
+
+        log_row = gateway_service.persist_success(
             db, user=user, api_key=api_key, provider=resolved.provider, model=resolved.model,
-            request_type="text", request_payload=payload, response_payload=None,
-            request_id=request_id, latency_ms=latency_ms, http_status=None,
-            error_code="upstream_exception", error_message=str(e)[:1000],
-        )
-        await gateway_service.release_reservation_fully(reservation)
-        await tpm_service.release_fully(redis, tpm_handle)
-        gateway_requests_total.labels(type="text", model=resolved.model.public_name, status="failed").inc()
-        raise HTTPException(status_code=502, detail=f"Upstream request failed: {e}")
-
-    latency_ms = int((time.perf_counter() - started) * 1000)
-
-    if resp.http_status >= 400:
-        body_text = resp.body if isinstance(resp.body, (dict, list)) else {"raw": str(resp.body)}
-        err_msg = gateway_service.extract_upstream_error_message(resp.body)
-        gateway_service.persist_failure(
-            db, user=user, api_key=api_key, provider=resolved.provider, model=resolved.model,
-            request_type="text", request_payload=payload, response_payload=body_text,
-            request_id=request_id, latency_ms=latency_ms, http_status=resp.http_status,
-            error_code=f"upstream_{resp.http_status}", error_message=err_msg[:1000] if err_msg else None,
-            upstream_request_id=resp.upstream_request_id,
-        )
-        await gateway_service.release_reservation_fully(reservation)
-        await tpm_service.release_fully(redis, tpm_handle)
-        gateway_requests_total.labels(type="text", model=resolved.model.public_name, status="upstream_error").inc()
-        raise HTTPException(status_code=resp.http_status, detail=_normalize_error_body(body_text))
-
-    body = resp.body if isinstance(resp.body, dict) else {}
-    usage = provider_client.extract_messages_usage(body)
-
-    if usage is not None:
-        prompt_tokens = usage.input_tokens
-        completion_tokens = usage.output_tokens
-        usage_source = UsageSource.UPSTREAM.value
-        cached_tokens, cache_creation_tokens = _extract_cache_tokens(body.get("usage"))
-    else:
-        prompt_tokens, completion_tokens = prompt_est, max_completion
-        usage_source = UsageSource.ESTIMATED.value
-        cached_tokens = 0
-        cache_creation_tokens = 0
-        log.warning(
-            "messages_usage_missing",
-            model=resolved.model.public_name,
-            prompt_tokens=prompt_tokens,
-            completion_tokens=completion_tokens,
+            request_type="text", request_payload=payload, response_payload=body,
+            upstream_request_id=resp.upstream_request_id, request_id=request_id,
+            latency_ms=latency_ms, http_status=resp.http_status,
+            cost=cost, usage_source=usage_source,
+            prompt_tokens=prompt_tokens or None, completion_tokens=completion_tokens or None,
+            total_tokens=(prompt_tokens + completion_tokens) or None,
+            prompt_cached_tokens=int(cached_tokens) or None,
+            prompt_cache_creation_tokens=int(cache_creation_tokens) or None,
         )
 
-    cost, pricing_missing = cost_service.calc_text_cost_with_cache(
-        resolved.model, prompt_tokens, completion_tokens,
-        cached_tokens=cached_tokens,
-        cache_creation_tokens=cache_creation_tokens,
-    )
-    if pricing_missing:
-        usage_source = UsageSource.MISSING.value
-    pricing_source_total.labels(source=usage_source).inc()
+        await gateway_service.finalize_reservation(reservation, actual_cost=cost)
+        await tpm_service.reconcile(redis, tpm_handle, actual_tokens=prompt_tokens + completion_tokens)
+        gateway_requests_total.labels(type="text", model=resolved.model.public_name, status="success").inc()
+        gateway_cost_usd_total.labels(type="text", model=resolved.model.public_name).inc(float(cost))
+        gateway_latency_ms.labels(type="text", model=resolved.model.public_name).observe(latency_ms)
 
-    log_row = gateway_service.persist_success(
-        db, user=user, api_key=api_key, provider=resolved.provider, model=resolved.model,
-        request_type="text", request_payload=payload, response_payload=body,
-        upstream_request_id=resp.upstream_request_id, request_id=request_id,
-        latency_ms=latency_ms, http_status=resp.http_status,
-        cost=cost, usage_source=usage_source,
-        prompt_tokens=prompt_tokens or None, completion_tokens=completion_tokens or None,
-        total_tokens=(prompt_tokens + completion_tokens) or None,
-        prompt_cached_tokens=int(cached_tokens) or None,
-        prompt_cache_creation_tokens=int(cache_creation_tokens) or None,
-    )
-
-    await gateway_service.finalize_reservation(reservation, actual_cost=cost)
-    await tpm_service.reconcile(redis, tpm_handle, actual_tokens=prompt_tokens + completion_tokens)
-    gateway_requests_total.labels(type="text", model=resolved.model.public_name, status="success").inc()
-    gateway_cost_usd_total.labels(type="text", model=resolved.model.public_name).inc(float(cost))
-    gateway_latency_ms.labels(type="text", model=resolved.model.public_name).observe(latency_ms)
-
-    if isinstance(body, dict):
-        # Rewrite model name to the public-facing one so clients don't see the
-        # upstream alias.
-        body = {**body, "model": resolved.model.public_name}
-        body.setdefault("id", f"msg-{request_id}")
-        body["_gateway"] = {
-            "request_id": request_id,
-            "log_id": log_row.id,
-            "cost": str(cost),
-            "latency_ms": latency_ms,
-            "pricing_missing": pricing_missing,
-            "usage_source": usage_source,
-        }
-    return body
+        if isinstance(body, dict):
+            # Rewrite model name to the public-facing one so clients don't see the
+            # upstream alias.
+            body = {**body, "model": resolved.model.public_name}
+            body.setdefault("id", f"msg-{request_id}")
+            body["_gateway"] = {
+                "request_id": request_id,
+                "log_id": log_row.id,
+                "cost": str(cost),
+                "latency_ms": latency_ms,
+                "pricing_missing": pricing_missing,
+                "usage_source": usage_source,
+            }
+        return body
+    finally:
+        try:
+            await concurrency_service.release(get_redis(), conc_slot)
+        except Exception:
+            pass
 
 
 async def _messages_stream(
@@ -604,27 +697,37 @@ async def _messages_stream(
     auth: tuple[User, ApiKey],
 ) -> StreamingResponse:
     user, api_key = auth
-    public_name = payload.get("model")
-    if not public_name or not isinstance(public_name, str):
-        raise HTTPException(status_code=400, detail="Missing 'model' field")
-    resolved = await gateway_service.resolve_for_request(
-        db, public_name, expected_type="text",
-        session_key=gateway_service.session_key_for_request(api_key),
-    )
-
-    prompt_est, max_completion, _ = estimate_anthropic_messages_usage(
-        payload, resolved.model.public_name
-    )
-    _enforce_input_token_limit(resolved.model, prompt_est)
-    tpm_handle = await _enforce_tpm_limit(api_key, prompt_est + max_completion)
-    redis = get_redis()
-    estimate = cost_service.estimate_text_cost_upper_bound(resolved.model, prompt_est, max_completion)
+    # Concurrency gate is the FIRST guard. Released inside the generator's
+    # finally; failures during setup are caught below to free the slot.
+    conc_slot = await _enforce_concurrency_limit(api_key)
     try:
-        reservation = await gateway_service.preauthorize_spend(
-            db, user=user, api_key=api_key, estimated_cost=estimate
+        public_name = payload.get("model")
+        if not public_name or not isinstance(public_name, str):
+            raise HTTPException(status_code=400, detail="Missing 'model' field")
+        resolved = await gateway_service.resolve_for_request(
+            db, public_name, expected_type="text",
+            session_key=gateway_service.session_key_for_request(api_key),
         )
-    except BaseException:  # incl. asyncio.CancelledError — must release TPM/reservation on cancellation
-        await tpm_service.release_fully(redis, tpm_handle)
+
+        prompt_est, max_completion, _ = estimate_anthropic_messages_usage(
+            payload, resolved.model.public_name
+        )
+        _enforce_input_token_limit(resolved.model, prompt_est)
+        tpm_handle = await _enforce_tpm_limit(api_key, prompt_est + max_completion)
+        redis = get_redis()
+        estimate = cost_service.estimate_text_cost_upper_bound(resolved.model, prompt_est, max_completion)
+        try:
+            reservation = await gateway_service.preauthorize_spend(
+                db, user=user, api_key=api_key, estimated_cost=estimate
+            )
+        except BaseException:  # incl. asyncio.CancelledError — must release TPM/reservation on cancellation
+            await tpm_service.release_fully(redis, tpm_handle)
+            raise
+    except BaseException:
+        try:
+            await concurrency_service.release(get_redis(), conc_slot)
+        except Exception:
+            pass
         raise
 
     request_id = gateway_service.new_request_id()
@@ -645,6 +748,7 @@ async def _messages_stream(
         saw_usage = False
         upstream_error: dict[str, Any] | None = None
         tpm_settled = False
+        slot_settled = False
         try:
             try:
                 async for chunk in provider_client.messages_stream(upstream_payload):
@@ -760,6 +864,14 @@ async def _messages_stream(
             if not tpm_settled:
                 try:
                     await tpm_service.release_fully(redis, tpm_handle)
+                except Exception:
+                    pass
+            # Always release the concurrency slot — success, failure, or
+            # GeneratorExit on client cancellation. Without this, a cancelled
+            # stream would burn a slot until the 10-minute hold timeout.
+            if not slot_settled:
+                try:
+                    await concurrency_service.release(get_redis(), conc_slot)
                 except Exception:
                     pass
 
