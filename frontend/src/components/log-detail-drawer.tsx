@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/sheet";
 import { TypeBadge } from "@/components/type-badge";
 import { api } from "@/lib/api";
+import { useT } from "@/lib/i18n";
 import type { LogDetail } from "@/lib/types";
 import { fmtCompactMoney, fmtDate, statusBadgeVariant } from "@/lib/utils";
 
@@ -34,6 +35,7 @@ export function LogDetailDrawer({
   /** show prompt + duration/n_images fields (used by Generations page). */
   showPrompt?: boolean;
 }) {
+  const t = useT();
   return (
     <Sheet open={!!log} onOpenChange={(o) => !o && onClose()}>
       <SheetContent>
@@ -49,31 +51,31 @@ export function LogDetailDrawer({
             </SheetHeader>
 
             <div className="grid grid-cols-2 gap-3 mt-4 text-xs">
-              <LabeledValue label="Cost" value={fmtCompactMoney(log.cost)} mono />
-              <LabeledValue label="Latency" value={`${log.latency_ms ?? "—"} ms`} mono />
-              <LabeledValue label="HTTP" value={String(log.http_status ?? "—")} mono />
+              <LabeledValue label={t("logDrawer.fieldCost")} value={fmtCompactMoney(log.cost)} mono />
+              <LabeledValue label={t("logDrawer.fieldLatency")} value={`${log.latency_ms ?? "—"} ${t("logDrawer.latencyUnit")}`} mono />
+              <LabeledValue label={t("logDrawer.fieldHttp")} value={String(log.http_status ?? "—")} mono />
               {log.total_tokens != null && (
                 <LabeledValue
-                  label="Tokens"
+                  label={t("logDrawer.fieldTokens")}
                   value={`${log.prompt_tokens ?? 0} → ${log.completion_tokens ?? 0}`}
                   mono
                 />
               )}
-              <LabeledValue label="API key" value={log.api_key_prefix || "—"} mono />
-              <LabeledValue label="Upstream" value={log.upstream_model || "—"} mono />
-              <LabeledValue label="When" value={fmtDate(log.created_at)} />
-              <LabeledValue label="Upstream request id" value={log.upstream_request_id || "—"} mono />
+              <LabeledValue label={t("logDrawer.fieldApiKey")} value={log.api_key_prefix || "—"} mono />
+              <LabeledValue label={t("logDrawer.fieldUpstream")} value={log.upstream_model || "—"} mono />
+              <LabeledValue label={t("logDrawer.fieldWhen")} value={fmtDate(log.created_at)} />
+              <LabeledValue label={t("logDrawer.fieldUpstreamRequestId")} value={log.upstream_request_id || "—"} mono />
               {showPrompt && (
                 <>
                   <LabeledValue
-                    label="Prompt"
+                    label={t("logDrawer.fieldPrompt")}
                     value={(log.request_payload_json?.prompt as string) || "—"}
                   />
                   <LabeledValue
-                    label={log.request_type === "video" ? "Duration" : "Images"}
+                    label={log.request_type === "video" ? t("logDrawer.fieldDuration") : t("logDrawer.fieldImages")}
                     value={
                       log.request_type === "video"
-                        ? `${log.video_duration ?? "?"}s`
+                        ? `${log.video_duration ?? "?"}${t("logDrawer.durationUnit")}`
                         : String(log.image_count ?? 1)
                     }
                     mono
@@ -91,7 +93,7 @@ export function LogDetailDrawer({
             {log.asset_url && (
               <div className="mt-4">
                 <div className="flex items-center justify-between text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">
-                  <span>Asset</span>
+                  <span>{t("logDrawer.sectionAsset")}</span>
                   <div className="flex gap-2">
                     <a
                       href={log.asset_url}
@@ -99,14 +101,14 @@ export function LogDetailDrawer({
                       rel="noreferrer"
                       className="hover:text-foreground inline-flex items-center gap-1"
                     >
-                      <ExternalLink className="h-3 w-3" /> open
+                      <ExternalLink className="h-3 w-3" /> {t("logDrawer.assetOpen")}
                     </a>
                     <a
                       href={log.asset_url}
                       download
                       className="hover:text-foreground inline-flex items-center gap-1"
                     >
-                      <Download className="h-3 w-3" /> download
+                      <Download className="h-3 w-3" /> {t("logDrawer.assetDownload")}
                     </a>
                   </div>
                 </div>
@@ -120,7 +122,7 @@ export function LogDetailDrawer({
 
             <div className="mt-4">
               <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">
-                Request
+                {t("logDrawer.sectionRequest")}
               </div>
               <CodeBlock
                 lang="json"
@@ -130,7 +132,7 @@ export function LogDetailDrawer({
             </div>
             <div className="mt-3">
               <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">
-                Response
+                {t("logDrawer.sectionResponse")}
               </div>
               <CodeBlock
                 lang="json"
