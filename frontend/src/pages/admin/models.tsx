@@ -23,6 +23,7 @@ import { TypeBadge } from "@/components/type-badge";
 import { ProviderTag } from "@/components/provider-tag";
 import { PageHeader } from "@/components/shell";
 import { api } from "@/lib/api";
+import { useT } from "@/lib/i18n";
 import type { HealthCheckResult, Model, Provider } from "@/lib/types";
 import { priceLabel } from "@/lib/utils";
 
@@ -91,17 +92,21 @@ function modelToForm(m: Model): ModelFormState {
   };
 }
 
-type Validated<T> = { ok: true; value: T } | { ok: false; error: string };
+type ValidationError =
+  | "capabilities_json"
+  | "public_name_required"
+  | "provider_required";
+type Validated<T> = { ok: true; value: T } | { ok: false; error: ValidationError };
 
 function formToPayload(f: ModelFormState): Validated<Record<string, unknown>> {
   let caps: unknown = null;
   try {
     caps = f.capabilitiesJson.trim() ? JSON.parse(f.capabilitiesJson) : null;
   } catch {
-    return { ok: false, error: "capabilities must be valid JSON" };
+    return { ok: false, error: "capabilities_json" };
   }
-  if (!f.public_name.trim()) return { ok: false, error: "public_name required" };
-  if (!f.provider_id) return { ok: false, error: "provider required" };
+  if (!f.public_name.trim()) return { ok: false, error: "public_name_required" };
+  if (!f.provider_id) return { ok: false, error: "provider_required" };
   return {
     ok: true,
     value: {
@@ -126,9 +131,21 @@ function formToPayload(f: ModelFormState): Validated<Record<string, unknown>> {
 }
 
 export function AdminModelsPage() {
+  const t = useT();
   const [rows, setRows] = useState<Model[]>([]);
   const [providers, setProviders] = useState<Provider[]>([]);
   const [health, setHealth] = useState<Record<number, HealthCheckResult | "pending">>({});
+
+  const validationMessage = (e: ValidationError): string => {
+    switch (e) {
+      case "capabilities_json":
+        return t("admin.models.errCapabilitiesJson");
+      case "public_name_required":
+        return t("admin.models.errPublicNameRequired");
+      case "provider_required":
+        return t("admin.models.errProviderRequired");
+    }
+  };
 
   // One dialog at a time; form is initialized whenever we open. Prevents stale
   // values leaking between Create and Edit reopen cycles.
@@ -162,13 +179,13 @@ export function AdminModelsPage() {
   const submitDialog = async () => {
     if (!dialog) return;
     const r = formToPayload(form);
-    if (!r.ok) return toast.error(r.error);
+    if (!r.ok) return toast.error(validationMessage(r.error));
     if (dialog.mode === "create") {
       await api("/api/admin/models", { method: "POST", body: r.value });
-      toast.success("Model created");
+      toast.success(t("admin.models.toastCreated"));
     } else {
       await api(`/api/admin/models/${dialog.model.id}`, { method: "PATCH", body: r.value });
-      toast.success("Model updated");
+      toast.success(t("admin.models.toastUpdated"));
     }
     closeDialog();
     void refresh();
@@ -177,7 +194,11 @@ export function AdminModelsPage() {
   const toggle = async (m: Model) => {
     const a = m.status === "active" ? "disable" : "enable";
     await api(`/api/admin/models/${m.id}/${a}`, { method: "POST" });
-    toast.success(`Model ${a}d`);
+    toast.success(
+      a === "disable"
+        ? t("admin.models.toastDisabled")
+        : t("admin.models.toastEnabled"),
+    );
     void refresh();
   };
 
@@ -186,8 +207,17 @@ export function AdminModelsPage() {
     try {
       const result = await api<HealthCheckResult>(`/api/admin/models/${m.id}/healthcheck`, { method: "POST" });
       setHealth((h) => ({ ...h, [m.id]: result }));
-      if (result.ok) toast.success(`${m.public_name}: ${result.latency_ms}ms ✓`);
-      else toast.error(`${m.public_name}: ${result.error || "failed"}`);
+      if (result.ok)
+        toast.success(
+          t("admin.models.toastPingOk", { name: m.public_name, ms: result.latency_ms }),
+        );
+      else
+        toast.error(
+          t("admin.models.toastPingFail", {
+            name: m.public_name,
+            error: result.error || t("admin.models.toastPingFailFallback"),
+          }),
+        );
     } catch (e: any) {
       setHealth((h) => ({
         ...h,
@@ -209,11 +239,11 @@ export function AdminModelsPage() {
   return (
     <div>
       <PageHeader
-        title="Models"
-        subtitle={`${rows.length} models. Ping calls the upstream — uses a tiny bit of credit.`}
+        title={t("admin.models.title")}
+        subtitle={t("admin.models.subtitle", { count: rows.length })}
         actions={
           <Button onClick={startCreate}>
-            <Plus className="h-4 w-4" /> New model
+            <Plus className="h-4 w-4" /> {t("admin.models.newModelBtn")}
           </Button>
         }
       />
@@ -222,14 +252,14 @@ export function AdminModelsPage() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Public name</TableHead>
-              <TableHead>Upstream</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>Provider tag</TableHead>
-              <TableHead>Pricing</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Health</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
+              <TableHead>{t("admin.models.colPublicName")}</TableHead>
+              <TableHead>{t("admin.models.colUpstream")}</TableHead>
+              <TableHead>{t("admin.models.colType")}</TableHead>
+              <TableHead>{t("admin.models.colProviderTag")}</TableHead>
+              <TableHead>{t("admin.models.colPricing")}</TableHead>
+              <TableHead>{t("admin.models.colStatus")}</TableHead>
+              <TableHead>{t("admin.models.colHealth")}</TableHead>
+              <TableHead className="text-right">{t("admin.models.colActions")}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -243,29 +273,41 @@ export function AdminModelsPage() {
                   <TableCell><ProviderTag provider={m.display_provider} /></TableCell>
                   <TableCell className="mono text-xs">{priceLabel(m)}</TableCell>
                   <TableCell>
-                    <Badge variant={m.status === "active" ? "success" : "warn"}>{m.status}</Badge>
-                    {!m.visible && <Badge variant="outline" className="ml-1">hidden</Badge>}
+                    <Badge variant={m.status === "active" ? "success" : "warn"}>
+                      {m.status === "active"
+                        ? t("admin.models.statusActive")
+                        : t("admin.models.statusDisabled")}
+                    </Badge>
+                    {!m.visible && (
+                      <Badge variant="outline" className="ml-1">{t("admin.models.badgeHidden")}</Badge>
+                    )}
                   </TableCell>
                   <TableCell className="text-xs">
-                    {h === "pending" && <span className="text-muted-foreground">pinging…</span>}
+                    {h === "pending" && (
+                      <span className="text-muted-foreground">{t("admin.models.healthPinging")}</span>
+                    )}
                     {h && h !== "pending" && (
                       <span title={h.error || h.sample || ""}>
-                        <Badge variant={h.ok ? "success" : "danger"}>{h.ok ? "ok" : "fail"}</Badge>
+                        <Badge variant={h.ok ? "success" : "danger"}>
+                          {h.ok ? t("admin.models.healthOk") : t("admin.models.healthFail")}
+                        </Badge>
                         <span className="mono ml-1.5 text-muted-foreground">{h.latency_ms}ms</span>
                       </span>
                     )}
-                    {!h && <span className="text-muted-foreground">—</span>}
+                    {!h && <span className="text-muted-foreground">{t("admin.models.healthPlaceholder")}</span>}
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="inline-flex gap-1">
-                      <Button variant="ghost" size="icon" onClick={() => startEdit(m)} title="Edit">
+                      <Button variant="ghost" size="icon" onClick={() => startEdit(m)} title={t("admin.models.actionEdit")}>
                         <Pencil className="h-3.5 w-3.5" />
                       </Button>
                       <Button variant="outline" size="sm" onClick={() => ping(m)} disabled={h === "pending"}>
-                        <Activity className="h-3.5 w-3.5" /> Ping
+                        <Activity className="h-3.5 w-3.5" /> {t("admin.models.actionPing")}
                       </Button>
                       <Button variant="outline" size="sm" onClick={() => toggle(m)}>
-                        {m.status === "active" ? "Disable" : "Enable"}
+                        {m.status === "active"
+                          ? t("admin.models.actionDisable")
+                          : t("admin.models.actionEnable")}
                       </Button>
                     </div>
                   </TableCell>
@@ -280,14 +322,18 @@ export function AdminModelsPage() {
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>
-              {dialog?.mode === "edit" ? `Edit ${dialog.model.public_name}` : "New model"}
+              {dialog?.mode === "edit"
+                ? t("admin.models.dialog.titleEdit", { name: dialog.model.public_name })
+                : t("admin.models.dialog.titleCreate")}
             </DialogTitle>
           </DialogHeader>
           <ModelFormBody form={form} setForm={setForm} providers={providers} />
           <div className="flex justify-end gap-2 mt-3">
-            <Button variant="outline" onClick={closeDialog}>Cancel</Button>
+            <Button variant="outline" onClick={closeDialog}>{t("admin.models.dialog.cancel")}</Button>
             <Button onClick={submitDialog}>
-              {dialog?.mode === "edit" ? "Save" : "Create"}
+              {dialog?.mode === "edit"
+                ? t("admin.models.dialog.save")
+                : t("admin.models.dialog.create")}
             </Button>
           </div>
         </DialogContent>
@@ -303,6 +349,7 @@ function ModelFormBody({
   setForm: (f: ModelFormState) => void;
   providers: Provider[];
 }) {
+  const t = useT();
   const set = <K extends keyof ModelFormState>(k: K, v: ModelFormState[K]) =>
     setForm({ ...form, [k]: v });
 
@@ -311,29 +358,29 @@ function ModelFormBody({
       case "per_token":
         return (
           <>
-            <FormField label="Input price (USD / 1M tokens)">
+            <FormField label={t("admin.models.dialog.inputPriceLabel")}>
               <Input value={form.input_price} onChange={(e) => set("input_price", e.target.value)} />
             </FormField>
-            <FormField label="Output price (USD / 1M tokens)">
+            <FormField label={t("admin.models.dialog.outputPriceLabel")}>
               <Input value={form.output_price} onChange={(e) => set("output_price", e.target.value)} />
             </FormField>
           </>
         );
       case "per_image":
         return (
-          <FormField label="Image price (USD / image)">
+          <FormField label={t("admin.models.dialog.imagePriceLabel")}>
             <Input value={form.image_price} onChange={(e) => set("image_price", e.target.value)} />
           </FormField>
         );
       case "per_second":
         return (
-          <FormField label="Video price (USD / second)">
+          <FormField label={t("admin.models.dialog.videoSecondPriceLabel")}>
             <Input value={form.video_second_price} onChange={(e) => set("video_second_price", e.target.value)} />
           </FormField>
         );
       case "per_generation":
         return (
-          <FormField label="Per-generation price (USD)">
+          <FormField label={t("admin.models.dialog.generationPriceLabel")}>
             <Input value={form.generation_price} onChange={(e) => set("generation_price", e.target.value)} />
           </FormField>
         );
@@ -343,40 +390,48 @@ function ModelFormBody({
   return (
     <div className="flex flex-col gap-3 max-h-[70vh] overflow-y-auto pr-1">
       <div className="grid grid-cols-2 gap-3">
-        <FormField label="Public name (what users send)">
+        <FormField label={t("admin.models.dialog.publicNameLabel")}>
           <Input
             value={form.public_name}
             onChange={(e) => set("public_name", e.target.value)}
-            placeholder="e.g. gpt-4o"
+            placeholder={t("admin.models.dialog.publicNamePlaceholder")}
           />
+          <span className="text-xs text-muted-foreground">
+            {t("admin.models.dialog.publicNameHint")}
+          </span>
         </FormField>
-        <FormField label="Upstream model (what we forward)">
+        <FormField label={t("admin.models.dialog.upstreamLabel")}>
           <Input
             value={form.upstream_model}
             onChange={(e) => set("upstream_model", e.target.value)}
-            placeholder="defaults to public name"
+            placeholder={t("admin.models.dialog.upstreamPlaceholder")}
           />
+          <span className="text-xs text-muted-foreground">
+            {t("admin.models.dialog.upstreamHint")}
+          </span>
         </FormField>
       </div>
 
       <div className="grid grid-cols-3 gap-3">
-        <FormField label="Type">
+        <FormField label={t("admin.models.dialog.typeLabel")}>
           <Select value={form.type} onValueChange={(v) => set("type", v as ModelFormState["type"])}>
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="text">text</SelectItem>
-              <SelectItem value="image">image</SelectItem>
-              <SelectItem value="video">video</SelectItem>
-              <SelectItem value="multimodal">multimodal</SelectItem>
+              <SelectItem value="text">{t("admin.models.dialog.typeText")}</SelectItem>
+              <SelectItem value="image">{t("admin.models.dialog.typeImage")}</SelectItem>
+              <SelectItem value="video">{t("admin.models.dialog.typeVideo")}</SelectItem>
+              <SelectItem value="multimodal">{t("admin.models.dialog.typeMultimodal")}</SelectItem>
             </SelectContent>
           </Select>
         </FormField>
-        <FormField label="Provider">
+        <FormField label={t("admin.models.dialog.providerLabel")}>
           <Select
             value={form.provider_id ? String(form.provider_id) : ""}
             onValueChange={(v) => set("provider_id", Number(v))}
           >
-            <SelectTrigger><SelectValue placeholder="Select provider" /></SelectTrigger>
+            <SelectTrigger>
+              <SelectValue placeholder={t("admin.models.dialog.providerPlaceholder")} />
+            </SelectTrigger>
             <SelectContent>
               {providers.map((p) => (
                 <SelectItem key={p.id} value={String(p.id)}>{p.display_name}</SelectItem>
@@ -384,68 +439,71 @@ function ModelFormBody({
             </SelectContent>
           </Select>
         </FormField>
-        <FormField label="Provider tag (UI color)">
+        <FormField label={t("admin.models.dialog.providerTagLabel")}>
           <Select
             value={form.display_provider}
             onValueChange={(v) => set("display_provider", v as DisplayProvider)}
           >
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
-              {DISPLAY_PROVIDERS.map((t) => (
-                <SelectItem key={t} value={t}>{t}</SelectItem>
+              {DISPLAY_PROVIDERS.map((tag) => (
+                <SelectItem key={tag} value={tag}>{tag}</SelectItem>
               ))}
             </SelectContent>
           </Select>
         </FormField>
       </div>
 
-      <FormField label="Display name (optional)">
+      <FormField label={t("admin.models.dialog.displayNameLabel")}>
         <Input value={form.display_name} onChange={(e) => set("display_name", e.target.value)} />
       </FormField>
-      <FormField label="Description (optional)">
+      <FormField label={t("admin.models.dialog.descriptionLabel")}>
         <Input value={form.description} onChange={(e) => set("description", e.target.value)} />
       </FormField>
 
       <div className="grid grid-cols-2 gap-3">
-        <FormField label="Pricing mode">
+        <FormField label={t("admin.models.dialog.pricingModeLabel")}>
           <Select value={form.pricing_mode} onValueChange={(v) => set("pricing_mode", v as ModelFormState["pricing_mode"])}>
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="per_token">per_token</SelectItem>
-              <SelectItem value="per_image">per_image</SelectItem>
-              <SelectItem value="per_second">per_second</SelectItem>
-              <SelectItem value="per_generation">per_generation</SelectItem>
+              <SelectItem value="per_token">{t("admin.models.dialog.pricingModePerToken")}</SelectItem>
+              <SelectItem value="per_image">{t("admin.models.dialog.pricingModePerImage")}</SelectItem>
+              <SelectItem value="per_second">{t("admin.models.dialog.pricingModePerSecond")}</SelectItem>
+              <SelectItem value="per_generation">{t("admin.models.dialog.pricingModePerGeneration")}</SelectItem>
             </SelectContent>
           </Select>
         </FormField>
         <div className="grid grid-cols-1 gap-3">{pricingFields()}</div>
       </div>
 
-      <FormField label="Capabilities (JSON)">
+      <FormField label={t("admin.models.dialog.capabilitiesLabel")}>
         <Input
           className="mono text-xs"
           value={form.capabilitiesJson}
           onChange={(e) => set("capabilitiesJson", e.target.value)}
-          placeholder='{"stream": true}'
+          placeholder={t("admin.models.dialog.capabilitiesPlaceholder")}
         />
+        <span className="text-xs text-muted-foreground">
+          {t("admin.models.dialog.capabilitiesHint")}
+        </span>
       </FormField>
 
       <div className="grid grid-cols-2 gap-3">
-        <FormField label="Status">
+        <FormField label={t("admin.models.dialog.statusLabel")}>
           <Select value={form.status} onValueChange={(v) => set("status", v as ModelFormState["status"])}>
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="active">active</SelectItem>
-              <SelectItem value="disabled">disabled</SelectItem>
+              <SelectItem value="active">{t("admin.models.dialog.statusActive")}</SelectItem>
+              <SelectItem value="disabled">{t("admin.models.dialog.statusDisabled")}</SelectItem>
             </SelectContent>
           </Select>
         </FormField>
-        <FormField label="Visible to users">
+        <FormField label={t("admin.models.dialog.visibleLabel")}>
           <Select value={form.visible ? "yes" : "no"} onValueChange={(v) => set("visible", v === "yes")}>
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="yes">yes</SelectItem>
-              <SelectItem value="no">no</SelectItem>
+              <SelectItem value="yes">{t("admin.models.dialog.visibleYes")}</SelectItem>
+              <SelectItem value="no">{t("admin.models.dialog.visibleNo")}</SelectItem>
             </SelectContent>
           </Select>
         </FormField>
