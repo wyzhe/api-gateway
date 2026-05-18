@@ -1,7 +1,14 @@
+from __future__ import annotations
+
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, Response
+from fastapi_limiter import FastAPILimiter
+from sqlalchemy import text
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .api import admin as admin_api
 from .api import auth as auth_api
@@ -12,36 +19,165 @@ from .api import keys as keys_api
 from .api import logs as logs_api
 from .api import models as models_api
 from .config import get_settings
-from .database import SessionLocal
+from .database import SessionLocal, engine
+from .logging_config import configure_logging, get_logger
+from .metrics import render_metrics
+from .middleware import AccessLogMiddleware, RequestIdMiddleware
+from .providers import close_client as close_httpx_client
+from .redis_client import close_redis, get_redis, ping as redis_ping
 from .seed import run_seed
 
+configure_logging()
+log = get_logger(__name__)
 settings = get_settings()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    log.info("startup", env=settings.env)
+    redis = get_redis()
+    redis_ok = False
+    try:
+        await redis.ping()
+        redis_ok = True
+    except Exception as e:
+        log.error("redis_unavailable_at_startup", error=str(e))
+        if settings.is_production:
+            raise
+    if redis_ok:
+        try:
+            await FastAPILimiter.init(redis)
+        except Exception as e:
+            log.error("rate_limiter_init_failed", error=str(e))
+            if settings.is_production:
+                raise
+
     db = SessionLocal()
     try:
         run_seed(db)
     finally:
         db.close()
     yield
+    log.info("shutdown")
+    try:
+        await FastAPILimiter.close()
+    except Exception:
+        pass
+    await close_httpx_client()
+    await close_redis()
 
 
-app = FastAPI(title="LLM API Gateway", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="LLM API Gateway", version="0.2.0", lifespan=lifespan)
 
+# Middleware: outer-most is the last `add_middleware` call, so order matters.
+app.add_middleware(AccessLogMiddleware)
+app.add_middleware(RequestIdMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Request-ID", "Accept"],
+    expose_headers=["X-Request-ID", "X-Gateway-Request-Id", "X-RateLimit-Limit", "X-RateLimit-Remaining"],
 )
 
 
+# ---------------- Security headers ----------------
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response: Response = await call_next(request)
+    # Strict CSP for browser-served routes. APIs are JSON, but a stray HTML
+    # response anywhere shouldn't load third-party scripts.
+    response.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; "
+        "script-src 'self'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data: https:; "
+        "media-src 'self' https:; "
+        "connect-src 'self' https:; "
+        "font-src 'self' data:; "
+        "frame-ancestors 'none'; "
+        "base-uri 'self'",
+    )
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    if request.url.scheme == "https":
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    return response
+
+
+# ---------------- Probes / metrics ----------------
+
+
 @app.get("/healthz")
-def healthz() -> dict[str, str]:
+async def healthz() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/readyz")
+async def readyz() -> Response:
+    db_ok = True
+    redis_ok = await redis_ping()
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+    except Exception as e:
+        db_ok = False
+        log.warning("readyz_db_fail", error=str(e))
+    if db_ok and redis_ok:
+        return JSONResponse({"status": "ready", "db": True, "redis": True})
+    return JSONResponse({"status": "not_ready", "db": db_ok, "redis": redis_ok}, status_code=503)
+
+
+@app.get("/metrics")
+async def metrics() -> Response:
+    body, ctype = render_metrics()
+    return Response(content=body, media_type=ctype)
+
+
+# ---------------- Unified error envelope ----------------
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    # Mirror OpenAI's `{"error": {...}}` shape so SDK clients can parse uniformly.
+    detail = exc.detail
+    if isinstance(detail, dict) and "error" in detail:
+        return JSONResponse(status_code=exc.status_code, content=detail)
+    if isinstance(detail, dict):
+        return JSONResponse(status_code=exc.status_code, content={"error": detail})
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "error": {
+                "message": str(detail) if detail is not None else "Error",
+                "type": "http_error",
+                "code": f"http_{exc.status_code}",
+            }
+        },
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    return JSONResponse(
+        status_code=422,
+        content={
+            "error": {
+                "message": "Validation failed",
+                "type": "validation_error",
+                "code": "validation_error",
+                "details": exc.errors(),
+            }
+        },
+    )
+
+
+# ---------------- Routes ----------------
 
 
 app.include_router(auth_api.router)

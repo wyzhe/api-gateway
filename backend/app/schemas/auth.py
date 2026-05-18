@@ -11,8 +11,21 @@ class LoginRequest(BaseModel):
 
 class LoginResponse(BaseModel):
     access_token: str
+    refresh_token: str
     token_type: str = "bearer"
+    access_expires_in: int  # seconds
     user: "UserOut"
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str = Field(min_length=8)
+
+
+class RefreshResponse(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+    access_expires_in: int
 
 
 class UserOut(BaseModel):

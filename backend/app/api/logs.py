@@ -111,8 +111,18 @@ def list_logs(
         db=db,
     )
     rows = q.order_by(desc(RequestLog.created_at)).offset(offset).limit(limit).all()
-    keys = {k.id: k for k in db.query(ApiKey).filter(ApiKey.user_id == user.id).all()}
-    models = {m.id: m for m in db.query(ModelRow).all()}
+    key_ids = {r.api_key_id for r in rows if r.api_key_id is not None}
+    model_ids = {r.model_id for r in rows if r.model_id is not None}
+    keys = (
+        {k.id: k for k in db.query(ApiKey).filter(ApiKey.id.in_(key_ids)).all()}
+        if key_ids
+        else {}
+    )
+    models = (
+        {m.id: m for m in db.query(ModelRow).filter(ModelRow.id.in_(model_ids)).all()}
+        if model_ids
+        else {}
+    )
     return [_enrich_summary(r, keys, models) for r in rows]
 
 

@@ -38,7 +38,15 @@ Then in `.env`:
 DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/llm_gateway
 ```
 
-### 2) Backend
+### 2) Redis
+Required for rate limiting, the monthly-cap pre-reservation, and the arq worker queue.
+
+```bash
+brew install redis
+brew services start redis        # or: redis-server
+```
+
+### 3) Backend (API)
 ```bash
 cd backend
 python3 -m venv .venv
@@ -48,33 +56,59 @@ alembic upgrade head
 uvicorn app.main:app --reload --port 8000
 ```
 Backend listens on `http://localhost:8000`. On first boot it seeds:
-- Admin user from `ADMIN_EMAIL` / `ADMIN_PASSWORD` in `.env`
+- Admin user from `ADMIN_EMAIL` / `ADMIN_PASSWORD` in `.env`. If `ADMIN_PASSWORD` is blank, a random password is generated and printed to the startup logs (capture it).
 - APIMart provider row
-- 12 default models (text/image/video)
+- Default models (text/image/video)
 
-### 3) Frontend
+### 4) Backend worker (arq)
+A separate process handles async-task finalization and Prometheus gauge refresh. Don't skip it: without the worker, image/video tasks only finalize when the client polls.
+
+```bash
+cd backend
+source .venv/bin/activate
+arq app.worker.WorkerSettings
+```
+
+### 5) Frontend
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
-Open `http://localhost:5173`. Default login: `admin@example.com` / `admin123`.
+Open `http://localhost:5173`. Default login: `admin@example.com` / `admin123` (or the random password printed by the backend on first boot).
 
 ---
 
 ## Configuration (`.env`)
 
 ```env
+ENV=development                           # development | production | test
 DATABASE_URL=postgresql+psycopg://...@localhost:5432/llm_gateway
+REDIS_URL=redis://localhost:6379/0
 APIMART_API_KEY=sk-...                    # required — get from https://apimart.ai
 APIMART_BASE_URL=https://api.apimart.ai/v1
-JWT_SECRET=change-me                      # change before any non-local use
+JWT_SECRET=<run: python -c "import secrets; print(secrets.token_urlsafe(48))">
+JWT_ACCESS_TTL_MINUTES=15
+JWT_REFRESH_TTL_DAYS=30
 ADMIN_EMAIL=admin@example.com
-ADMIN_PASSWORD=admin123                   # change before any non-local use
-CORS_ORIGINS=http://localhost:5173        # comma-separated list
+ADMIN_PASSWORD=                            # leave blank in prod to auto-generate
+CORS_ORIGINS=http://localhost:5173
+RATE_LIMIT_LOGIN_PER_15M=10
+RATE_LIMIT_REFRESH_PER_HOUR=60
+RATE_LIMIT_GATEWAY_RPM=60
+WORKER_TASK_SCAN_INTERVAL_SECONDS=30
 ```
 
+In `ENV=production`, weak `JWT_SECRET` values (length < 32, or known placeholders like "change-me") cause the app to refuse to start.
+
 The Vite dev server proxies `/api/*` and `/v1/*` to `http://localhost:8000`, so no extra CORS config is needed for local dev.
+
+### Observability
+
+- `GET /healthz` → liveness (process is up).
+- `GET /readyz` → readiness (DB and Redis reachable). Use this for k8s readiness gates.
+- `GET /metrics` → Prometheus exposition (request counters, latency histograms, MTD cost, low-balance gauge).
+- Structured JSON logs to stdout. Every log line carries a `request_id` matching the `X-Request-ID` response header.
 
 ---
 
@@ -101,7 +135,8 @@ frontend (Vite + React + Tailwind v4)
    ▼                   ▼
         backend (FastAPI)
    /api/auth /api/keys /api/models /api/billing /api/logs /api/dashboard /api/admin/*
-   /v1/models /v1/chat/completions /v1/images/generations /v1/videos/generations /v1/tasks/{id}
+   /v1/models /v1/chat/completions /v1/messages
+   /v1/images/generations /v1/videos/generations /v1/tasks/{id}
                   │
                   ▼
            providers/apimart.py   ← single source of truth for APIMart endpoints,
@@ -112,11 +147,12 @@ frontend (Vite + React + Tailwind v4)
 ```
 
 Key design rules:
-- All money is `Decimal` end-to-end. DB columns are `Numeric(18,8)`.
-- Debit + request_log are written in the **same DB transaction** (`SELECT … FOR UPDATE` on the user row).
-- Failed requests never debit.
-- Every `/v1/*` call goes through `gateway_service.require_can_spend(db, user, key)` which checks the user has positive balance AND the key is within its monthly cap (if any). The monthly cap is enforced via a single `SUM(cost)` per call against `request_logs` (UTC month).
-- Image/video are **async on APIMart**: gateway returns `task_id`; user polls `/v1/tasks/{task_id}`. The polling endpoint lazily refreshes from APIMart and finalizes cost on success.
+- All money is `Decimal` end-to-end. DB columns are `Numeric(18,8)`. Pricing parameters used to bill a request are snapshotted into `request_log.unit_price_snapshot_json` so historical cost stays explainable.
+- Debit + request_log are written in the **same DB transaction** (`SELECT … FOR UPDATE` on the user row). Task finalization (`task_service.finalize_task`) locks the `VideoTask` row before re-reading the log and debiting — so concurrent client polls + worker can't double-charge.
+- Failed requests never debit. Stream chats that complete without an upstream `usage` payload are billed via a pessimistic tiktoken-based estimate (`usage_source="estimated"`) and reconciled by the worker if upstream back-fills later.
+- Every `/v1/*` call goes through `gateway_service.preauthorize_spend(...)` which (a) checks the user has positive balance, (b) reserves a pessimistic upper-bound against the monthly cap via Redis (released down to actual cost when the call resolves).
+- Image/video are **async on APIMart**: gateway returns `task_id`; clients can either poll `/v1/tasks/{task_id}` or wait for the arq worker to finalize. Both paths share the same locked finalize.
+- Admin mutations (recharge, user disable, model price change, …) write an `audit_logs` row in the same transaction as the change.
 - Stream `chat/completions` forces `stream_options.include_usage=true` so the final SSE chunk carries usage for billing.
 - Provider details (paths, request envelope, status vocab) are isolated in `backend/app/providers/apimart.py`. Adding a second provider = subclass `BaseProvider`.
 - Admin can ping any model: `POST /api/admin/models/{id}/healthcheck` issues a minimal upstream call (1-token chat for text models; submit-only for image/video) and reports `{ok, latency_ms, error}`. Costs a tiny bit of credit — don't spam.

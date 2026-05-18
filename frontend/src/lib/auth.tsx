@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { Navigate, useLocation } from "react-router-dom";
-import { api, getToken, setToken } from "./api";
+import { api, clearAuth, getRefreshToken, getToken, setRefreshToken, setToken } from "./api";
 
 export type User = {
   id: number;
@@ -27,7 +27,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const refresh = async () => {
-    if (!getToken()) {
+    if (!getToken() && !getRefreshToken()) {
       setUser(null);
       setLoading(false);
       return;
@@ -36,7 +36,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const u = await api<User>("/api/auth/me", { silent: true });
       setUser(u);
     } catch {
-      setToken(null);
+      clearAuth();
       setUser(null);
     } finally {
       setLoading(false);
@@ -48,21 +48,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = async (email: string, password: string) => {
-    const resp = await api<{ access_token: string; user: User }>("/api/auth/login", {
-      method: "POST",
-      body: { email, password },
-    });
+    const resp = await api<{ access_token: string; refresh_token: string; user: User }>(
+      "/api/auth/login",
+      { method: "POST", body: { email, password } },
+    );
     setToken(resp.access_token);
+    setRefreshToken(resp.refresh_token);
     setUser(resp.user);
   };
 
   const logout = async () => {
+    const rt = getRefreshToken();
     try {
-      await api("/api/auth/logout", { method: "POST", silent: true });
+      await api("/api/auth/logout", {
+        method: "POST",
+        body: rt ? { refresh_token: rt } : undefined,
+        silent: true,
+      });
     } catch {
       /* noop */
     }
-    setToken(null);
+    clearAuth();
     setUser(null);
   };
 

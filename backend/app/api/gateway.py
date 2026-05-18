@@ -3,22 +3,52 @@
 Authentication: user API key (Authorization: Bearer lgw_...).
 NOT the dashboard JWT — those endpoints live under /api/.
 """
+from __future__ import annotations
+
 import json
 import time
 from decimal import Decimal
 from typing import Any
 
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
+from ..config import get_settings
 from ..deps import get_api_key_user, get_db
-from ..enums import RequestType
+from ..enums import RequestType, UsageSource
+from ..logging_config import get_logger
+from ..metrics import gateway_cost_usd_total, gateway_latency_ms, gateway_requests_total, pricing_source_total
 from ..models import ApiKey, ModelRow, RequestLog, User, VideoTask
-from ..services import cost_service, gateway_service
+from ..rate_limit import make_limiter
+from ..security import hash_api_key
+from ..services import cost_service, gateway_service, task_service
+from ..services.token_estimator import (
+    count_message_tokens,
+    estimate_anthropic_messages_usage,
+)
 
 router = APIRouter(prefix="/v1", tags=["gateway"])
+log = get_logger(__name__)
+_settings = get_settings()
+
+
+async def _api_key_rate_identifier(request: Request) -> str:
+    """Rate-limit key for /v1/*: prefer the api key hash; fall back to client IP."""
+    auth = request.headers.get("authorization", "")
+    if auth.lower().startswith("bearer ") and auth[7:].startswith("lgw_"):
+        return f"k:{hash_api_key(auth[7:].strip())}"
+    if request.client is None:
+        return "ip:unknown"
+    return f"ip:{request.client.host}"
+
+
+_gateway_limiter = make_limiter(
+    _settings.rate_limit_gateway_rpm,
+    seconds=60,
+    identifier=_api_key_rate_identifier,
+)
 
 
 # ---------------- GET /v1/models (OpenAI-compatible) ----------------
@@ -41,7 +71,6 @@ def list_models(
             "object": "model",
             "created": int(r.created_at.timestamp()),
             "owned_by": "llm-gateway",
-            # Extension fields (still OpenAI-compatible since clients ignore unknowns).
             "type": r.type,
             "pricing_mode": r.pricing_mode,
         }
@@ -50,10 +79,10 @@ def list_models(
     return {"object": "list", "data": data}
 
 
-# ---------------- POST /v1/chat/completions (non-streaming for M4) ----------------
+# ---------------- POST /v1/chat/completions ----------------
 
 
-@router.post("/chat/completions")
+@router.post("/chat/completions", dependencies=[Depends(_gateway_limiter)])
 async def chat_completions(
     payload: dict[str, Any] = Body(...),
     db: Session = Depends(get_db),
@@ -62,18 +91,26 @@ async def chat_completions(
     user, api_key = auth
     if payload.get("stream") is True:
         return await _chat_completions_stream(payload, db, auth)
+
     public_name = payload.get("model")
     if not public_name or not isinstance(public_name, str):
         raise HTTPException(status_code=400, detail="Missing 'model' field")
 
     resolved = gateway_service.resolve_model(db, public_name, expected_type="text")
-    gateway_service.require_can_spend(db, user, api_key)
+
+    # Pre-authorize a pessimistic upper bound against the monthly cap.
+    prompt_est = count_message_tokens(payload.get("messages") or [], resolved.model.public_name)
+    max_completion = int(payload.get("max_tokens") or payload.get("max_completion_tokens") or 4096)
+    estimate = cost_service.estimate_text_cost_upper_bound(resolved.model, prompt_est, max_completion)
+    reservation = await gateway_service.preauthorize_spend(
+        db, user=user, api_key=api_key, estimated_cost=estimate
+    )
 
     request_id = gateway_service.new_request_id()
     provider_client = gateway_service.build_provider(resolved.provider)
 
     upstream_payload = {**payload, "model": resolved.model.upstream_model}
-    upstream_payload.pop("stream", None)  # we control stream
+    upstream_payload.pop("stream", None)
 
     started = time.perf_counter()
     try:
@@ -81,52 +118,30 @@ async def chat_completions(
     except Exception as e:
         latency_ms = int((time.perf_counter() - started) * 1000)
         gateway_service.persist_failure(
-            db,
-            user=user,
-            api_key=api_key,
-            provider=resolved.provider,
-            model=resolved.model,
-            request_type="text",
-            request_payload=payload,
-            response_payload=None,
-            request_id=request_id,
-            latency_ms=latency_ms,
-            http_status=None,
-            error_code="upstream_exception",
-            error_message=str(e)[:1000],
+            db, user=user, api_key=api_key, provider=resolved.provider, model=resolved.model,
+            request_type="text", request_payload=payload, response_payload=None,
+            request_id=request_id, latency_ms=latency_ms, http_status=None,
+            error_code="upstream_exception", error_message=str(e)[:1000],
         )
+        await gateway_service.release_reservation_fully(reservation)
+        gateway_requests_total.labels(type="text", model=resolved.model.public_name, status="failed").inc()
         raise HTTPException(status_code=502, detail=f"Upstream request failed: {e}")
 
     latency_ms = int((time.perf_counter() - started) * 1000)
 
-    # Upstream non-2xx → log failure, no debit, surface error.
     if resp.http_status >= 400:
         body_text = resp.body if isinstance(resp.body, (dict, list)) else {"raw": str(resp.body)}
-        err_msg = ""
-        if isinstance(resp.body, dict):
-            err = resp.body.get("error")
-            if isinstance(err, dict):
-                err_msg = str(err.get("message") or err)
-            elif isinstance(err, str):
-                err_msg = err
-            err_msg = err_msg or str(resp.body.get("message") or "")
+        err_msg = gateway_service.extract_upstream_error_message(resp.body)
         gateway_service.persist_failure(
-            db,
-            user=user,
-            api_key=api_key,
-            provider=resolved.provider,
-            model=resolved.model,
-            request_type="text",
-            request_payload=payload,
-            response_payload=body_text,
-            request_id=request_id,
-            latency_ms=latency_ms,
-            http_status=resp.http_status,
-            error_code=f"upstream_{resp.http_status}",
-            error_message=err_msg[:1000] if err_msg else None,
+            db, user=user, api_key=api_key, provider=resolved.provider, model=resolved.model,
+            request_type="text", request_payload=payload, response_payload=body_text,
+            request_id=request_id, latency_ms=latency_ms, http_status=resp.http_status,
+            error_code=f"upstream_{resp.http_status}", error_message=err_msg[:1000] if err_msg else None,
             upstream_request_id=resp.upstream_request_id,
         )
-        raise HTTPException(status_code=resp.http_status, detail=body_text)
+        await gateway_service.release_reservation_fully(reservation)
+        gateway_requests_total.labels(type="text", model=resolved.model.public_name, status="upstream_error").inc()
+        raise HTTPException(status_code=resp.http_status, detail=_normalize_error_body(body_text))
 
     body = resp.body if isinstance(resp.body, dict) else {}
     usage = body.get("usage") or {}
@@ -137,39 +152,34 @@ async def chat_completions(
     cost, pricing_missing = cost_service.calc_text_cost(
         resolved.model, prompt_tokens, completion_tokens
     )
+    usage_source = (UsageSource.MISSING if pricing_missing else UsageSource.UPSTREAM).value
+    pricing_source_total.labels(source=usage_source).inc()
 
-    log = gateway_service.persist_success(
-        db,
-        user=user,
-        api_key=api_key,
-        provider=resolved.provider,
-        model=resolved.model,
-        request_type="text",
-        request_payload=payload,
-        response_payload=body,
-        upstream_request_id=resp.upstream_request_id,
-        request_id=request_id,
-        latency_ms=latency_ms,
-        http_status=resp.http_status,
-        cost=cost,
-        pricing_missing=pricing_missing,
-        prompt_tokens=prompt_tokens or None,
-        completion_tokens=completion_tokens or None,
+    log_row = gateway_service.persist_success(
+        db, user=user, api_key=api_key, provider=resolved.provider, model=resolved.model,
+        request_type="text", request_payload=payload, response_payload=body,
+        upstream_request_id=resp.upstream_request_id, request_id=request_id,
+        latency_ms=latency_ms, http_status=resp.http_status,
+        cost=cost, usage_source=usage_source,
+        prompt_tokens=prompt_tokens or None, completion_tokens=completion_tokens or None,
         total_tokens=total_tokens or None,
     )
 
-    # Rewrite the `model` field in the response to the public name so clients
-    # don't accidentally rely on the upstream alias.
+    await gateway_service.finalize_reservation(reservation, actual_cost=cost)
+    gateway_requests_total.labels(type="text", model=resolved.model.public_name, status="success").inc()
+    gateway_cost_usd_total.labels(type="text", model=resolved.model.public_name).inc(float(cost))
+    gateway_latency_ms.labels(type="text", model=resolved.model.public_name).observe(latency_ms)
+
     if isinstance(body, dict):
         body = {**body, "model": resolved.model.public_name}
         body.setdefault("id", f"chatcmpl-{request_id}")
-        # Add a small extension block for our own gateway metadata. OpenAI clients ignore it.
         body["_gateway"] = {
             "request_id": request_id,
-            "log_id": log.id,
+            "log_id": log_row.id,
             "cost": str(cost),
             "latency_ms": latency_ms,
             "pricing_missing": pricing_missing,
+            "usage_source": usage_source,
         }
     return body
 
@@ -187,7 +197,13 @@ async def _chat_completions_stream(
     if not public_name or not isinstance(public_name, str):
         raise HTTPException(status_code=400, detail="Missing 'model' field")
     resolved = gateway_service.resolve_model(db, public_name, expected_type="text")
-    gateway_service.require_can_spend(db, user, api_key)
+
+    prompt_est = count_message_tokens(payload.get("messages") or [], resolved.model.public_name)
+    max_completion = int(payload.get("max_tokens") or payload.get("max_completion_tokens") or 4096)
+    estimate = cost_service.estimate_text_cost_upper_bound(resolved.model, prompt_est, max_completion)
+    reservation = await gateway_service.preauthorize_spend(
+        db, user=user, api_key=api_key, estimated_cost=estimate
+    )
 
     request_id = gateway_service.new_request_id()
     provider_client = gateway_service.build_provider(resolved.provider)
@@ -196,94 +212,368 @@ async def _chat_completions_stream(
 
     async def event_stream():
         started = time.perf_counter()
-        # Aggregate usage from the final chunk (SSE w/ include_usage).
         final_usage: dict[str, Any] | None = None
         upstream_error: dict[str, Any] | None = None
-        first_chunk_sent = False
+        # Capture the preauth estimate in closure so the usage-missing fallback
+        # below doesn't have to recount tokens.
+        nonlocal_prompt_est = prompt_est
+        nonlocal_max_completion = max_completion
         try:
             async for chunk in provider_client.chat_completions_stream(upstream_payload):
                 if chunk.parsed and chunk.parsed.get("_error"):
                     upstream_error = chunk.parsed
-                    # Forward error as a synthetic SSE event so the client sees it.
                     err_event = {
                         "error": {
                             "message": chunk.parsed.get("body", "upstream error"),
                             "code": f"upstream_{chunk.parsed.get('_http')}",
+                            "type": "upstream_error",
                         }
                     }
                     yield (f"data: {json.dumps(err_event)}\n\n").encode()
                     break
-                # On each chunk, sniff `usage` (only the last one carries it).
                 if chunk.parsed and isinstance(chunk.parsed.get("usage"), dict):
                     final_usage = chunk.parsed["usage"]
-                # Rewrite model field in the chunk to public_name for consistency.
                 if chunk.parsed and "model" in chunk.parsed:
                     chunk.parsed["model"] = resolved.model.public_name
                     line = (f"data: {json.dumps(chunk.parsed)}\n\n").encode()
                     yield line
-                    first_chunk_sent = True
                 else:
                     yield chunk.raw_line
-                    if chunk.raw_line.startswith(b"data: "):
-                        first_chunk_sent = True
         except Exception as e:
-            err_event = {"error": {"message": f"upstream exception: {e}", "code": "upstream_exception"}}
+            err_event = {"error": {"message": f"upstream exception: {e}", "code": "upstream_exception", "type": "upstream_exception"}}
             yield (f"data: {json.dumps(err_event)}\n\n").encode()
             upstream_error = {"_http": None, "body": str(e)}
         latency_ms = int((time.perf_counter() - started) * 1000)
 
-        # Persist log + debit AFTER the stream finishes.
         if upstream_error:
             gateway_service.persist_failure(
-                db,
-                user=user,
-                api_key=api_key,
-                provider=resolved.provider,
-                model=resolved.model,
-                request_type="text",
-                request_payload=payload,
-                response_payload={"error": upstream_error},
-                request_id=request_id,
-                latency_ms=latency_ms,
-                http_status=upstream_error.get("_http"),
+                db, user=user, api_key=api_key, provider=resolved.provider, model=resolved.model,
+                request_type="text", request_payload=payload,
+                response_payload={"error": upstream_error}, request_id=request_id,
+                latency_ms=latency_ms, http_status=upstream_error.get("_http"),
                 error_code="upstream_stream_error",
                 error_message=str(upstream_error.get("body"))[:1000],
+            )
+            await gateway_service.release_reservation_fully(reservation)
+            gateway_requests_total.labels(type="text", model=resolved.model.public_name, status="failed").inc()
+            return
+
+        usage_source = UsageSource.UPSTREAM.value
+        if final_usage is None:
+            # Upstream omitted usage even with include_usage=true. Reuse the
+            # preauth token count + max_tokens ceiling as a pessimistic bound.
+            prompt_tokens = nonlocal_prompt_est
+            completion_tokens = nonlocal_max_completion
+            total_tokens = prompt_tokens + completion_tokens
+            usage_source = UsageSource.ESTIMATED.value
+            log.warning(
+                "stream_usage_missing",
+                model=resolved.model.public_name,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
             )
         else:
             prompt_tokens = int((final_usage or {}).get("prompt_tokens") or 0)
             completion_tokens = int((final_usage or {}).get("completion_tokens") or 0)
             total_tokens = int(
-                (final_usage or {}).get("total_tokens")
-                or (prompt_tokens + completion_tokens)
+                (final_usage or {}).get("total_tokens") or (prompt_tokens + completion_tokens)
             )
-            if final_usage is None:
-                # TODO(stream-usage): upstream did not return usage even with
-                # include_usage=true — record cost=0 + pricing_missing flag.
-                cost = Decimal("0")
-                pricing_missing = True
-            else:
-                cost, pricing_missing = cost_service.calc_text_cost(
-                    resolved.model, prompt_tokens, completion_tokens
-                )
-            gateway_service.persist_success(
-                db,
-                user=user,
-                api_key=api_key,
-                provider=resolved.provider,
-                model=resolved.model,
-                request_type="text",
-                request_payload=payload,
-                response_payload={"_streamed": True, "usage": final_usage},
-                upstream_request_id=None,
-                request_id=request_id,
-                latency_ms=latency_ms,
-                http_status=200,
-                cost=cost,
-                pricing_missing=pricing_missing,
-                prompt_tokens=prompt_tokens or None,
-                completion_tokens=completion_tokens or None,
-                total_tokens=total_tokens or None,
+
+        cost, pricing_missing = cost_service.calc_text_cost(
+            resolved.model, prompt_tokens, completion_tokens
+        )
+        if pricing_missing:
+            usage_source = UsageSource.MISSING.value
+        pricing_source_total.labels(source=usage_source).inc()
+
+        gateway_service.persist_success(
+            db, user=user, api_key=api_key, provider=resolved.provider, model=resolved.model,
+            request_type="text", request_payload=payload,
+            response_payload={"_streamed": True, "usage": final_usage, "usage_source": usage_source},
+            upstream_request_id=None, request_id=request_id, latency_ms=latency_ms,
+            http_status=200, cost=cost, usage_source=usage_source,
+            prompt_tokens=prompt_tokens or None, completion_tokens=completion_tokens or None,
+            total_tokens=total_tokens or None,
+        )
+        await gateway_service.finalize_reservation(reservation, actual_cost=cost)
+        gateway_requests_total.labels(type="text", model=resolved.model.public_name, status="success").inc()
+        gateway_cost_usd_total.labels(type="text", model=resolved.model.public_name).inc(float(cost))
+        gateway_latency_ms.labels(type="text", model=resolved.model.public_name).observe(latency_ms)
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "X-Gateway-Request-Id": request_id,
+        },
+    )
+
+
+# ---------------- POST /v1/messages (Anthropic-compatible) ----------------
+
+
+@router.post("/messages", dependencies=[Depends(_gateway_limiter)])
+async def messages(
+    payload: dict[str, Any] = Body(...),
+    db: Session = Depends(get_db),
+    auth: tuple[User, ApiKey] = Depends(get_api_key_user),
+) -> Any:
+    """Anthropic Messages API passthrough.
+
+    Same plumbing as /v1/chat/completions (resolve model, preauth spend, persist
+    success/failure, snapshot, debit) but uses the Anthropic-shaped payload
+    (top-level `system`, `messages`, `max_tokens`, `tools`) and reads usage
+    from `usage.{input_tokens, output_tokens}` instead of OpenAI's
+    `prompt_tokens/completion_tokens`.
+    """
+    user, api_key = auth
+    if payload.get("stream") is True:
+        return await _messages_stream(payload, db, auth)
+
+    public_name = payload.get("model")
+    if not public_name or not isinstance(public_name, str):
+        raise HTTPException(status_code=400, detail="Missing 'model' field")
+
+    resolved = await gateway_service.resolve_for_request(
+        db, public_name, expected_type="text",
+        session_key=gateway_service.session_key_for_request(api_key),
+    )
+
+    prompt_est, max_completion, _ = estimate_anthropic_messages_usage(
+        payload, resolved.model.public_name
+    )
+    estimate = cost_service.estimate_text_cost_upper_bound(resolved.model, prompt_est, max_completion)
+    reservation = await gateway_service.preauthorize_spend(
+        db, user=user, api_key=api_key, estimated_cost=estimate
+    )
+
+    request_id = gateway_service.new_request_id()
+    provider_client = gateway_service.build_provider(resolved.provider)
+
+    upstream_payload = {**payload, "model": resolved.model.upstream_model}
+    upstream_payload.pop("stream", None)
+
+    started = time.perf_counter()
+    try:
+        resp = await provider_client.messages(upstream_payload)
+    except NotImplementedError:
+        await gateway_service.release_reservation_fully(reservation)
+        raise HTTPException(
+            status_code=501,
+            detail=f"Provider '{resolved.provider.name}' does not implement the Messages API",
+        )
+    except Exception as e:
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        gateway_service.persist_failure(
+            db, user=user, api_key=api_key, provider=resolved.provider, model=resolved.model,
+            request_type="text", request_payload=payload, response_payload=None,
+            request_id=request_id, latency_ms=latency_ms, http_status=None,
+            error_code="upstream_exception", error_message=str(e)[:1000],
+        )
+        await gateway_service.release_reservation_fully(reservation)
+        gateway_requests_total.labels(type="text", model=resolved.model.public_name, status="failed").inc()
+        raise HTTPException(status_code=502, detail=f"Upstream request failed: {e}")
+
+    latency_ms = int((time.perf_counter() - started) * 1000)
+
+    if resp.http_status >= 400:
+        body_text = resp.body if isinstance(resp.body, (dict, list)) else {"raw": str(resp.body)}
+        err_msg = gateway_service.extract_upstream_error_message(resp.body)
+        gateway_service.persist_failure(
+            db, user=user, api_key=api_key, provider=resolved.provider, model=resolved.model,
+            request_type="text", request_payload=payload, response_payload=body_text,
+            request_id=request_id, latency_ms=latency_ms, http_status=resp.http_status,
+            error_code=f"upstream_{resp.http_status}", error_message=err_msg[:1000] if err_msg else None,
+            upstream_request_id=resp.upstream_request_id,
+        )
+        await gateway_service.release_reservation_fully(reservation)
+        gateway_requests_total.labels(type="text", model=resolved.model.public_name, status="upstream_error").inc()
+        raise HTTPException(status_code=resp.http_status, detail=_normalize_error_body(body_text))
+
+    body = resp.body if isinstance(resp.body, dict) else {}
+    usage = provider_client.extract_messages_usage(body)
+
+    if usage is not None:
+        prompt_tokens = usage.input_tokens
+        completion_tokens = usage.output_tokens
+        usage_source = UsageSource.UPSTREAM.value
+    else:
+        prompt_tokens, completion_tokens = prompt_est, max_completion
+        usage_source = UsageSource.ESTIMATED.value
+        log.warning(
+            "messages_usage_missing",
+            model=resolved.model.public_name,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+        )
+
+    cost, pricing_missing = cost_service.calc_text_cost(
+        resolved.model, prompt_tokens, completion_tokens
+    )
+    if pricing_missing:
+        usage_source = UsageSource.MISSING.value
+    pricing_source_total.labels(source=usage_source).inc()
+
+    log_row = gateway_service.persist_success(
+        db, user=user, api_key=api_key, provider=resolved.provider, model=resolved.model,
+        request_type="text", request_payload=payload, response_payload=body,
+        upstream_request_id=resp.upstream_request_id, request_id=request_id,
+        latency_ms=latency_ms, http_status=resp.http_status,
+        cost=cost, usage_source=usage_source,
+        prompt_tokens=prompt_tokens or None, completion_tokens=completion_tokens or None,
+        total_tokens=(prompt_tokens + completion_tokens) or None,
+    )
+
+    await gateway_service.finalize_reservation(reservation, actual_cost=cost)
+    gateway_requests_total.labels(type="text", model=resolved.model.public_name, status="success").inc()
+    gateway_cost_usd_total.labels(type="text", model=resolved.model.public_name).inc(float(cost))
+    gateway_latency_ms.labels(type="text", model=resolved.model.public_name).observe(latency_ms)
+
+    if isinstance(body, dict):
+        # Rewrite model name to the public-facing one so clients don't see the
+        # upstream alias.
+        body = {**body, "model": resolved.model.public_name}
+        body.setdefault("id", f"msg-{request_id}")
+        body["_gateway"] = {
+            "request_id": request_id,
+            "log_id": log_row.id,
+            "cost": str(cost),
+            "latency_ms": latency_ms,
+            "pricing_missing": pricing_missing,
+            "usage_source": usage_source,
+        }
+    return body
+
+
+async def _messages_stream(
+    payload: dict[str, Any],
+    db: Session,
+    auth: tuple[User, ApiKey],
+) -> StreamingResponse:
+    user, api_key = auth
+    public_name = payload.get("model")
+    if not public_name or not isinstance(public_name, str):
+        raise HTTPException(status_code=400, detail="Missing 'model' field")
+    resolved = await gateway_service.resolve_for_request(
+        db, public_name, expected_type="text",
+        session_key=gateway_service.session_key_for_request(api_key),
+    )
+
+    prompt_est, max_completion, _ = estimate_anthropic_messages_usage(
+        payload, resolved.model.public_name
+    )
+    estimate = cost_service.estimate_text_cost_upper_bound(resolved.model, prompt_est, max_completion)
+    reservation = await gateway_service.preauthorize_spend(
+        db, user=user, api_key=api_key, estimated_cost=estimate
+    )
+
+    request_id = gateway_service.new_request_id()
+    provider_client = gateway_service.build_provider(resolved.provider)
+    upstream_payload = {**payload, "model": resolved.model.upstream_model}
+
+    async def event_stream():
+        started = time.perf_counter()
+        # Anthropic delivers usage incrementally:
+        #   - `message_start` carries `usage.input_tokens` and a placeholder `output_tokens: 1`
+        #   - `message_delta` carries cumulative `usage.output_tokens` for the message
+        # We collect both and bill from the last seen.
+        input_tokens = 0
+        output_tokens = 0
+        saw_usage = False
+        upstream_error: dict[str, Any] | None = None
+        try:
+            async for chunk in provider_client.messages_stream(upstream_payload):
+                if chunk.parsed and chunk.parsed.get("_error"):
+                    upstream_error = chunk.parsed
+                    err_event = {
+                        "type": "error",
+                        "error": {
+                            "type": "upstream_error",
+                            "message": chunk.parsed.get("body", "upstream error"),
+                        },
+                    }
+                    yield (f"event: error\ndata: {json.dumps(err_event)}\n\n").encode()
+                    break
+                if chunk.parsed:
+                    ev_type = chunk.parsed.get("type")
+                    if ev_type == "message_start":
+                        msg = chunk.parsed.get("message") or {}
+                        u = msg.get("usage") or {}
+                        try:
+                            input_tokens = int(u.get("input_tokens") or 0)
+                            output_tokens = int(u.get("output_tokens") or 0)
+                            saw_usage = True
+                        except Exception:
+                            pass
+                        # Rewrite the model name in the start event.
+                        if isinstance(msg, dict):
+                            msg["model"] = resolved.model.public_name
+                            chunk.parsed["message"] = msg
+                            yield (f"event: {ev_type}\ndata: {json.dumps(chunk.parsed)}\n\n").encode()
+                            continue
+                    elif ev_type == "message_delta":
+                        u = chunk.parsed.get("usage") or {}
+                        try:
+                            output_tokens = int(u.get("output_tokens") or output_tokens)
+                            saw_usage = True
+                        except Exception:
+                            pass
+                yield chunk.raw_line
+        except Exception as e:
+            err_event = {
+                "type": "error",
+                "error": {"type": "upstream_exception", "message": f"upstream exception: {e}"},
+            }
+            yield (f"event: error\ndata: {json.dumps(err_event)}\n\n").encode()
+            upstream_error = {"_http": None, "body": str(e)}
+        latency_ms = int((time.perf_counter() - started) * 1000)
+
+        if upstream_error:
+            gateway_service.persist_failure(
+                db, user=user, api_key=api_key, provider=resolved.provider, model=resolved.model,
+                request_type="text", request_payload=payload,
+                response_payload={"error": upstream_error}, request_id=request_id,
+                latency_ms=latency_ms, http_status=upstream_error.get("_http"),
+                error_code="upstream_stream_error",
+                error_message=str(upstream_error.get("body"))[:1000],
             )
+            await gateway_service.release_reservation_fully(reservation)
+            gateway_requests_total.labels(type="text", model=resolved.model.public_name, status="failed").inc()
+            return
+
+        usage_source = UsageSource.UPSTREAM.value
+        if not saw_usage:
+            input_tokens, output_tokens = prompt_est, max_completion
+            usage_source = UsageSource.ESTIMATED.value
+            log.warning(
+                "messages_stream_usage_missing",
+                model=resolved.model.public_name,
+                prompt_tokens=input_tokens,
+                completion_tokens=output_tokens,
+            )
+
+        cost, pricing_missing = cost_service.calc_text_cost(
+            resolved.model, input_tokens, output_tokens
+        )
+        if pricing_missing:
+            usage_source = UsageSource.MISSING.value
+        pricing_source_total.labels(source=usage_source).inc()
+
+        gateway_service.persist_success(
+            db, user=user, api_key=api_key, provider=resolved.provider, model=resolved.model,
+            request_type="text", request_payload=payload,
+            response_payload={"_streamed": True, "usage": {"input_tokens": input_tokens, "output_tokens": output_tokens}, "usage_source": usage_source},
+            upstream_request_id=None, request_id=request_id, latency_ms=latency_ms,
+            http_status=200, cost=cost, usage_source=usage_source,
+            prompt_tokens=input_tokens or None, completion_tokens=output_tokens or None,
+            total_tokens=(input_tokens + output_tokens) or None,
+        )
+        await gateway_service.finalize_reservation(reservation, actual_cost=cost)
+        gateway_requests_total.labels(type="text", model=resolved.model.public_name, status="success").inc()
+        gateway_cost_usd_total.labels(type="text", model=resolved.model.public_name).inc(float(cost))
+        gateway_latency_ms.labels(type="text", model=resolved.model.public_name).observe(latency_ms)
 
     return StreamingResponse(
         event_stream(),
@@ -299,7 +589,7 @@ async def _chat_completions_stream(
 # ---------------- POST /v1/images/generations (async — returns task_id) ----------------
 
 
-@router.post("/images/generations")
+@router.post("/images/generations", dependencies=[Depends(_gateway_limiter)])
 async def images_generations(
     payload: dict[str, Any] = Body(...),
     db: Session = Depends(get_db),
@@ -314,7 +604,7 @@ async def images_generations(
 # ---------------- POST /v1/videos/generations (async — returns task_id) ----------------
 
 
-@router.post("/videos/generations")
+@router.post("/videos/generations", dependencies=[Depends(_gateway_limiter)])
 async def videos_generations(
     payload: dict[str, Any] = Body(...),
     db: Session = Depends(get_db),
@@ -326,7 +616,7 @@ async def videos_generations(
     )
 
 
-# ---------------- GET /v1/tasks/{task_id} (lazy poll + finalize) ----------------
+# ---------------- GET /v1/tasks/{task_id} (locked finalize) ----------------
 
 
 @router.get("/tasks/{task_id}")
@@ -336,98 +626,24 @@ async def get_task(
     auth: tuple[User, ApiKey] = Depends(get_api_key_user),
 ) -> Any:
     user, _api_key = auth
-    # Accept both "task_<localid>" and bare numeric.
     raw = task_id[5:] if task_id.startswith("task_") else task_id
     try:
         local_id = int(raw)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid task_id format")
 
-    task = db.get(VideoTask, local_id)
-    if not task or task.user_id != user.id:
+    # Ownership pre-check (without lock): cheap 404 path.
+    pre = db.get(VideoTask, local_id)
+    if not pre or pre.user_id != user.id:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    log = db.get(RequestLog, task.request_log_id) if task.request_log_id else None
-    model = db.get(ModelRow, task.model_id) if task.model_id else None
-    from ..models import Provider as _Prov
-
-    provider_row = db.get(_Prov, task.provider_id) if task.provider_id else None
-
-    # Terminal already — return as-is.
-    if task.status in ("succeeded", "failed"):
-        return _task_response(task, log)
-
-    if not provider_row or not model:
-        raise HTTPException(status_code=500, detail="Task is missing model/provider")
-
-    provider_client = gateway_service.build_provider(provider_row)
-    try:
-        result = await provider_client.get_task_status(task.upstream_task_id)
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Upstream task fetch failed: {e}")
-
-    # Update local task row + maybe the request_log.
-    task.status = result.status
-    if result.status == "succeeded":
-        if result.asset_urls:
-            task.asset_url = result.asset_urls[0]
-        # Finalize the request_log: status=success, cost charged, asset_url set.
-        if log and log.status != "success":
-            req_type = log.request_type
-            if req_type == "video":
-                duration = (
-                    Decimal(str(result.duration_seconds))
-                    if result.duration_seconds is not None
-                    else None
-                )
-                cost, pricing_missing = cost_service.calc_video_cost(model, duration)
-                log.video_duration = duration
-            else:  # image
-                # Default n=1 if not in payload; respect explicit n.
-                n = 1
-                if isinstance(log.request_payload_json, dict):
-                    try:
-                        n = int(log.request_payload_json.get("n", 1) or 1)
-                    except Exception:
-                        n = 1
-                cost, pricing_missing = cost_service.calc_image_cost(model, n)
-                log.image_count = n
-            log.status = "success"
-            log.task_status = "succeeded"
-            log.cost = cost
-            log.asset_url = task.asset_url or (result.asset_urls[0] if result.asset_urls else None)
-            if pricing_missing:
-                log.error_message = (log.error_message or "") + " pricing_missing=true"
-            # Debit + transaction record.
-            if cost > 0:
-                from ..services import billing_service
-
-                billing_service.debit(
-                    db, user.id, cost, request_log_id=log.id,
-                    note=f"{req_type}:{model.public_name}",
-                )
-        db.commit()
-    elif result.status == "failed":
-        task.error_message = result.error_message
-        if log and log.status != "failed":
-            log.status = "failed"
-            log.task_status = "failed"
-            log.error_message = result.error_message
-            log.error_code = "upstream_task_failed"
-        db.commit()
-    else:
-        # queued / running — update task_status on the log too.
-        if log:
-            log.task_status = result.status
-        db.commit()
-
-    db.refresh(task)
-    if log:
-        db.refresh(log)
-    return _task_response(task, log)
+    outcome = await task_service.finalize_task(db, task_id=local_id, source="client_poll")
+    if outcome is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return _task_response(outcome.task, outcome.request_log)
 
 
-def _task_response(task: VideoTask, log: RequestLog | None) -> dict[str, Any]:
+def _task_response(task: VideoTask, log_row: RequestLog | None) -> dict[str, Any]:
     return {
         "task_id": f"task_{task.id}",
         "status": task.status,
@@ -436,8 +652,20 @@ def _task_response(task: VideoTask, log: RequestLog | None) -> dict[str, Any]:
         "updated_at": task.updated_at.isoformat() if task.updated_at else None,
         "_gateway": {
             "upstream_task_id": task.upstream_task_id,
-            "log_id": log.id if log else None,
-            "cost": str(log.cost) if log else None,
-            "request_type": log.request_type if log else None,
+            "log_id": log_row.id if log_row else None,
+            "cost": str(log_row.cost) if log_row else None,
+            "request_type": log_row.request_type if log_row else None,
         },
     }
+
+
+# ---------------- Helpers ----------------
+
+
+def _normalize_error_body(body: Any) -> dict[str, Any]:
+    """Convert an upstream error body to a consistent OpenAI-style envelope."""
+    if isinstance(body, dict) and isinstance(body.get("error"), dict):
+        return {"error": body["error"]}
+    if isinstance(body, dict):
+        return {"error": {"message": str(body.get("message") or body), "type": "upstream_error"}}
+    return {"error": {"message": str(body), "type": "upstream_error"}}

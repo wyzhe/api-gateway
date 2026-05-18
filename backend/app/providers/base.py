@@ -42,6 +42,18 @@ class ProviderTaskResult:
     raw_body: dict[str, Any] | None
 
 
+@dataclass
+class MessagesUsage:
+    """Normalized Anthropic-Messages-style token counts."""
+
+    input_tokens: int
+    output_tokens: int
+
+    @property
+    def total(self) -> int:
+        return self.input_tokens + self.output_tokens
+
+
 class BaseProvider:
     """Adapter interface. All methods are async and use httpx underneath."""
 
@@ -72,6 +84,38 @@ class BaseProvider:
 
     async def video_generation(self, payload: dict[str, Any]) -> ProviderResponse:
         raise NotImplementedError
+
+    # ---- Anthropic Messages API ----
+
+    async def messages(self, payload: dict[str, Any]) -> ProviderResponse:
+        """Anthropic-style /v1/messages, non-streaming. Response body matches
+        Anthropic's schema: {id, type:"message", role, content:[...], stop_reason,
+        usage:{input_tokens, output_tokens}}."""
+        raise NotImplementedError
+
+    async def messages_stream(self, payload: dict[str, Any]) -> AsyncIterator[ProviderStreamChunk]:
+        """SSE stream of Anthropic Messages events. Yields raw_line bytes
+        suitable for forwarding plus a parsed dict when the line is a
+        `data: {...}` chunk. The terminal `message_stop` / `message_delta`
+        carries the usage block."""
+        raise NotImplementedError
+
+    @staticmethod
+    def extract_messages_usage(body: dict[str, Any] | None) -> MessagesUsage | None:
+        """Pull a normalized usage block out of an Anthropic messages response.
+        Returns None when missing."""
+        if not isinstance(body, dict):
+            return None
+        usage = body.get("usage")
+        if not isinstance(usage, dict):
+            return None
+        try:
+            return MessagesUsage(
+                input_tokens=int(usage.get("input_tokens") or 0),
+                output_tokens=int(usage.get("output_tokens") or 0),
+            )
+        except Exception:
+            return None
 
     # ---- Task status (shared by image and video on APIMart) ----
 

@@ -58,19 +58,47 @@ Pulled from docs.apimart.ai (verified May 2026):
 | Endpoint | Sync/Async | Notes |
 |---|---|---|
 | `POST /v1/chat/completions` | Sync + SSE | OpenAI-compatible. We force `stream_options.include_usage=true` so the final stream chunk carries `usage` for billing. |
+| `POST /v1/messages` | Sync + SSE | Anthropic Messages API. Usage is delivered across `message_start` (`input_tokens`) and `message_delta` (`output_tokens`); we accumulate both. |
 | `POST /v1/images/generations` | **Async** | Returns `task_id`. Image and video share the same task system. |
 | `POST /v1/videos/generations` | **Async** | Wrapped `{code:200, data:[{task_id, status:"submitted"}]}` — adapter unwraps. |
 | `GET /v1/tasks/{task_id}` | Sync | Status vocab: `pending|processing|completed|failed|cancelled` — adapter maps to our internal `queued|running|succeeded|failed`. Assets at `result.images[].url` or `result.videos[].url`. |
 
 Because image is async, our `/v1/images/generations` returns `task_id` too (we chose to expose async upward; we don't fake sync). Clients can either poll `GET /v1/tasks/{task_id}` or let our arq worker finalize the task autonomously (it does). Polling and worker both go through the **same locked finalize path** so they never double-charge.
 
+## Two chat protocols: OpenAI Chat Completions and Anthropic Messages
+
+The gateway exposes both:
+
+- `POST /v1/chat/completions` — OpenAI-compatible. Use for clients written against the OpenAI SDK.
+- `POST /v1/messages` — Anthropic-compatible. Use for Claude Code, Cursor, and anything written against Anthropic's SDK.
+
+Both go through the same plumbing: `gateway_service.resolve_for_request()` → `preauthorize_spend()` → upstream call → `persist_success()` / `persist_failure()` → debit + snapshot. The only differences are the request/response schema and where the usage block lives. Token-pricing is the same `models` table — we don't have separate Anthropic pricing rows.
+
+When choosing a model name in `/v1/messages`, you still send our public_name (e.g. `claude-sonnet-4.6`). The adapter rewrites it to the upstream alias on the wire and rewrites it back on the response.
+
+**Routing decision is explicit, not automatic.** We do NOT translate between protocols — if a client hits `/v1/chat/completions` with a model that only the Anthropic endpoint supports, that's a 400/422 case, not a silent format conversion. Cross-provider fallback is explicitly out of scope (see "Things to NOT reintroduce").
+
+## Multi-provider session stickiness (hook)
+
+`services/provider_selector.py` is the seam where future per-session provider selection lives. Today there's only one upstream (APIMart), so `pick_provider(model)` just returns the model's `provider_id`. The `session_key` argument is wired through `resolve_for_request()` from the API key id (`session_key_for_request(api_key) → "k{id}"`).
+
+When a second provider lands:
+1. Implement its `BaseProvider` subclass.
+2. Switch in `gateway_service.build_provider()`.
+3. Decide whether multiple `models` rows with the same `public_name` should be allowed (probably no — one public name per provider).
+4. The sticky map in Redis (`sticky:{session_key}:{model_id} → provider_id`) is already being read and written; just point it at meaningful provider choices.
+
+Do NOT add cross-provider fallback. If upstream is down, surface the error.
+
 ## Streaming chat & usage estimation
 
-We force `stream_options.include_usage=true` so APIMart's last SSE chunk carries `usage`. If APIMart violates that (it happens), we **fall back to a pessimistic estimate**:
+We force `stream_options.include_usage=true` so APIMart's last OpenAI SSE chunk carries `usage`. The Anthropic Messages API delivers usage incrementally (`message_start` has `input_tokens`; `message_delta` updates `output_tokens`) — we accumulate the last seen values.
 
-- `prompt_tokens` = `tiktoken` count of the input messages.
-- `completion_tokens` = `max_tokens` (or the model's configured ceiling if absent).
-- Mark the log with `pricing_estimated=true` and `usage_source="estimated"`.
+If either protocol's usage block is missing, we **fall back to a pessimistic estimate**:
+
+- OpenAI: `estimate_chat_usage()` — tiktoken count of messages + `max_tokens` ceiling.
+- Anthropic: `estimate_anthropic_messages_usage()` — same tokenizer (over-estimate is acceptable for billing), plus the `system` field + tool definitions in the prompt count.
+- Mark the log with `usage_source="estimated"` and `pricing_estimated=true` in `error_message`.
 
 This guarantees no free service. The estimate is intentionally an upper bound: if actual usage arrives later (e.g. APIMart back-fills), the worker can call `billing_service.adjust_log_cost()` and refund the difference.
 
@@ -120,6 +148,7 @@ A failed worker job is retried with exponential backoff. Worker job exceptions a
 |---|---|
 | Add a second upstream provider | New subclass of `BaseProvider` in `app/providers/`; switch in `gateway_service.build_provider()`; add `Provider` row via Admin → Providers |
 | Add a new endpoint (e.g. `/v1/embeddings`) | Add method on `BaseProvider` + `APIMartProvider`; add route in `app/api/gateway.py`; add cost rule in `cost_service.py`; pre-reserve in `preauthorize_spend()` if it costs more than chat |
+| Add a new chat protocol (e.g. Google Gen AI) | New methods on `BaseProvider`, mirror the `/v1/messages` plumbing in `app/api/gateway.py`, share the same model rows and pricing. Don't translate between protocols at the gateway layer. |
 | Change billing rules | `app/services/cost_service.py`. Don't touch billing inside endpoints. |
 | Add a new model | Either: edit `seed.py` for first-boot defaults, OR `POST /api/admin/models` at runtime. Existing logs keep their old pricing via the snapshot — no migration needed. |
 | Add a UI page | New file in `frontend/src/pages/`, register in `frontend/src/App.tsx`, add sidebar entry in `frontend/src/components/shell.tsx`. |

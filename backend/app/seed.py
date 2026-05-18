@@ -2,16 +2,19 @@
 
 Idempotent — safe to call on every boot.
 """
+import secrets
 from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
 from .config import get_settings
 from .enums import AccountStatus
+from .logging_config import get_logger
 from .models import ModelRow, Provider, User
 from .security import hash_password
 
 settings = get_settings()
+log = get_logger(__name__)
 
 
 # --- Default model catalogue ---
@@ -166,9 +169,14 @@ def ensure_admin(db: Session) -> User:
     admin = db.query(User).filter(User.email == settings.admin_email).one_or_none()
     if admin:
         return admin
+    pw = settings.admin_password
+    auto_generated = False
+    if not pw:
+        pw = secrets.token_urlsafe(18)
+        auto_generated = True
     admin = User(
         email=settings.admin_email,
-        password_hash=hash_password(settings.admin_password),
+        password_hash=hash_password(pw),
         display_name="Admin",
         role="admin",
         status="active",
@@ -176,6 +184,15 @@ def ensure_admin(db: Session) -> User:
     )
     db.add(admin)
     db.flush()
+    if auto_generated:
+        # Print once to logs so the operator can capture it. Do NOT store the
+        # plaintext anywhere persistent.
+        log.warning(
+            "admin_password_generated",
+            email=settings.admin_email,
+            initial_password=pw,
+            hint="rotate this password after first login",
+        )
     return admin
 
 

@@ -1,8 +1,11 @@
+"""Admin endpoints — all mutations go through audit logging."""
+from __future__ import annotations
+
 import time
 from datetime import datetime
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel
 from sqlalchemy import desc, func
 from sqlalchemy.orm import Session
@@ -23,12 +26,21 @@ from ..schemas.model import ModelCreate, ModelOut, ModelUpdate
 from ..schemas.provider import ProviderOut, ProviderUpdate
 from ..schemas.user import AdminUserCreate, AdminUserOut, AdminUserUpdate
 from ..security import hash_password
-from ..services import billing_service, gateway_service
+from ..services import audit_service, billing_service, gateway_service
 from ..utils.time import month_start_utc, today_utc
 from .logs import _apply_filters, _enrich_summary
 from .models import _to_out as model_to_out
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
+
+
+def _ip(request: Request) -> str | None:
+    fwd = request.headers.get("X-Forwarded-For")
+    if fwd:
+        return fwd.split(",")[0].strip()[:64]
+    if request.client is None:
+        return None
+    return request.client.host
 
 
 # ---------------- Overview ----------------
@@ -40,7 +52,7 @@ class OverviewOut(BaseModel):
     today_spend: Decimal
     month_spend: Decimal
     error_rate_today: float
-    usage_today: dict[str, int]  # text/image/video
+    usage_today: dict[str, int]
 
 
 @router.get("/overview", response_model=OverviewOut, dependencies=[Depends(require_admin)])
@@ -58,13 +70,13 @@ def overview(db: Session = Depends(get_db)) -> OverviewOut:
         or 0
     )
     today_spend = Decimal(
-        db.query(func.coalesce(func.sum(RequestLog.cost), 0))
+        db.query(func.coalesce(func.sum(RequestLog.cost), Decimal("0")))
         .filter(RequestLog.created_at >= today)
         .scalar()
         or 0
     )
     month_spend = Decimal(
-        db.query(func.coalesce(func.sum(RequestLog.cost), 0))
+        db.query(func.coalesce(func.sum(RequestLog.cost), Decimal("0")))
         .filter(RequestLog.created_at >= month)
         .scalar()
         or 0
@@ -111,10 +123,10 @@ def list_users(
     "/users",
     response_model=AdminUserOut,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_admin)],
 )
 def create_user(
     payload: AdminUserCreate,
+    request: Request,
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
 ) -> AdminUserOut:
@@ -129,13 +141,19 @@ def create_user(
         balance=Decimal("0"),
     )
     db.add(u)
+    db.flush()
+    audit_service.record(
+        db, actor_user_id=admin.id, action="user.create", target_type="user", target_id=u.id,
+        before=None,
+        after={"email": u.email, "role": u.role, "display_name": u.display_name},
+        ip=_ip(request),
+    )
     db.commit()
-    db.refresh(u)
     if payload.initial_balance > 0:
         billing_service.recharge(
             db, u.id, payload.initial_balance, admin_id=admin.id, note="Initial balance"
         )
-        db.refresh(u)
+    db.refresh(u)
     return AdminUserOut.model_validate(u)
 
 
@@ -147,57 +165,81 @@ def get_user(user_id: int, db: Session = Depends(get_db)) -> AdminUserOut:
     return AdminUserOut.model_validate(u)
 
 
-@router.patch("/users/{user_id}", response_model=AdminUserOut, dependencies=[Depends(require_admin)])
+@router.patch("/users/{user_id}", response_model=AdminUserOut)
 def update_user(
-    user_id: int, payload: AdminUserUpdate, db: Session = Depends(get_db)
+    user_id: int,
+    payload: AdminUserUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
 ) -> AdminUserOut:
     u = db.get(User, user_id)
     if not u:
         raise HTTPException(status_code=404, detail="User not found")
     data = payload.model_dump(exclude_unset=True)
+    before = {k: getattr(u, k) for k in data.keys() if k != "password"}
     if "password" in data:
         u.password_hash = hash_password(data.pop("password"))
+        before["password"] = "***"
     for k, v in data.items():
         setattr(u, k, v)
+    audit_service.record(
+        db, actor_user_id=admin.id, action="user.update", target_type="user", target_id=u.id,
+        before=before, after={k: getattr(u, k) for k in before.keys() if k != "password"},
+        ip=_ip(request),
+    )
     db.commit()
     db.refresh(u)
     return AdminUserOut.model_validate(u)
 
 
-@router.post(
-    "/users/{user_id}/disable", response_model=AdminUserOut, dependencies=[Depends(require_admin)]
-)
-def disable_user(user_id: int, db: Session = Depends(get_db)) -> AdminUserOut:
+@router.post("/users/{user_id}/disable", response_model=AdminUserOut)
+def disable_user(
+    user_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+) -> AdminUserOut:
     u = db.get(User, user_id)
     if not u:
         raise HTTPException(status_code=404, detail="User not found")
+    before = {"status": u.status}
     u.status = "disabled"
+    audit_service.record(
+        db, actor_user_id=admin.id, action="user.disable", target_type="user", target_id=u.id,
+        before=before, after={"status": u.status}, ip=_ip(request),
+    )
     db.commit()
     db.refresh(u)
     return AdminUserOut.model_validate(u)
 
 
-@router.post(
-    "/users/{user_id}/enable", response_model=AdminUserOut, dependencies=[Depends(require_admin)]
-)
-def enable_user(user_id: int, db: Session = Depends(get_db)) -> AdminUserOut:
+@router.post("/users/{user_id}/enable", response_model=AdminUserOut)
+def enable_user(
+    user_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+) -> AdminUserOut:
     u = db.get(User, user_id)
     if not u:
         raise HTTPException(status_code=404, detail="User not found")
+    before = {"status": u.status}
     u.status = "active"
+    audit_service.record(
+        db, actor_user_id=admin.id, action="user.enable", target_type="user", target_id=u.id,
+        before=before, after={"status": u.status}, ip=_ip(request),
+    )
     db.commit()
     db.refresh(u)
     return AdminUserOut.model_validate(u)
 
 
-@router.post(
-    "/users/{user_id}/recharge",
-    response_model=TransactionOut,
-    dependencies=[Depends(require_admin)],
-)
+@router.post("/users/{user_id}/recharge", response_model=TransactionOut)
 def recharge_user(
     user_id: int,
     payload: RechargeRequest,
+    request: Request,
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
 ) -> TransactionOut:
@@ -207,6 +249,12 @@ def recharge_user(
         txn = billing_service.recharge(db, user_id, payload.amount, admin.id, payload.note)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    # Audit in a follow-up transaction (recharge() commits).
+    audit_service.record(
+        db, actor_user_id=admin.id, action="user.recharge", target_type="user", target_id=user_id,
+        before=None, after={"amount": txn.amount, "note": payload.note}, ip=_ip(request),
+    )
+    db.commit()
     return TransactionOut.model_validate(txn)
 
 
@@ -241,18 +289,26 @@ def list_providers(db: Session = Depends(get_db)) -> list[ProviderOut]:
     return [ProviderOut.model_validate(r) for r in rows]
 
 
-@router.patch(
-    "/providers/{provider_id}", response_model=ProviderOut, dependencies=[Depends(require_admin)]
-)
+@router.patch("/providers/{provider_id}", response_model=ProviderOut)
 def update_provider(
-    provider_id: int, payload: ProviderUpdate, db: Session = Depends(get_db)
+    provider_id: int,
+    payload: ProviderUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
 ) -> ProviderOut:
     p = db.get(Provider, provider_id)
     if not p:
         raise HTTPException(status_code=404, detail="Provider not found")
     data = payload.model_dump(exclude_unset=True)
+    before = {k: getattr(p, k) for k in data.keys()}
     for k, v in data.items():
         setattr(p, k, v)
+    audit_service.record(
+        db, actor_user_id=admin.id, action="provider.update", target_type="provider",
+        target_id=p.id, before=before, after={k: getattr(p, k) for k in data.keys()},
+        ip=_ip(request),
+    )
     db.commit()
     db.refresh(p)
     return ProviderOut.model_validate(p)
@@ -278,69 +334,96 @@ def admin_list_models(
     return [model_to_out(r, providers) for r in rows]
 
 
-@router.post(
-    "/models",
-    response_model=ModelOut,
-    status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_admin)],
-)
-def admin_create_model(payload: ModelCreate, db: Session = Depends(get_db)) -> ModelOut:
+@router.post("/models", response_model=ModelOut, status_code=status.HTTP_201_CREATED)
+def admin_create_model(
+    payload: ModelCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+) -> ModelOut:
     if db.query(ModelRow).filter(ModelRow.public_name == payload.public_name).one_or_none():
         raise HTTPException(status_code=409, detail="public_name already exists")
     if not db.get(Provider, payload.provider_id):
         raise HTTPException(status_code=400, detail="provider_id does not exist")
     row = ModelRow(**payload.model_dump())
     db.add(row)
+    db.flush()
+    audit_service.record(
+        db, actor_user_id=admin.id, action="model.create", target_type="model", target_id=row.id,
+        before=None, after=payload.model_dump(), ip=_ip(request),
+    )
     db.commit()
     db.refresh(row)
-    providers = _providers_by_id(db)
-    return model_to_out(row, providers)
+    return model_to_out(row, _providers_by_id(db))
 
 
-@router.patch(
-    "/models/{model_id}", response_model=ModelOut, dependencies=[Depends(require_admin)]
-)
+@router.patch("/models/{model_id}", response_model=ModelOut)
 def admin_update_model(
-    model_id: int, payload: ModelUpdate, db: Session = Depends(get_db)
+    model_id: int,
+    payload: ModelUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
 ) -> ModelOut:
     row = db.get(ModelRow, model_id)
     if not row:
         raise HTTPException(status_code=404, detail="Model not found")
     data = payload.model_dump(exclude_unset=True)
+    before = {k: getattr(row, k) for k in data.keys()}
     for k, v in data.items():
         setattr(row, k, v)
+    audit_service.record(
+        db, actor_user_id=admin.id, action="model.update", target_type="model", target_id=row.id,
+        before=before, after={k: getattr(row, k) for k in data.keys()}, ip=_ip(request),
+    )
     db.commit()
     db.refresh(row)
     return model_to_out(row, _providers_by_id(db))
 
 
-@router.post(
-    "/models/{model_id}/enable", response_model=ModelOut, dependencies=[Depends(require_admin)]
-)
-def admin_enable_model(model_id: int, db: Session = Depends(get_db)) -> ModelOut:
+@router.post("/models/{model_id}/enable", response_model=ModelOut)
+def admin_enable_model(
+    model_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+) -> ModelOut:
     row = db.get(ModelRow, model_id)
     if not row:
         raise HTTPException(status_code=404, detail="Model not found")
+    before = {"status": row.status}
     row.status = "active"
+    audit_service.record(
+        db, actor_user_id=admin.id, action="model.enable", target_type="model", target_id=row.id,
+        before=before, after={"status": row.status}, ip=_ip(request),
+    )
     db.commit()
     db.refresh(row)
     return model_to_out(row, _providers_by_id(db))
 
 
-@router.post(
-    "/models/{model_id}/disable", response_model=ModelOut, dependencies=[Depends(require_admin)]
-)
-def admin_disable_model(model_id: int, db: Session = Depends(get_db)) -> ModelOut:
+@router.post("/models/{model_id}/disable", response_model=ModelOut)
+def admin_disable_model(
+    model_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+) -> ModelOut:
     row = db.get(ModelRow, model_id)
     if not row:
         raise HTTPException(status_code=404, detail="Model not found")
+    before = {"status": row.status}
     row.status = "disabled"
+    audit_service.record(
+        db, actor_user_id=admin.id, action="model.disable", target_type="model", target_id=row.id,
+        before=before, after={"status": row.status}, ip=_ip(request),
+    )
     db.commit()
     db.refresh(row)
     return model_to_out(row, _providers_by_id(db))
 
 
-# ---------------- Model health check (upstream ping) ----------------
+# ---------------- Model health check ----------------
 
 
 class HealthCheckResult(BaseModel):
@@ -352,7 +435,7 @@ class HealthCheckResult(BaseModel):
     status_code: int | None
     latency_ms: int
     error: str | None
-    sample: str | None  # short text snippet for text models
+    sample: str | None
 
     model_config = {"protected_namespaces": ()}
 
@@ -368,8 +451,8 @@ async def _ping_text(client, row: ModelRow):
 
 
 async def _ping_image(client, row: ModelRow):
-    # NOTE: this submits a real task at the upstream. We don't poll it; APIMart
-    # eventually expires it. Admin should not spam Ping for image/video models.
+    # Submit a real task at the upstream; we don't poll it, so APIMart eventually
+    # expires it. Admins shouldn't spam Ping for image/video models.
     resp = await client.image_generation({"model": row.upstream_model, "prompt": "health check ping"})
     return resp, resp.http_status < 400 and bool(client.extract_task_id(resp.body)), None
 
@@ -400,8 +483,9 @@ _HEALTH_DISPATCH = {
     dependencies=[Depends(require_admin)],
 )
 async def admin_healthcheck_model(model_id: int, db: Session = Depends(get_db)) -> HealthCheckResult:
-    """Issue a minimal upstream call. Text = 1-token completion; image/video
-    = submit-only (we don't poll — the upstream task is left to expire)."""
+    """Issue a minimal upstream call: text = 1-token completion; image/video =
+    submit-only (we don't poll; the upstream task is left to expire). Costs a
+    tiny bit of credit, so don't spam it."""
     row = db.get(ModelRow, model_id)
     if not row:
         raise HTTPException(status_code=404, detail="Model not found")
@@ -454,26 +538,29 @@ def admin_list_logs(
     if user_id is not None:
         q = q.filter(RequestLog.user_id == user_id)
     q = _apply_filters(
-        q,
-        type=type,
-        model=model,
-        provider_id=provider_id,
-        status=status_,
-        task_status=task_status,
-        api_key_id=api_key_id,
-        date_from=date_from,
-        date_to=date_to,
-        db=db,
+        q, type=type, model=model, provider_id=provider_id, status=status_,
+        task_status=task_status, api_key_id=api_key_id,
+        date_from=date_from, date_to=date_to, db=db,
     )
     rows = q.order_by(desc(RequestLog.created_at)).offset(offset).limit(limit).all()
-    keys = {k.id: k for k in db.query(ApiKey).all()}
-    models = {m.id: m for m in db.query(ModelRow).all()}
+
+    # Enrich with only the keys/models referenced in this page — not the full tables.
+    key_ids = {r.api_key_id for r in rows if r.api_key_id is not None}
+    model_ids = {r.model_id for r in rows if r.model_id is not None}
+    keys = (
+        {k.id: k for k in db.query(ApiKey).filter(ApiKey.id.in_(key_ids)).all()}
+        if key_ids
+        else {}
+    )
+    models = (
+        {m.id: m for m in db.query(ModelRow).filter(ModelRow.id.in_(model_ids)).all()}
+        if model_ids
+        else {}
+    )
     return [_enrich_summary(r, keys, models) for r in rows]
 
 
-@router.get(
-    "/logs/{log_id}", response_model=RequestLogDetail, dependencies=[Depends(require_admin)]
-)
+@router.get("/logs/{log_id}", response_model=RequestLogDetail, dependencies=[Depends(require_admin)])
 def admin_get_log(log_id: int, db: Session = Depends(get_db)) -> RequestLogDetail:
     row = db.get(RequestLog, log_id)
     if not row:

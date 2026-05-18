@@ -1,3 +1,6 @@
+"""Hashing, JWT, API key generation, refresh token generation."""
+from __future__ import annotations
+
 import hashlib
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -9,12 +12,10 @@ from .config import get_settings
 
 settings = get_settings()
 
-# --- Password hashing (bcrypt direct — bcrypt truncates plaintext at 72 bytes) ---
+# --- Password hashing ---
 
 
 def _to_bytes(s: str) -> bytes:
-    # bcrypt silently truncates plaintext past 72 bytes; we mirror that here so
-    # hash/verify agree. Pydantic schemas cap password length to keep this safe.
     return s.encode("utf-8")[:72]
 
 
@@ -29,7 +30,7 @@ def verify_password(plain: str, hashed: str) -> bool:
         return False
 
 
-# --- JWT ---
+# --- Access token (short-lived JWT) ---
 
 
 def create_access_token(subject: str, extra: dict | None = None) -> str:
@@ -37,7 +38,8 @@ def create_access_token(subject: str, extra: dict | None = None) -> str:
     payload: dict = {
         "sub": subject,
         "iat": int(now.timestamp()),
-        "exp": int((now + timedelta(minutes=settings.jwt_expires_minutes)).timestamp()),
+        "exp": int((now + timedelta(minutes=settings.jwt_access_ttl_minutes)).timestamp()),
+        "typ": "access",
     }
     if extra:
         payload.update(extra)
@@ -46,24 +48,44 @@ def create_access_token(subject: str, extra: dict | None = None) -> str:
 
 def decode_access_token(token: str) -> dict | None:
     try:
-        return jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
+        payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
     except JWTError:
         return None
+    if payload.get("typ") not in (None, "access"):
+        return None
+    return payload
 
 
-# --- API Key generation ---
-# Format: lgw_<32 url-safe chars>. Hash with SHA-256 (deterministic lookup-friendly;
-# the key itself is a 192-bit secret so a strong KDF is not strictly required for MVP).
+# --- Refresh tokens (opaque, server-side DB-backed) ---
+
+REFRESH_TOKEN_PREFIX = "rft_"
+REFRESH_TOKEN_BODY_LEN = 48
+
+
+def generate_refresh_token() -> tuple[str, str, datetime]:
+    """Returns (plaintext, sha256_hash, expires_at)."""
+    body = secrets.token_urlsafe(REFRESH_TOKEN_BODY_LEN)[:REFRESH_TOKEN_BODY_LEN]
+    plain = f"{REFRESH_TOKEN_PREFIX}{body}"
+    h = hash_refresh_token(plain)
+    expires_at = datetime.now(timezone.utc) + timedelta(days=settings.jwt_refresh_ttl_days)
+    return plain, h, expires_at
+
+
+def hash_refresh_token(plain: str) -> str:
+    return hashlib.sha256(plain.encode("utf-8")).hexdigest()
+
+
+# --- API keys ---
 
 API_KEY_PREFIX = "lgw_"
-API_KEY_BODY_LEN = 32  # token_urlsafe bytes (~43 chars); we slice to 32 for readability
+API_KEY_BODY_LEN = 32
 
 
 def generate_api_key() -> tuple[str, str, str]:
     """Returns (full_key_plain, key_prefix_displayed, key_hash_to_store)."""
     body = secrets.token_urlsafe(36)[:API_KEY_BODY_LEN]
     full = f"{API_KEY_PREFIX}{body}"
-    prefix = full[:11]  # e.g. lgw_AbCdEfG
+    prefix = full[:11]
     key_hash = hash_api_key(full)
     return full, prefix, key_hash
 

@@ -3,8 +3,11 @@
 Responsibilities:
 - Resolve a `public_name` from the user payload to a (ModelRow, Provider) pair.
 - Build the APIMartProvider instance for the current request.
+- Pre-authorize spend against the monthly cap via reservation_service (Redis).
 - Persist request_logs atomically with debit (single transaction, FOR UPDATE).
 """
+from __future__ import annotations
+
 import time
 import uuid
 from dataclasses import dataclass
@@ -18,12 +21,17 @@ from sqlalchemy.orm import Session
 
 from ..config import get_settings
 from ..enums import RequestType
+from ..logging_config import get_logger
 from ..models import ApiKey, ModelRow, Provider, RequestLog, User
 from ..providers import APIMartProvider
+from ..redis_client import get_redis
+from ..utils.redact import redact
 from ..utils.time import month_start_utc
-from . import billing_service
+from . import billing_service, cost_service, provider_selector, reservation_service
+from .reservation_service import Reservation
 
 settings = get_settings()
+log = get_logger(__name__)
 
 
 @dataclass
@@ -33,7 +41,11 @@ class ResolvedModel:
 
 
 def resolve_model(db: Session, public_name: str, expected_type: str | None = None) -> ResolvedModel:
-    """Look up the model by public_name; reject if missing/disabled or wrong type."""
+    """Look up the model by public_name; reject if missing/disabled or wrong type.
+
+    Provider selection here is the default (model.provider_id). For requests
+    that participate in session stickiness, use `resolve_for_request()` instead.
+    """
     row = (
         db.query(ModelRow)
         .filter(ModelRow.public_name == public_name)
@@ -56,8 +68,31 @@ def resolve_model(db: Session, public_name: str, expected_type: str | None = Non
     return ResolvedModel(model=row, provider=provider)
 
 
+async def resolve_for_request(
+    db: Session,
+    public_name: str,
+    *,
+    expected_type: str | None = None,
+    session_key: str | None = None,
+) -> ResolvedModel:
+    """Like resolve_model but routes the provider through `provider_selector`,
+    honoring per-session stickiness when a second provider exists."""
+    base = resolve_model(db, public_name, expected_type=expected_type)
+    if session_key is None:
+        return base
+    chosen = await provider_selector.pick_provider_async_helper(
+        db, base.model, session_key=session_key
+    )
+    return ResolvedModel(model=base.model, provider=chosen)
+
+
+def session_key_for_request(api_key: ApiKey) -> str:
+    """Session-stickiness identifier for a given API key. Today we use the
+    api key id; future: optionally combine with a client-supplied `chat_id`."""
+    return f"k{api_key.id}"
+
+
 def build_provider(provider: Provider) -> APIMartProvider:
-    # MVP only ships the APIMart adapter. Future: switch on provider.name.
     if provider.name != "apimart":
         raise HTTPException(status_code=501, detail=f"Provider '{provider.name}' not implemented")
     if not settings.apimart_api_key:
@@ -71,7 +106,7 @@ def new_request_id() -> str:
 
 def extract_upstream_error_message(body: object) -> str:
     """Best-effort extraction of a human-readable error message from an
-    upstream response body. Falls back to a stringified body."""
+    upstream response body."""
     if isinstance(body, dict):
         err = body.get("error")
         if isinstance(err, dict):
@@ -90,7 +125,7 @@ def require_balance(user: User) -> None:
 def mtd_cost_for_api_key(db: Session, api_key_id: int) -> Decimal:
     """Month-to-date cost charged through this API key (UTC month)."""
     total = (
-        db.query(func.coalesce(func.sum(RequestLog.cost), 0))
+        db.query(func.coalesce(func.sum(RequestLog.cost), Decimal("0")))
         .filter(RequestLog.api_key_id == api_key_id, RequestLog.created_at >= month_start_utc())
         .scalar()
     )
@@ -102,7 +137,7 @@ def mtd_cost_for_api_keys(db: Session, api_key_ids: list[int]) -> dict[int, Deci
     if not api_key_ids:
         return {}
     rows = (
-        db.query(RequestLog.api_key_id, func.coalesce(func.sum(RequestLog.cost), 0))
+        db.query(RequestLog.api_key_id, func.coalesce(func.sum(RequestLog.cost), Decimal("0")))
         .filter(
             RequestLog.api_key_id.in_(api_key_ids),
             RequestLog.created_at >= month_start_utc(),
@@ -113,28 +148,92 @@ def mtd_cost_for_api_keys(db: Session, api_key_ids: list[int]) -> dict[int, Deci
     return {kid: Decimal(c or 0) for kid, c in rows}
 
 
-def require_within_monthly_limit(db: Session, api_key: ApiKey) -> None:
-    if api_key.monthly_limit is None:
-        return
-    used = mtd_cost_for_api_key(db, api_key.id)
-    if used >= Decimal(api_key.monthly_limit):
-        raise HTTPException(
-            status_code=429,
-            detail=(
-                f"API key monthly limit reached: spent ${used} of ${api_key.monthly_limit}. "
-                "Raise the limit or rotate the key."
-            ),
-        )
+# ---------------- Spend pre-authorization ----------------
 
 
-def require_can_spend(db: Session, user: User, api_key: ApiKey) -> None:
-    """All preconditions for charging a /v1/* request: positive balance + within key cap."""
+async def preauthorize_spend(
+    db: Session,
+    *,
+    user: User,
+    api_key: ApiKey,
+    estimated_cost: Decimal,
+) -> Reservation | None:
+    """Balance check + Redis-backed monthly-cap reservation.
+
+    Returns a `Reservation` to be released by `finalize_reservation()` after the
+    request resolves. Returns None if no reservation was needed (free model or
+    no monthly cap).
+
+    Raises HTTP 402/429 on rejection.
+    """
     require_balance(user)
-    require_within_monthly_limit(db, api_key)
+    if api_key.monthly_limit is None or estimated_cost <= 0:
+        return None
+
+    monthly_limit = Decimal(api_key.monthly_limit)
+    redis = get_redis()
+    try:
+        reservation, status = await reservation_service.try_reserve(
+            redis, api_key_id=api_key.id,
+            reservation_amount=estimated_cost, monthly_limit=monthly_limit,
+            strict=settings.is_production,
+        )
+        if status == "needs_init":
+            committed_mtd = mtd_cost_for_api_key(db, api_key.id)
+            if committed_mtd >= monthly_limit:
+                raise HTTPException(
+                    status_code=429,
+                    detail=(
+                        f"API key monthly limit reached: spent ${committed_mtd} of "
+                        f"${monthly_limit}. Raise the limit or rotate the key."
+                    ),
+                )
+            reservation = await reservation_service.init_and_reserve(
+                redis, api_key_id=api_key.id,
+                committed_mtd=committed_mtd, reservation_amount=estimated_cost,
+                monthly_limit=monthly_limit, strict=settings.is_production,
+            )
+            if reservation is None:
+                raise HTTPException(
+                    status_code=429,
+                    detail=(
+                        f"API key monthly limit would be exceeded by this request "
+                        f"(est ${estimated_cost} on top of ${committed_mtd} of ${monthly_limit})."
+                    ),
+                )
+        elif status == "rejected":
+            raise HTTPException(
+                status_code=429,
+                detail=(
+                    f"API key monthly limit would be exceeded by this request "
+                    f"(est ${estimated_cost} on top of ${monthly_limit} cap)."
+                ),
+            )
+    except reservation_service.ReservationBackendUnavailable as exc:
+        log.error("reservation_backend_unavailable", error=str(exc))
+        raise HTTPException(status_code=503, detail="Spend reservation backend unavailable")
+    return reservation
+
+
+async def finalize_reservation(
+    reservation: Reservation | None, *, actual_cost: Decimal
+) -> None:
+    if reservation is None:
+        return
+    await reservation_service.release(get_redis(), reservation, actual_cost=actual_cost)
+
+
+async def release_reservation_fully(reservation: Reservation | None) -> None:
+    if reservation is None:
+        return
+    await reservation_service.force_release_full(get_redis(), reservation)
 
 
 def mark_key_used(db: Session, api_key: ApiKey) -> None:
     api_key.last_used_at = datetime.now(timezone.utc)
+
+
+# ---------------- Persist helpers ----------------
 
 
 def persist_success(
@@ -152,7 +251,7 @@ def persist_success(
     latency_ms: int,
     http_status: int,
     cost: Decimal,
-    pricing_missing: bool,
+    usage_source: str,
     prompt_tokens: int | None = None,
     completion_tokens: int | None = None,
     total_tokens: int | None = None,
@@ -161,8 +260,19 @@ def persist_success(
     asset_url: str | None = None,
     task_status: str | None = None,
 ) -> RequestLog:
-    """Single transaction: insert request_log + debit + update api_key.last_used_at."""
-    log = RequestLog(
+    """Single transaction: insert request_log (with price snapshot) + debit +
+    update api_key.last_used_at.
+
+    `usage_source` is one of `UsageSource` values. `missing` implies cost=0
+    (no model pricing); `estimated` means we filled in from tiktoken because
+    upstream omitted usage. Both annotate the log for downstream auditing.
+    """
+    note_parts: list[str] = []
+    if usage_source == "missing":
+        note_parts.append("pricing_missing=true")
+    elif usage_source == "estimated":
+        note_parts.append("pricing_estimated=true")
+    log_row = RequestLog(
         user_id=user.id,
         api_key_id=api_key.id,
         provider_id=provider.id,
@@ -181,21 +291,23 @@ def persist_success(
         http_status=http_status,
         request_id=request_id,
         upstream_request_id=upstream_request_id,
-        request_payload_json=request_payload if isinstance(request_payload, (dict, list)) else None,
+        request_payload_json=redact(request_payload),
         response_payload_json=response_payload if isinstance(response_payload, (dict, list)) else None,
         asset_url=asset_url,
-        error_message=("pricing_missing=true" if pricing_missing else None),
+        unit_price_snapshot_json=cost_service.price_snapshot(model),
+        usage_source=usage_source,
+        error_message=" ".join(note_parts) or None,
     )
-    db.add(log)
-    db.flush()  # need log.id for the debit transaction row
+    db.add(log_row)
+    db.flush()
     mark_key_used(db, api_key)
     if cost > 0:
         billing_service.debit(
-            db, user.id, cost, request_log_id=log.id, note=f"{request_type}:{model.public_name}"
+            db, user.id, cost, request_log_id=log_row.id, note=f"{request_type}:{model.public_name}"
         )
     db.commit()
-    db.refresh(log)
-    return log
+    db.refresh(log_row)
+    return log_row
 
 
 def persist_failure(
@@ -216,7 +328,7 @@ def persist_failure(
     upstream_request_id: str | None = None,
 ) -> RequestLog:
     """No debit on failure. Just write the log."""
-    log = RequestLog(
+    log_row = RequestLog(
         user_id=user.id,
         api_key_id=api_key.id,
         provider_id=provider.id if provider else None,
@@ -231,15 +343,16 @@ def persist_failure(
         upstream_request_id=upstream_request_id,
         error_code=error_code,
         error_message=error_message,
-        request_payload_json=request_payload if isinstance(request_payload, (dict, list)) else None,
+        request_payload_json=redact(request_payload),
         response_payload_json=response_payload if isinstance(response_payload, (dict, list)) else None,
+        unit_price_snapshot_json=cost_service.price_snapshot(model) if model else None,
     )
-    db.add(log)
+    db.add(log_row)
     db.flush()
     mark_key_used(db, api_key)
     db.commit()
-    db.refresh(log)
-    return log
+    db.refresh(log_row)
+    return log_row
 
 
 def persist_queued_task(
@@ -260,12 +373,12 @@ def persist_queued_task(
 ) -> tuple[RequestLog, "VideoTask"]:
     """For async submissions (image/video) that returned a task_id.
 
-    cost=0 here; gets charged when the task succeeds via /v1/tasks/{id} polling.
-    Inserts both the RequestLog and the VideoTask in a single transaction.
+    cost=0 here; gets charged when the task succeeds via the locked
+    finalize path in `task_service.finalize_task`.
     """
-    from ..models import VideoTask  # local import keeps the module dependency graph flat
+    from ..models import VideoTask
 
-    log = RequestLog(
+    log_row = RequestLog(
         user_id=user.id,
         api_key_id=api_key.id,
         provider_id=provider.id,
@@ -279,16 +392,17 @@ def persist_queued_task(
         http_status=http_status,
         request_id=request_id,
         upstream_request_id=upstream_request_id or upstream_task_id,
-        request_payload_json=request_payload if isinstance(request_payload, (dict, list)) else None,
+        request_payload_json=redact(request_payload),
         response_payload_json=response_payload if isinstance(response_payload, (dict, list)) else None,
+        unit_price_snapshot_json=cost_service.price_snapshot(model),
     )
-    db.add(log)
-    db.flush()  # need log.id for the task FK
+    db.add(log_row)
+    db.flush()
     mark_key_used(db, api_key)
     task = VideoTask(
         user_id=user.id,
         api_key_id=api_key.id,
-        request_log_id=log.id,
+        request_log_id=log_row.id,
         provider_id=provider.id,
         model_id=model.id,
         upstream_task_id=upstream_task_id or "",
@@ -296,9 +410,9 @@ def persist_queued_task(
     )
     db.add(task)
     db.commit()
-    db.refresh(log)
+    db.refresh(log_row)
     db.refresh(task)
-    return log, task
+    return log_row, task
 
 
 # ---------------- High-level async submit (image / video) ----------------
@@ -313,13 +427,27 @@ async def submit_async_task(
     request_type: RequestType,
 ) -> dict[str, Any]:
     """End-to-end submit flow shared by /v1/images/generations and
-    /v1/videos/generations: resolve model → check balance → call upstream →
-    persist log + task → return the client-facing dict."""
+    /v1/videos/generations."""
     public_name = payload.get("model")
     if not public_name or not isinstance(public_name, str):
         raise HTTPException(status_code=400, detail="Missing 'model' field")
     resolved = resolve_model(db, public_name, expected_type=request_type.value)
-    require_can_spend(db, user, api_key)
+
+    # Pre-authorize: estimate upper bound and reserve against the monthly cap.
+    if request_type is RequestType.IMAGE:
+        n = 1
+        try:
+            n = int(payload.get("n", 1) or 1)
+        except Exception:
+            n = 1
+        estimate = cost_service.estimate_image_cost_upper_bound(resolved.model, n)
+    else:
+        try:
+            requested_duration = int(payload.get("duration") or 0) or None
+        except Exception:
+            requested_duration = None
+        estimate = cost_service.estimate_video_cost_upper_bound(resolved.model, requested_duration)
+    reservation = await preauthorize_spend(db, user=user, api_key=api_key, estimated_cost=estimate)
 
     request_id = new_request_id()
     provider_client = build_provider(resolved.provider)
@@ -343,6 +471,7 @@ async def submit_async_task(
             latency_ms=latency_ms, http_status=None, error_code="upstream_exception",
             error_message=str(e)[:1000],
         )
+        await release_reservation_fully(reservation)
         raise HTTPException(status_code=502, detail=f"Upstream {request_type.value} submit failed: {e}")
     latency_ms = int((time.perf_counter() - started) * 1000)
 
@@ -356,6 +485,7 @@ async def submit_async_task(
             error_code=f"upstream_{resp.http_status}", error_message=None,
             upstream_request_id=resp.upstream_request_id,
         )
+        await release_reservation_fully(reservation)
         raise HTTPException(status_code=resp.http_status, detail=body_text)
 
     task_id = provider_client.extract_task_id(resp.body)
@@ -369,21 +499,25 @@ async def submit_async_task(
             error_message="Upstream response lacked a recognizable task_id",
             upstream_request_id=resp.upstream_request_id,
         )
+        await release_reservation_fully(reservation)
         raise HTTPException(status_code=502, detail="Upstream did not return a task_id")
 
-    log, task_row = persist_queued_task(
+    log_row, task_row = persist_queued_task(
         db, user=user, api_key=api_key, provider=resolved.provider, model=resolved.model,
         request_type=request_type.value, request_payload=payload, response_payload=resp.body,
         upstream_request_id=resp.upstream_request_id, request_id=request_id,
         latency_ms=latency_ms, http_status=resp.http_status, upstream_task_id=task_id,
     )
+    # Keep the reservation in place: actual debit will fire from finalize_task.
+    # The reservation is intentionally NOT released here.
+    # (The arq worker reconciles tasks on a schedule; the reservation TTL is 32d so we don't leak.)
     return {
         "task_id": f"task_{task_row.id}",
         "status": "queued",
         "type": request_type.value,
         "_gateway": {
             "request_id": request_id,
-            "log_id": log.id,
+            "log_id": log_row.id,
             "upstream_task_id": task_id,
             "latency_ms": latency_ms,
         },

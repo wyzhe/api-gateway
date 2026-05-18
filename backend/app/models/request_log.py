@@ -45,6 +45,15 @@ class RequestLog(Base):
     response_payload_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     asset_url: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # Snapshot of the model's pricing parameters at the moment this log was charged.
+    # Format: {"pricing_mode": "...", "input_price": "...", "output_price": "...", ...}
+    # All numeric values stored as strings (Decimal-safe).
+    unit_price_snapshot_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # Where the token/usage numbers came from: "upstream" | "estimated" | "missing".
+    # estimated = pessimistic tiktoken-based fallback for streaming chats that
+    # didn't return a usage block. Worker may later reconcile.
+    usage_source: Mapped[str | None] = mapped_column(String(16), nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
     )

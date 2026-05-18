@@ -27,9 +27,18 @@ import { fmtCompactMoney } from "@/lib/utils";
 export function PlaygroundPage() {
   const [models, setModels] = useState<Model[]>([]);
   const [keys, setKeys] = useState<ApiKey[]>([]);
-  const [keyValue, setKeyValue] = useState<string>(
-    () => localStorage.getItem("lgw_pg_key") || "",
-  );
+  // Playground API key lives in sessionStorage only (cleared on tab close) so
+  // an XSS that grabs `localStorage` can't lift it. Migrate any legacy
+  // localStorage value once and then remove it.
+  const [keyValue, setKeyValue] = useState<string>(() => {
+    const legacy = localStorage.getItem("lgw_pg_key");
+    if (legacy) {
+      sessionStorage.setItem("lgw_pg_key", legacy);
+      localStorage.removeItem("lgw_pg_key");
+      return legacy;
+    }
+    return sessionStorage.getItem("lgw_pg_key") || "";
+  });
 
   useEffect(() => {
     api<Model[]>("/api/models").then(setModels).catch(() => {});
@@ -38,7 +47,8 @@ export function PlaygroundPage() {
 
   const onKeyChange = (v: string) => {
     setKeyValue(v);
-    localStorage.setItem("lgw_pg_key", v);
+    if (v) sessionStorage.setItem("lgw_pg_key", v);
+    else sessionStorage.removeItem("lgw_pg_key");
   };
 
   const byType = useMemo(
@@ -67,9 +77,11 @@ export function PlaygroundPage() {
               className="mono"
               value={keyValue}
               onChange={(e) => onKeyChange(e.target.value)}
+              pattern="^lgw_[A-Za-z0-9_-]+$"
+              aria-invalid={!!keyValue && !/^lgw_[A-Za-z0-9_-]+$/.test(keyValue)}
             />
             <span className="text-[10px] text-muted-foreground">
-              Stored locally in your browser. Keys are write-once on creation — paste here to use.
+              Held in <code>sessionStorage</code> only — cleared when you close this tab. Keys are write-once on creation; paste here to use.
               {keys.length > 0 && (
                 <> {keys.length} active key{keys.length > 1 ? "s" : ""} on your account (prefixes: {keys.map((k) => k.key_prefix).join(", ")}).</>
               )}

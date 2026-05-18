@@ -54,3 +54,16 @@ class ModelType(str, Enum):
     IMAGE = "image"
     VIDEO = "video"
     MULTIMODAL = "multimodal"
+
+
+class UsageSource(str, Enum):
+    """Where the token-usage numbers backing a request_log came from.
+
+    `upstream`  — read from the upstream response (`usage` block).
+    `estimated` — upstream omitted usage; we billed a pessimistic tiktoken bound.
+    `missing`   — model has no pricing configured; we billed $0 and flagged it.
+    """
+
+    UPSTREAM = "upstream"
+    ESTIMATED = "estimated"
+    MISSING = "missing"

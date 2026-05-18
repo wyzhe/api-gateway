@@ -84,7 +84,8 @@ def test_monthly_limit_returns_429(client, user_api_key_funded, test_user_funded
         json={"model": "gpt-4o", "messages": [{"role": "user", "content": "hi"}]},
     )
     assert r.status_code == 429
-    assert "monthly limit" in r.json()["detail"].lower()
+    msg = r.json()["error"]["message"].lower()
+    assert "monthly limit" in msg
 
 
 def test_task_id_unknown_returns_404(client, user_api_key_funded):

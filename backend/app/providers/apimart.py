@@ -9,20 +9,23 @@ Docs (verified 2026-05): https://docs.apimart.ai/
 - Video: POST /v1/videos/generations  (ASYNC — wrapped {code, data:[{task_id, status}]})
 - Task:  GET  /v1/tasks/{task_id}     (status: pending|processing|completed|failed|cancelled)
 """
+from __future__ import annotations
+
 from collections.abc import AsyncIterator
 from typing import Any
 
 import httpx
 
+from ..config import get_settings
+from ..metrics import upstream_latency_ms
 from .base import BaseProvider, ProviderResponse, ProviderStreamChunk, ProviderTaskResult
 
-# ---- Endpoint paths (single source of truth for APIMart) ----
 PATH_CHAT = "/chat/completions"
+PATH_MESSAGES = "/messages"
 PATH_IMAGES = "/images/generations"
 PATH_VIDEOS = "/videos/generations"
 PATH_TASK = "/tasks/{task_id}"
 
-# APIMart task status -> our internal task_status vocabulary.
 TASK_STATUS_MAP = {
     "pending": "queued",
     "processing": "running",
@@ -31,26 +34,41 @@ TASK_STATUS_MAP = {
     "cancelled": "failed",
 }
 
-DEFAULT_TIMEOUT = httpx.Timeout(connect=10.0, read=120.0, write=30.0, pool=10.0)
-
-# Single shared async client (HTTP/1.1 keep-alive + TLS session reuse).
-# `app.main.lifespan` is the right place to close it on shutdown if you care;
-# httpx will GC it cleanly on process exit either way.
 _HTTPX_CLIENT: httpx.AsyncClient | None = None
 
 
 def _client() -> httpx.AsyncClient:
     global _HTTPX_CLIENT
     if _HTTPX_CLIENT is None:
-        _HTTPX_CLIENT = httpx.AsyncClient(timeout=DEFAULT_TIMEOUT)
+        settings = get_settings()
+        timeout = httpx.Timeout(
+            connect=settings.apimart_timeout_connect,
+            read=settings.apimart_timeout_read,
+            write=settings.apimart_timeout_write,
+            pool=10.0,
+        )
+        limits = httpx.Limits(max_keepalive_connections=20, max_connections=100, keepalive_expiry=30.0)
+        # Retries only for idempotent transport-level failures (DNS / connect / read).
+        # Non-idempotent POSTs (generation submissions) are NOT auto-retried here.
+        transport = httpx.AsyncHTTPTransport(retries=2)
+        _HTTPX_CLIENT = httpx.AsyncClient(timeout=timeout, limits=limits, transport=transport)
     return _HTTPX_CLIENT
+
+
+async def close_client() -> None:
+    global _HTTPX_CLIENT
+    if _HTTPX_CLIENT is not None:
+        try:
+            await _HTTPX_CLIENT.aclose()
+        except Exception:
+            pass
+        _HTTPX_CLIENT = None
 
 
 class APIMartProvider(BaseProvider):
     name = "apimart"
 
     def __init__(self, base_url: str, api_key: str) -> None:
-        # Strip trailing slash so PATH_* concat cleanly.
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
 
@@ -66,7 +84,6 @@ class APIMartProvider(BaseProvider):
 
     @staticmethod
     def _request_id(resp: httpx.Response) -> str | None:
-        # APIMart may surface upstream request IDs via standard headers. Be lenient.
         for h in ("x-request-id", "x-apimart-request-id", "x-upstream-request-id"):
             if h in resp.headers:
                 return resp.headers[h]
@@ -80,11 +97,12 @@ class APIMartProvider(BaseProvider):
         *,
         stream: bool = False,
     ) -> ProviderResponse:
-        resp = await _client().post(
-            self._url(PATH_CHAT),
-            headers=self._headers(),
-            json={**payload, "stream": False},
-        )
+        with upstream_latency_ms.labels(provider=self.name, operation="chat").time():
+            resp = await _client().post(
+                self._url(PATH_CHAT),
+                headers=self._headers(),
+                json={**payload, "stream": False},
+            )
         body = resp.json() if resp.content else {}
         return ProviderResponse(
             http_status=resp.status_code,
@@ -96,7 +114,6 @@ class APIMartProvider(BaseProvider):
         self,
         payload: dict[str, Any],
     ) -> AsyncIterator[ProviderStreamChunk]:
-        # Force include_usage so the final SSE event contains usage for billing.
         body = {**payload, "stream": True}
         opts = dict(body.get("stream_options") or {})
         opts.setdefault("include_usage", True)
@@ -120,7 +137,64 @@ class APIMartProvider(BaseProvider):
                     yield ProviderStreamChunk(raw_line=b"\n", parsed=None)
                     continue
                 if raw_line.startswith(":"):
-                    # SSE comment / heartbeat — pass through verbatim.
+                    yield ProviderStreamChunk(raw_line=(raw_line + "\n").encode(), parsed=None)
+                    continue
+                parsed = None
+                if raw_line.startswith("data: "):
+                    data_str = raw_line[6:]
+                    if data_str != "[DONE]":
+                        import json as _json
+
+                        try:
+                            parsed = _json.loads(data_str)
+                        except Exception:
+                            parsed = None
+                yield ProviderStreamChunk(
+                    raw_line=(raw_line + "\n").encode(),
+                    parsed=parsed,
+                )
+
+    # ---------------- Anthropic Messages API ----------------
+
+    async def messages(self, payload: dict[str, Any]) -> ProviderResponse:
+        with upstream_latency_ms.labels(provider=self.name, operation="messages").time():
+            resp = await _client().post(
+                self._url(PATH_MESSAGES),
+                headers=self._headers(),
+                json={**payload, "stream": False},
+            )
+        body = resp.json() if resp.content else {}
+        return ProviderResponse(
+            http_status=resp.status_code,
+            body=body,
+            upstream_request_id=self._request_id(resp),
+        )
+
+    async def messages_stream(
+        self,
+        payload: dict[str, Any],
+    ) -> AsyncIterator[ProviderStreamChunk]:
+        body = {**payload, "stream": True}
+        async with _client().stream(
+            "POST",
+            self._url(PATH_MESSAGES),
+            headers={**self._headers(), "Accept": "text/event-stream"},
+            json=body,
+        ) as resp:
+            if resp.status_code != 200:
+                err = await resp.aread()
+                yield ProviderStreamChunk(
+                    raw_line=b"data: " + err + b"\n\n",
+                    parsed={"_error": True, "_http": resp.status_code, "body": err.decode(errors="replace")},
+                )
+                return
+            # Anthropic SSE events have BOTH `event: <name>` and `data: {...}` lines.
+            # We forward both verbatim and only parse `data:` lines for usage extraction.
+            async for raw_line in resp.aiter_lines():
+                if raw_line == "":
+                    yield ProviderStreamChunk(raw_line=b"\n", parsed=None)
+                    continue
+                if raw_line.startswith(":"):
                     yield ProviderStreamChunk(raw_line=(raw_line + "\n").encode(), parsed=None)
                     continue
                 parsed = None
@@ -141,11 +215,12 @@ class APIMartProvider(BaseProvider):
     # ---------------- Image (async) ----------------
 
     async def image_generation(self, payload: dict[str, Any]) -> ProviderResponse:
-        resp = await _client().post(
-            self._url(PATH_IMAGES),
-            headers=self._headers(),
-            json=payload,
-        )
+        with upstream_latency_ms.labels(provider=self.name, operation="image_submit").time():
+            resp = await _client().post(
+                self._url(PATH_IMAGES),
+                headers=self._headers(),
+                json=payload,
+            )
         return ProviderResponse(
             http_status=resp.status_code,
             body=(resp.json() if resp.content else {}),
@@ -155,11 +230,12 @@ class APIMartProvider(BaseProvider):
     # ---------------- Video (async) ----------------
 
     async def video_generation(self, payload: dict[str, Any]) -> ProviderResponse:
-        resp = await _client().post(
-            self._url(PATH_VIDEOS),
-            headers=self._headers(),
-            json=payload,
-        )
+        with upstream_latency_ms.labels(provider=self.name, operation="video_submit").time():
+            resp = await _client().post(
+                self._url(PATH_VIDEOS),
+                headers=self._headers(),
+                json=payload,
+            )
         return ProviderResponse(
             http_status=resp.status_code,
             body=(resp.json() if resp.content else {}),
@@ -167,10 +243,6 @@ class APIMartProvider(BaseProvider):
         )
 
     def extract_task_id(self, submission_body: dict[str, Any] | list) -> str | None:
-        """APIMart submission response shape (video):
-            {"code": 200, "data": [{"task_id": "...", "status": "submitted"}]}
-        Image submissions follow a similar wrapper or may use OpenAI-ish shape.
-        Be defensive."""
         if not isinstance(submission_body, dict):
             return None
         data = submission_body.get("data")
@@ -186,14 +258,13 @@ class APIMartProvider(BaseProvider):
     # ---------------- Task status ----------------
 
     async def get_task_status(self, task_id: str) -> ProviderTaskResult:
-        resp = await _client().get(
-            self._url(PATH_TASK.format(task_id=task_id)),
-            headers=self._headers(),
-        )
+        with upstream_latency_ms.labels(provider=self.name, operation="task_status").time():
+            resp = await _client().get(
+                self._url(PATH_TASK.format(task_id=task_id)),
+                headers=self._headers(),
+            )
         body: dict[str, Any] = resp.json() if resp.content else {}
 
-        # APIMart may wrap as {"code":200,"data":{...status...}} or return the
-        # status object at top level. Unwrap when there's a dict under `data`.
         payload = body["data"] if isinstance(body, dict) and isinstance(body.get("data"), dict) else body
 
         raw_status = (payload.get("status") if isinstance(payload, dict) else None) or ""
@@ -203,7 +274,6 @@ class APIMartProvider(BaseProvider):
         duration: float | None = None
         if isinstance(payload, dict):
             result = payload.get("result") or {}
-            # videos
             if isinstance(result, dict):
                 for v in result.get("videos") or []:
                     if isinstance(v, dict):
@@ -217,7 +287,6 @@ class APIMartProvider(BaseProvider):
                                 if k in v and isinstance(v[k], (int, float)):
                                     duration = float(v[k])
                                     break
-                # images
                 for im in result.get("images") or []:
                     if isinstance(im, dict):
                         url = im.get("url")
