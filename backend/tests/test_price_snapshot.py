@@ -10,6 +10,7 @@ def test_price_snapshot_serializes_decimal_as_string():
         id=42, public_name="gpt-4o", upstream_model="gpt-4o", type="text",
         pricing_mode="per_token",
         input_price=Decimal("2.5"), output_price=Decimal("10.0"),
+        cache_write_price=None, cache_read_price=None,
         image_price=None, video_second_price=None, generation_price=None,
     )
     snap = cost_service.price_snapshot(m)
@@ -19,6 +20,8 @@ def test_price_snapshot_serializes_decimal_as_string():
     assert snap["input_price"] == "2.5"
     assert snap["output_price"] == "10.0"
     assert snap["image_price"] is None
+    assert snap["cache_write_price"] is None
+    assert snap["cache_read_price"] is None
 
 
 def test_recompute_text_cost_from_snapshot():

@@ -179,9 +179,17 @@ async def chat_completions(
     prompt_tokens = int(usage.get("prompt_tokens") or 0)
     completion_tokens = int(usage.get("completion_tokens") or 0)
     total_tokens = int(usage.get("total_tokens") or (prompt_tokens + completion_tokens))
+    cached_tokens = (
+        (usage.get("prompt_tokens_details") or {}).get("cached_tokens")
+        or usage.get("cache_read_input_tokens")
+        or 0
+    )
+    cache_creation_tokens = usage.get("cache_creation_input_tokens") or 0
 
-    cost, pricing_missing = cost_service.calc_text_cost(
-        resolved.model, prompt_tokens, completion_tokens
+    cost, pricing_missing = cost_service.calc_text_cost_with_cache(
+        resolved.model, prompt_tokens, completion_tokens,
+        cached_tokens=int(cached_tokens),
+        cache_creation_tokens=int(cache_creation_tokens),
     )
     usage_source = (UsageSource.MISSING if pricing_missing else UsageSource.UPSTREAM).value
     pricing_source_total.labels(source=usage_source).inc()
@@ -194,6 +202,8 @@ async def chat_completions(
         cost=cost, usage_source=usage_source,
         prompt_tokens=prompt_tokens or None, completion_tokens=completion_tokens or None,
         total_tokens=total_tokens or None,
+        prompt_cached_tokens=int(cached_tokens) or None,
+        prompt_cache_creation_tokens=int(cache_creation_tokens) or None,
     )
 
     await gateway_service.finalize_reservation(reservation, actual_cost=cost)
@@ -291,6 +301,8 @@ async def _chat_completions_stream(
             return
 
         usage_source = UsageSource.UPSTREAM.value
+        cached_tokens = 0
+        cache_creation_tokens = 0
         if final_usage is None:
             # Upstream omitted usage even with include_usage=true. Reuse the
             # preauth token count + max_tokens ceiling as a pessimistic bound.
@@ -310,9 +322,17 @@ async def _chat_completions_stream(
             total_tokens = int(
                 (final_usage or {}).get("total_tokens") or (prompt_tokens + completion_tokens)
             )
+            cached_tokens = (
+                ((final_usage or {}).get("prompt_tokens_details") or {}).get("cached_tokens")
+                or (final_usage or {}).get("cache_read_input_tokens")
+                or 0
+            )
+            cache_creation_tokens = (final_usage or {}).get("cache_creation_input_tokens") or 0
 
-        cost, pricing_missing = cost_service.calc_text_cost(
-            resolved.model, prompt_tokens, completion_tokens
+        cost, pricing_missing = cost_service.calc_text_cost_with_cache(
+            resolved.model, prompt_tokens, completion_tokens,
+            cached_tokens=int(cached_tokens),
+            cache_creation_tokens=int(cache_creation_tokens),
         )
         if pricing_missing:
             usage_source = UsageSource.MISSING.value
@@ -326,6 +346,8 @@ async def _chat_completions_stream(
             http_status=200, cost=cost, usage_source=usage_source,
             prompt_tokens=prompt_tokens or None, completion_tokens=completion_tokens or None,
             total_tokens=total_tokens or None,
+            prompt_cached_tokens=int(cached_tokens) or None,
+            prompt_cache_creation_tokens=int(cache_creation_tokens) or None,
         )
         await gateway_service.finalize_reservation(reservation, actual_cost=cost)
         gateway_requests_total.labels(type="text", model=resolved.model.public_name, status="success").inc()
@@ -432,9 +454,14 @@ async def messages(
         prompt_tokens = usage.input_tokens
         completion_tokens = usage.output_tokens
         usage_source = UsageSource.UPSTREAM.value
+        raw_usage = body.get("usage") or {}
+        cached_tokens = raw_usage.get("cache_read_input_tokens") or 0
+        cache_creation_tokens = raw_usage.get("cache_creation_input_tokens") or 0
     else:
         prompt_tokens, completion_tokens = prompt_est, max_completion
         usage_source = UsageSource.ESTIMATED.value
+        cached_tokens = 0
+        cache_creation_tokens = 0
         log.warning(
             "messages_usage_missing",
             model=resolved.model.public_name,
@@ -442,8 +469,10 @@ async def messages(
             completion_tokens=completion_tokens,
         )
 
-    cost, pricing_missing = cost_service.calc_text_cost(
-        resolved.model, prompt_tokens, completion_tokens
+    cost, pricing_missing = cost_service.calc_text_cost_with_cache(
+        resolved.model, prompt_tokens, completion_tokens,
+        cached_tokens=int(cached_tokens),
+        cache_creation_tokens=int(cache_creation_tokens),
     )
     if pricing_missing:
         usage_source = UsageSource.MISSING.value
@@ -457,6 +486,8 @@ async def messages(
         cost=cost, usage_source=usage_source,
         prompt_tokens=prompt_tokens or None, completion_tokens=completion_tokens or None,
         total_tokens=(prompt_tokens + completion_tokens) or None,
+        prompt_cached_tokens=int(cached_tokens) or None,
+        prompt_cache_creation_tokens=int(cache_creation_tokens) or None,
     )
 
     await gateway_service.finalize_reservation(reservation, actual_cost=cost)
@@ -511,10 +542,13 @@ async def _messages_stream(
         started = time.perf_counter()
         # Anthropic delivers usage incrementally:
         #   - `message_start` carries `usage.input_tokens` and a placeholder `output_tokens: 1`
+        #     as well as `cache_creation_input_tokens` and `cache_read_input_tokens`
         #   - `message_delta` carries cumulative `usage.output_tokens` for the message
         # We collect both and bill from the last seen.
         input_tokens = 0
         output_tokens = 0
+        cached_tokens = 0
+        cache_creation_tokens = 0
         saw_usage = False
         upstream_error: dict[str, Any] | None = None
         try:
@@ -538,6 +572,8 @@ async def _messages_stream(
                         try:
                             input_tokens = int(u.get("input_tokens") or 0)
                             output_tokens = int(u.get("output_tokens") or 0)
+                            cached_tokens = int(u.get("cache_read_input_tokens") or 0)
+                            cache_creation_tokens = int(u.get("cache_creation_input_tokens") or 0)
                             saw_usage = True
                         except Exception:
                             pass
@@ -580,6 +616,8 @@ async def _messages_stream(
         usage_source = UsageSource.UPSTREAM.value
         if not saw_usage:
             input_tokens, output_tokens = prompt_est, max_completion
+            cached_tokens = 0
+            cache_creation_tokens = 0
             usage_source = UsageSource.ESTIMATED.value
             log.warning(
                 "messages_stream_usage_missing",
@@ -588,8 +626,10 @@ async def _messages_stream(
                 completion_tokens=output_tokens,
             )
 
-        cost, pricing_missing = cost_service.calc_text_cost(
-            resolved.model, input_tokens, output_tokens
+        cost, pricing_missing = cost_service.calc_text_cost_with_cache(
+            resolved.model, input_tokens, output_tokens,
+            cached_tokens=cached_tokens,
+            cache_creation_tokens=cache_creation_tokens,
         )
         if pricing_missing:
             usage_source = UsageSource.MISSING.value
@@ -603,6 +643,8 @@ async def _messages_stream(
             http_status=200, cost=cost, usage_source=usage_source,
             prompt_tokens=input_tokens or None, completion_tokens=output_tokens or None,
             total_tokens=(input_tokens + output_tokens) or None,
+            prompt_cached_tokens=cached_tokens or None,
+            prompt_cache_creation_tokens=cache_creation_tokens or None,
         )
         await gateway_service.finalize_reservation(reservation, actual_cost=cost)
         gateway_requests_total.labels(type="text", model=resolved.model.public_name, status="success").inc()
