@@ -1,0 +1,113 @@
+import asyncio
+import time
+
+import pytest
+
+from app.redis_client import get_redis
+from app.services import tpm_service
+
+
+def _redis_reachable() -> bool:
+    import os, socket
+    from urllib.parse import urlparse
+    url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+    p = urlparse(url)
+    try:
+        with socket.create_connection((p.hostname or "localhost", p.port or 6379), 0.5):
+            return True
+    except OSError:
+        return False
+
+
+pytestmark = [
+    pytest.mark.asyncio,
+    pytest.mark.skipif(not _redis_reachable(), reason="Redis unreachable"),
+]
+
+
+@pytest.fixture
+async def clean_key():
+    r = get_redis()
+    key_id = (int(time.time() * 1000) % 100000) + 11111
+    await r.delete(f"tpm:k{key_id}", f"tpm:h:k{key_id}")
+    yield key_id
+    await r.delete(f"tpm:k{key_id}", f"tpm:h:k{key_id}")
+
+
+async def test_prededuct_under_limit_returns_handle(clean_key):
+    r = get_redis()
+    handle = await tpm_service.try_prededuct(
+        r, api_key_id=clean_key, tokens=1000, tpm_limit=10000
+    )
+    assert handle is not None
+    assert handle.prededucted == 1000
+
+
+async def test_prededuct_over_limit_returns_none(clean_key):
+    r = get_redis()
+    h1 = await tpm_service.try_prededuct(
+        r, api_key_id=clean_key, tokens=9000, tpm_limit=10000
+    )
+    assert h1 is not None
+    h2 = await tpm_service.try_prededuct(
+        r, api_key_id=clean_key, tokens=2000, tpm_limit=10000
+    )
+    assert h2 is None
+
+
+async def test_no_limit_returns_handle_with_zero(clean_key):
+    r = get_redis()
+    handle = await tpm_service.try_prededuct(
+        r, api_key_id=clean_key, tokens=1000, tpm_limit=None
+    )
+    assert handle is not None
+    assert handle.prededucted == 0
+
+
+async def test_reconcile_adjusts_difference_down(clean_key):
+    r = get_redis()
+    handle = await tpm_service.try_prededuct(
+        r, api_key_id=clean_key, tokens=1000, tpm_limit=2000
+    )
+    await tpm_service.reconcile(r, handle, actual_tokens=200)
+    h2 = await tpm_service.try_prededuct(
+        r, api_key_id=clean_key, tokens=1500, tpm_limit=2000
+    )
+    assert h2 is not None  # 200 used, 1800 left; 1500 fits
+
+
+async def test_reconcile_with_higher_actual_blocks_next(clean_key):
+    r = get_redis()
+    handle = await tpm_service.try_prededuct(
+        r, api_key_id=clean_key, tokens=500, tpm_limit=2000
+    )
+    await tpm_service.reconcile(r, handle, actual_tokens=1800)
+    h2 = await tpm_service.try_prededuct(
+        r, api_key_id=clean_key, tokens=1000, tpm_limit=2000
+    )
+    assert h2 is None
+
+
+async def test_window_evicts_old_entries(clean_key):
+    r = get_redis()
+    handle = await tpm_service.try_prededuct(
+        r, api_key_id=clean_key, tokens=1000, tpm_limit=1500, window_seconds=1,
+    )
+    assert handle is not None
+    await asyncio.sleep(1.2)
+    h2 = await tpm_service.try_prededuct(
+        r, api_key_id=clean_key, tokens=1400, tpm_limit=1500, window_seconds=1,
+    )
+    assert h2 is not None
+
+
+async def test_release_fully_returns_budget(clean_key):
+    r = get_redis()
+    handle = await tpm_service.try_prededuct(
+        r, api_key_id=clean_key, tokens=1500, tpm_limit=2000
+    )
+    await tpm_service.release_fully(r, handle)
+    h2 = await tpm_service.try_prededuct(
+        r, api_key_id=clean_key, tokens=2000, tpm_limit=2000
+    )
+    assert h2 is not None

@@ -22,8 +22,9 @@ from ..logging_config import get_logger
 from ..metrics import gateway_cost_usd_total, gateway_latency_ms, gateway_requests_total, pricing_source_total
 from ..models import ApiKey, ModelRow, RequestLog, User, VideoTask
 from ..rate_limit import make_limiter
+from ..redis_client import get_redis
 from ..security import hash_api_key
-from ..services import cost_service, gateway_service, task_service
+from ..services import cost_service, gateway_service, task_service, tpm_service
 from ..services.token_estimator import (
     count_message_tokens,
     estimate_anthropic_messages_usage,
@@ -62,6 +63,48 @@ def _enforce_input_token_limit(model, prompt_tokens: int) -> None:
                 f"({effective} = 95% of model cap {cap}). Reduce prompt size."
             ),
         )
+
+
+async def _enforce_tpm_limit(api_key: ApiKey, tokens_requested: int) -> tpm_service.TpmHandle:
+    """Prededuct `tokens_requested` against the per-api_key TPM budget.
+
+    Returns a handle (always non-None) on success — handle.entry_id is "" when
+    the key has no TPM limit configured. Raises 429 with Retry-After: 30 on
+    rejection. Callers MUST eventually call `tpm_service.reconcile()` (with
+    actual usage) or `tpm_service.release_fully()` (on failure) for handles
+    that carry a non-empty entry_id, otherwise the prededuct leaks for the
+    full window."""
+    redis = get_redis()
+    handle = await tpm_service.try_prededuct(
+        redis,
+        api_key_id=api_key.id,
+        tokens=tokens_requested,
+        tpm_limit=api_key.rate_limit_tpm,
+    )
+    if handle is None:
+        log.warning(
+            "tpm_limit_exceeded",
+            api_key_id=api_key.id,
+            tokens_requested=tokens_requested,
+            tpm_limit=api_key.rate_limit_tpm,
+        )
+        raise HTTPException(
+            status_code=429,
+            detail="TPM (tokens-per-minute) limit exceeded for this API key.",
+            headers={"Retry-After": "30"},
+        )
+    return handle
+
+
+def _actual_total_tokens(usage: dict | None) -> int:
+    """Best-effort sum of prompt + completion tokens for TPM reconcile, working
+    with either OpenAI (prompt_tokens/completion_tokens) or Anthropic
+    (input_tokens/output_tokens) usage shapes."""
+    if not usage:
+        return 0
+    prompt = int(usage.get("prompt_tokens") or usage.get("input_tokens") or 0)
+    completion = int(usage.get("completion_tokens") or usage.get("output_tokens") or 0)
+    return prompt + completion
 
 
 def _extract_cache_tokens(usage: dict | None) -> tuple[int, int]:
@@ -150,10 +193,16 @@ async def chat_completions(
     prompt_est = count_message_tokens(payload.get("messages") or [], resolved.model.public_name)
     _enforce_input_token_limit(resolved.model, prompt_est)
     max_completion = int(payload.get("max_tokens") or payload.get("max_completion_tokens") or 4096)
+    tpm_handle = await _enforce_tpm_limit(api_key, prompt_est + max_completion)
+    redis = get_redis()
     estimate = cost_service.estimate_text_cost_upper_bound(resolved.model, prompt_est, max_completion)
-    reservation = await gateway_service.preauthorize_spend(
-        db, user=user, api_key=api_key, estimated_cost=estimate
-    )
+    try:
+        reservation = await gateway_service.preauthorize_spend(
+            db, user=user, api_key=api_key, estimated_cost=estimate
+        )
+    except BaseException:
+        await tpm_service.release_fully(redis, tpm_handle)
+        raise
 
     request_id = gateway_service.new_request_id()
     provider_client = gateway_service.build_provider(resolved.provider)
@@ -173,6 +222,7 @@ async def chat_completions(
             error_code="upstream_exception", error_message=str(e)[:1000],
         )
         await gateway_service.release_reservation_fully(reservation)
+        await tpm_service.release_fully(redis, tpm_handle)
         gateway_requests_total.labels(type="text", model=resolved.model.public_name, status="failed").inc()
         raise HTTPException(status_code=502, detail=f"Upstream request failed: {e}")
 
@@ -189,6 +239,7 @@ async def chat_completions(
             upstream_request_id=resp.upstream_request_id,
         )
         await gateway_service.release_reservation_fully(reservation)
+        await tpm_service.release_fully(redis, tpm_handle)
         gateway_requests_total.labels(type="text", model=resolved.model.public_name, status="upstream_error").inc()
         raise HTTPException(status_code=resp.http_status, detail=_normalize_error_body(body_text))
 
@@ -220,6 +271,7 @@ async def chat_completions(
     )
 
     await gateway_service.finalize_reservation(reservation, actual_cost=cost)
+    await tpm_service.reconcile(redis, tpm_handle, actual_tokens=prompt_tokens + completion_tokens)
     gateway_requests_total.labels(type="text", model=resolved.model.public_name, status="success").inc()
     gateway_cost_usd_total.labels(type="text", model=resolved.model.public_name).inc(float(cost))
     gateway_latency_ms.labels(type="text", model=resolved.model.public_name).observe(latency_ms)
@@ -255,10 +307,16 @@ async def _chat_completions_stream(
     prompt_est = count_message_tokens(payload.get("messages") or [], resolved.model.public_name)
     _enforce_input_token_limit(resolved.model, prompt_est)
     max_completion = int(payload.get("max_tokens") or payload.get("max_completion_tokens") or 4096)
+    tpm_handle = await _enforce_tpm_limit(api_key, prompt_est + max_completion)
+    redis = get_redis()
     estimate = cost_service.estimate_text_cost_upper_bound(resolved.model, prompt_est, max_completion)
-    reservation = await gateway_service.preauthorize_spend(
-        db, user=user, api_key=api_key, estimated_cost=estimate
-    )
+    try:
+        reservation = await gateway_service.preauthorize_spend(
+            db, user=user, api_key=api_key, estimated_cost=estimate
+        )
+    except BaseException:
+        await tpm_service.release_fully(redis, tpm_handle)
+        raise
 
     request_id = gateway_service.new_request_id()
     provider_client = gateway_service.build_provider(resolved.provider)
@@ -273,94 +331,110 @@ async def _chat_completions_stream(
         # below doesn't have to recount tokens.
         nonlocal_prompt_est = prompt_est
         nonlocal_max_completion = max_completion
+        tpm_settled = False
         try:
-            async for chunk in provider_client.chat_completions_stream(upstream_payload):
-                if chunk.parsed and chunk.parsed.get("_error"):
-                    upstream_error = chunk.parsed
-                    err_event = {
-                        "error": {
-                            "message": chunk.parsed.get("body", "upstream error"),
-                            "code": f"upstream_{chunk.parsed.get('_http')}",
-                            "type": "upstream_error",
+            try:
+                async for chunk in provider_client.chat_completions_stream(upstream_payload):
+                    if chunk.parsed and chunk.parsed.get("_error"):
+                        upstream_error = chunk.parsed
+                        err_event = {
+                            "error": {
+                                "message": chunk.parsed.get("body", "upstream error"),
+                                "code": f"upstream_{chunk.parsed.get('_http')}",
+                                "type": "upstream_error",
+                            }
                         }
-                    }
-                    yield (f"data: {json.dumps(err_event)}\n\n").encode()
-                    break
-                if chunk.parsed and isinstance(chunk.parsed.get("usage"), dict):
-                    final_usage = chunk.parsed["usage"]
-                if chunk.parsed and "model" in chunk.parsed:
-                    chunk.parsed["model"] = resolved.model.public_name
-                    line = (f"data: {json.dumps(chunk.parsed)}\n\n").encode()
-                    yield line
-                else:
-                    yield chunk.raw_line
-        except Exception as e:
-            err_event = {"error": {"message": f"upstream exception: {e}", "code": "upstream_exception", "type": "upstream_exception"}}
-            yield (f"data: {json.dumps(err_event)}\n\n").encode()
-            upstream_error = {"_http": None, "body": str(e)}
-        latency_ms = int((time.perf_counter() - started) * 1000)
+                        yield (f"data: {json.dumps(err_event)}\n\n").encode()
+                        break
+                    if chunk.parsed and isinstance(chunk.parsed.get("usage"), dict):
+                        final_usage = chunk.parsed["usage"]
+                    if chunk.parsed and "model" in chunk.parsed:
+                        chunk.parsed["model"] = resolved.model.public_name
+                        line = (f"data: {json.dumps(chunk.parsed)}\n\n").encode()
+                        yield line
+                    else:
+                        yield chunk.raw_line
+            except Exception as e:
+                err_event = {"error": {"message": f"upstream exception: {e}", "code": "upstream_exception", "type": "upstream_exception"}}
+                yield (f"data: {json.dumps(err_event)}\n\n").encode()
+                upstream_error = {"_http": None, "body": str(e)}
+            latency_ms = int((time.perf_counter() - started) * 1000)
 
-        if upstream_error:
-            gateway_service.persist_failure(
+            if upstream_error:
+                gateway_service.persist_failure(
+                    db, user=user, api_key=api_key, provider=resolved.provider, model=resolved.model,
+                    request_type="text", request_payload=payload,
+                    response_payload={"error": upstream_error}, request_id=request_id,
+                    latency_ms=latency_ms, http_status=upstream_error.get("_http"),
+                    error_code="upstream_stream_error",
+                    error_message=str(upstream_error.get("body"))[:1000],
+                )
+                await gateway_service.release_reservation_fully(reservation)
+                await tpm_service.release_fully(redis, tpm_handle)
+                tpm_settled = True
+                gateway_requests_total.labels(type="text", model=resolved.model.public_name, status="failed").inc()
+                return
+
+            usage_source = UsageSource.UPSTREAM.value
+            cached_tokens = 0
+            cache_creation_tokens = 0
+            if final_usage is None:
+                # Upstream omitted usage even with include_usage=true. Reuse the
+                # preauth token count + max_tokens ceiling as a pessimistic bound.
+                prompt_tokens = nonlocal_prompt_est
+                completion_tokens = nonlocal_max_completion
+                total_tokens = prompt_tokens + completion_tokens
+                usage_source = UsageSource.ESTIMATED.value
+                log.warning(
+                    "stream_usage_missing",
+                    model=resolved.model.public_name,
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                )
+            else:
+                prompt_tokens = int((final_usage or {}).get("prompt_tokens") or 0)
+                completion_tokens = int((final_usage or {}).get("completion_tokens") or 0)
+                total_tokens = int(
+                    (final_usage or {}).get("total_tokens") or (prompt_tokens + completion_tokens)
+                )
+                cached_tokens, cache_creation_tokens = _extract_cache_tokens(final_usage)
+
+            cost, pricing_missing = cost_service.calc_text_cost_with_cache(
+                resolved.model, prompt_tokens, completion_tokens,
+                cached_tokens=cached_tokens,
+                cache_creation_tokens=cache_creation_tokens,
+            )
+            if pricing_missing:
+                usage_source = UsageSource.MISSING.value
+            pricing_source_total.labels(source=usage_source).inc()
+
+            gateway_service.persist_success(
                 db, user=user, api_key=api_key, provider=resolved.provider, model=resolved.model,
                 request_type="text", request_payload=payload,
-                response_payload={"error": upstream_error}, request_id=request_id,
-                latency_ms=latency_ms, http_status=upstream_error.get("_http"),
-                error_code="upstream_stream_error",
-                error_message=str(upstream_error.get("body"))[:1000],
+                response_payload={"_streamed": True, "usage": final_usage, "usage_source": usage_source},
+                upstream_request_id=None, request_id=request_id, latency_ms=latency_ms,
+                http_status=200, cost=cost, usage_source=usage_source,
+                prompt_tokens=prompt_tokens or None, completion_tokens=completion_tokens or None,
+                total_tokens=total_tokens or None,
+                prompt_cached_tokens=int(cached_tokens) or None,
+                prompt_cache_creation_tokens=int(cache_creation_tokens) or None,
             )
-            await gateway_service.release_reservation_fully(reservation)
-            gateway_requests_total.labels(type="text", model=resolved.model.public_name, status="failed").inc()
-            return
-
-        usage_source = UsageSource.UPSTREAM.value
-        cached_tokens = 0
-        cache_creation_tokens = 0
-        if final_usage is None:
-            # Upstream omitted usage even with include_usage=true. Reuse the
-            # preauth token count + max_tokens ceiling as a pessimistic bound.
-            prompt_tokens = nonlocal_prompt_est
-            completion_tokens = nonlocal_max_completion
-            total_tokens = prompt_tokens + completion_tokens
-            usage_source = UsageSource.ESTIMATED.value
-            log.warning(
-                "stream_usage_missing",
-                model=resolved.model.public_name,
-                prompt_tokens=prompt_tokens,
-                completion_tokens=completion_tokens,
-            )
-        else:
-            prompt_tokens = int((final_usage or {}).get("prompt_tokens") or 0)
-            completion_tokens = int((final_usage or {}).get("completion_tokens") or 0)
-            total_tokens = int(
-                (final_usage or {}).get("total_tokens") or (prompt_tokens + completion_tokens)
-            )
-            cached_tokens, cache_creation_tokens = _extract_cache_tokens(final_usage)
-
-        cost, pricing_missing = cost_service.calc_text_cost_with_cache(
-            resolved.model, prompt_tokens, completion_tokens,
-            cached_tokens=cached_tokens,
-            cache_creation_tokens=cache_creation_tokens,
-        )
-        if pricing_missing:
-            usage_source = UsageSource.MISSING.value
-        pricing_source_total.labels(source=usage_source).inc()
-
-        gateway_service.persist_success(
-            db, user=user, api_key=api_key, provider=resolved.provider, model=resolved.model,
-            request_type="text", request_payload=payload,
-            response_payload={"_streamed": True, "usage": final_usage, "usage_source": usage_source},
-            upstream_request_id=None, request_id=request_id, latency_ms=latency_ms,
-            http_status=200, cost=cost, usage_source=usage_source,
-            prompt_tokens=prompt_tokens or None, completion_tokens=completion_tokens or None,
-            total_tokens=total_tokens or None,
-            prompt_cached_tokens=int(cached_tokens) or None,
-            prompt_cache_creation_tokens=int(cache_creation_tokens) or None,
-        )
-        await gateway_service.finalize_reservation(reservation, actual_cost=cost)
-        gateway_requests_total.labels(type="text", model=resolved.model.public_name, status="success").inc()
-        gateway_cost_usd_total.labels(type="text", model=resolved.model.public_name).inc(float(cost))
-        gateway_latency_ms.labels(type="text", model=resolved.model.public_name).observe(latency_ms)
+            await gateway_service.finalize_reservation(reservation, actual_cost=cost)
+            await tpm_service.reconcile(redis, tpm_handle, actual_tokens=prompt_tokens + completion_tokens)
+            tpm_settled = True
+            gateway_requests_total.labels(type="text", model=resolved.model.public_name, status="success").inc()
+            gateway_cost_usd_total.labels(type="text", model=resolved.model.public_name).inc(float(cost))
+            gateway_latency_ms.labels(type="text", model=resolved.model.public_name).observe(latency_ms)
+        finally:
+            # Safety net: if any path above bailed before settling TPM (e.g. the
+            # client cancelled the streaming response mid-flight, which raises
+            # GeneratorExit), release the prededuct so it doesn't leak for the
+            # full window.
+            if not tpm_settled:
+                try:
+                    await tpm_service.release_fully(redis, tpm_handle)
+                except Exception:
+                    pass
 
     return StreamingResponse(
         event_stream(),
@@ -407,10 +481,16 @@ async def messages(
         payload, resolved.model.public_name
     )
     _enforce_input_token_limit(resolved.model, prompt_est)
+    tpm_handle = await _enforce_tpm_limit(api_key, prompt_est + max_completion)
+    redis = get_redis()
     estimate = cost_service.estimate_text_cost_upper_bound(resolved.model, prompt_est, max_completion)
-    reservation = await gateway_service.preauthorize_spend(
-        db, user=user, api_key=api_key, estimated_cost=estimate
-    )
+    try:
+        reservation = await gateway_service.preauthorize_spend(
+            db, user=user, api_key=api_key, estimated_cost=estimate
+        )
+    except BaseException:
+        await tpm_service.release_fully(redis, tpm_handle)
+        raise
 
     request_id = gateway_service.new_request_id()
     provider_client = gateway_service.build_provider(resolved.provider)
@@ -423,6 +503,7 @@ async def messages(
         resp = await provider_client.messages(upstream_payload)
     except NotImplementedError:
         await gateway_service.release_reservation_fully(reservation)
+        await tpm_service.release_fully(redis, tpm_handle)
         raise HTTPException(
             status_code=501,
             detail=f"Provider '{resolved.provider.name}' does not implement the Messages API",
@@ -436,6 +517,7 @@ async def messages(
             error_code="upstream_exception", error_message=str(e)[:1000],
         )
         await gateway_service.release_reservation_fully(reservation)
+        await tpm_service.release_fully(redis, tpm_handle)
         gateway_requests_total.labels(type="text", model=resolved.model.public_name, status="failed").inc()
         raise HTTPException(status_code=502, detail=f"Upstream request failed: {e}")
 
@@ -452,6 +534,7 @@ async def messages(
             upstream_request_id=resp.upstream_request_id,
         )
         await gateway_service.release_reservation_fully(reservation)
+        await tpm_service.release_fully(redis, tpm_handle)
         gateway_requests_total.labels(type="text", model=resolved.model.public_name, status="upstream_error").inc()
         raise HTTPException(status_code=resp.http_status, detail=_normalize_error_body(body_text))
 
@@ -497,6 +580,7 @@ async def messages(
     )
 
     await gateway_service.finalize_reservation(reservation, actual_cost=cost)
+    await tpm_service.reconcile(redis, tpm_handle, actual_tokens=prompt_tokens + completion_tokens)
     gateway_requests_total.labels(type="text", model=resolved.model.public_name, status="success").inc()
     gateway_cost_usd_total.labels(type="text", model=resolved.model.public_name).inc(float(cost))
     gateway_latency_ms.labels(type="text", model=resolved.model.public_name).observe(latency_ms)
@@ -535,10 +619,16 @@ async def _messages_stream(
         payload, resolved.model.public_name
     )
     _enforce_input_token_limit(resolved.model, prompt_est)
+    tpm_handle = await _enforce_tpm_limit(api_key, prompt_est + max_completion)
+    redis = get_redis()
     estimate = cost_service.estimate_text_cost_upper_bound(resolved.model, prompt_est, max_completion)
-    reservation = await gateway_service.preauthorize_spend(
-        db, user=user, api_key=api_key, estimated_cost=estimate
-    )
+    try:
+        reservation = await gateway_service.preauthorize_spend(
+            db, user=user, api_key=api_key, estimated_cost=estimate
+        )
+    except BaseException:
+        await tpm_service.release_fully(redis, tpm_handle)
+        raise
 
     request_id = gateway_service.new_request_id()
     provider_client = gateway_service.build_provider(resolved.provider)
@@ -557,108 +647,124 @@ async def _messages_stream(
         cache_creation_tokens = 0
         saw_usage = False
         upstream_error: dict[str, Any] | None = None
+        tpm_settled = False
         try:
-            async for chunk in provider_client.messages_stream(upstream_payload):
-                if chunk.parsed and chunk.parsed.get("_error"):
-                    upstream_error = chunk.parsed
-                    err_event = {
-                        "type": "error",
-                        "error": {
-                            "type": "upstream_error",
-                            "message": chunk.parsed.get("body", "upstream error"),
-                        },
-                    }
-                    yield (f"event: error\ndata: {json.dumps(err_event)}\n\n").encode()
-                    break
-                if chunk.parsed:
-                    ev_type = chunk.parsed.get("type")
-                    if ev_type == "message_start":
-                        msg = chunk.parsed.get("message") or {}
-                        u = msg.get("usage") or {}
-                        try:
-                            input_tokens = int(u.get("input_tokens") or 0)
-                            output_tokens = int(u.get("output_tokens") or 0)
-                            cached_tokens, cache_creation_tokens = _extract_cache_tokens(u)
-                            saw_usage = True
-                        except Exception:
-                            pass
-                        # Rewrite the model name in the start event.
-                        if isinstance(msg, dict):
-                            msg["model"] = resolved.model.public_name
-                            chunk.parsed["message"] = msg
-                            yield (f"event: {ev_type}\ndata: {json.dumps(chunk.parsed)}\n\n").encode()
-                            continue
-                    elif ev_type == "message_delta":
-                        # cache tokens come from message_start only — don't add them in message_delta.
-                        # cache_creation_input_tokens / cache_read_input_tokens are reported only in
-                        # message_start (Anthropic's streaming protocol). message_delta carries only
-                        # output growth; accumulating cache counts here would double-bill cache tokens.
-                        u = chunk.parsed.get("usage") or {}
-                        try:
-                            output_tokens = int(u.get("output_tokens") or output_tokens)
-                            saw_usage = True
-                        except Exception:
-                            pass
-                yield chunk.raw_line
-        except Exception as e:
-            err_event = {
-                "type": "error",
-                "error": {"type": "upstream_exception", "message": f"upstream exception: {e}"},
-            }
-            yield (f"event: error\ndata: {json.dumps(err_event)}\n\n").encode()
-            upstream_error = {"_http": None, "body": str(e)}
-        latency_ms = int((time.perf_counter() - started) * 1000)
+            try:
+                async for chunk in provider_client.messages_stream(upstream_payload):
+                    if chunk.parsed and chunk.parsed.get("_error"):
+                        upstream_error = chunk.parsed
+                        err_event = {
+                            "type": "error",
+                            "error": {
+                                "type": "upstream_error",
+                                "message": chunk.parsed.get("body", "upstream error"),
+                            },
+                        }
+                        yield (f"event: error\ndata: {json.dumps(err_event)}\n\n").encode()
+                        break
+                    if chunk.parsed:
+                        ev_type = chunk.parsed.get("type")
+                        if ev_type == "message_start":
+                            msg = chunk.parsed.get("message") or {}
+                            u = msg.get("usage") or {}
+                            try:
+                                input_tokens = int(u.get("input_tokens") or 0)
+                                output_tokens = int(u.get("output_tokens") or 0)
+                                cached_tokens, cache_creation_tokens = _extract_cache_tokens(u)
+                                saw_usage = True
+                            except Exception:
+                                pass
+                            # Rewrite the model name in the start event.
+                            if isinstance(msg, dict):
+                                msg["model"] = resolved.model.public_name
+                                chunk.parsed["message"] = msg
+                                yield (f"event: {ev_type}\ndata: {json.dumps(chunk.parsed)}\n\n").encode()
+                                continue
+                        elif ev_type == "message_delta":
+                            # cache tokens come from message_start only — don't add them in message_delta.
+                            # cache_creation_input_tokens / cache_read_input_tokens are reported only in
+                            # message_start (Anthropic's streaming protocol). message_delta carries only
+                            # output growth; accumulating cache counts here would double-bill cache tokens.
+                            u = chunk.parsed.get("usage") or {}
+                            try:
+                                output_tokens = int(u.get("output_tokens") or output_tokens)
+                                saw_usage = True
+                            except Exception:
+                                pass
+                    yield chunk.raw_line
+            except Exception as e:
+                err_event = {
+                    "type": "error",
+                    "error": {"type": "upstream_exception", "message": f"upstream exception: {e}"},
+                }
+                yield (f"event: error\ndata: {json.dumps(err_event)}\n\n").encode()
+                upstream_error = {"_http": None, "body": str(e)}
+            latency_ms = int((time.perf_counter() - started) * 1000)
 
-        if upstream_error:
-            gateway_service.persist_failure(
+            if upstream_error:
+                gateway_service.persist_failure(
+                    db, user=user, api_key=api_key, provider=resolved.provider, model=resolved.model,
+                    request_type="text", request_payload=payload,
+                    response_payload={"error": upstream_error}, request_id=request_id,
+                    latency_ms=latency_ms, http_status=upstream_error.get("_http"),
+                    error_code="upstream_stream_error",
+                    error_message=str(upstream_error.get("body"))[:1000],
+                )
+                await gateway_service.release_reservation_fully(reservation)
+                await tpm_service.release_fully(redis, tpm_handle)
+                tpm_settled = True
+                gateway_requests_total.labels(type="text", model=resolved.model.public_name, status="failed").inc()
+                return
+
+            usage_source = UsageSource.UPSTREAM.value
+            if not saw_usage:
+                input_tokens, output_tokens = prompt_est, max_completion
+                cached_tokens = 0
+                cache_creation_tokens = 0
+                usage_source = UsageSource.ESTIMATED.value
+                log.warning(
+                    "messages_stream_usage_missing",
+                    model=resolved.model.public_name,
+                    prompt_tokens=input_tokens,
+                    completion_tokens=output_tokens,
+                )
+
+            cost, pricing_missing = cost_service.calc_text_cost_with_cache(
+                resolved.model, input_tokens, output_tokens,
+                cached_tokens=cached_tokens,
+                cache_creation_tokens=cache_creation_tokens,
+            )
+            if pricing_missing:
+                usage_source = UsageSource.MISSING.value
+            pricing_source_total.labels(source=usage_source).inc()
+
+            gateway_service.persist_success(
                 db, user=user, api_key=api_key, provider=resolved.provider, model=resolved.model,
                 request_type="text", request_payload=payload,
-                response_payload={"error": upstream_error}, request_id=request_id,
-                latency_ms=latency_ms, http_status=upstream_error.get("_http"),
-                error_code="upstream_stream_error",
-                error_message=str(upstream_error.get("body"))[:1000],
+                response_payload={"_streamed": True, "usage": {"input_tokens": input_tokens, "output_tokens": output_tokens}, "usage_source": usage_source},
+                upstream_request_id=None, request_id=request_id, latency_ms=latency_ms,
+                http_status=200, cost=cost, usage_source=usage_source,
+                prompt_tokens=input_tokens or None, completion_tokens=output_tokens or None,
+                total_tokens=(input_tokens + output_tokens) or None,
+                prompt_cached_tokens=cached_tokens or None,
+                prompt_cache_creation_tokens=cache_creation_tokens or None,
             )
-            await gateway_service.release_reservation_fully(reservation)
-            gateway_requests_total.labels(type="text", model=resolved.model.public_name, status="failed").inc()
-            return
-
-        usage_source = UsageSource.UPSTREAM.value
-        if not saw_usage:
-            input_tokens, output_tokens = prompt_est, max_completion
-            cached_tokens = 0
-            cache_creation_tokens = 0
-            usage_source = UsageSource.ESTIMATED.value
-            log.warning(
-                "messages_stream_usage_missing",
-                model=resolved.model.public_name,
-                prompt_tokens=input_tokens,
-                completion_tokens=output_tokens,
-            )
-
-        cost, pricing_missing = cost_service.calc_text_cost_with_cache(
-            resolved.model, input_tokens, output_tokens,
-            cached_tokens=cached_tokens,
-            cache_creation_tokens=cache_creation_tokens,
-        )
-        if pricing_missing:
-            usage_source = UsageSource.MISSING.value
-        pricing_source_total.labels(source=usage_source).inc()
-
-        gateway_service.persist_success(
-            db, user=user, api_key=api_key, provider=resolved.provider, model=resolved.model,
-            request_type="text", request_payload=payload,
-            response_payload={"_streamed": True, "usage": {"input_tokens": input_tokens, "output_tokens": output_tokens}, "usage_source": usage_source},
-            upstream_request_id=None, request_id=request_id, latency_ms=latency_ms,
-            http_status=200, cost=cost, usage_source=usage_source,
-            prompt_tokens=input_tokens or None, completion_tokens=output_tokens or None,
-            total_tokens=(input_tokens + output_tokens) or None,
-            prompt_cached_tokens=cached_tokens or None,
-            prompt_cache_creation_tokens=cache_creation_tokens or None,
-        )
-        await gateway_service.finalize_reservation(reservation, actual_cost=cost)
-        gateway_requests_total.labels(type="text", model=resolved.model.public_name, status="success").inc()
-        gateway_cost_usd_total.labels(type="text", model=resolved.model.public_name).inc(float(cost))
-        gateway_latency_ms.labels(type="text", model=resolved.model.public_name).observe(latency_ms)
+            await gateway_service.finalize_reservation(reservation, actual_cost=cost)
+            await tpm_service.reconcile(redis, tpm_handle, actual_tokens=input_tokens + output_tokens)
+            tpm_settled = True
+            gateway_requests_total.labels(type="text", model=resolved.model.public_name, status="success").inc()
+            gateway_cost_usd_total.labels(type="text", model=resolved.model.public_name).inc(float(cost))
+            gateway_latency_ms.labels(type="text", model=resolved.model.public_name).observe(latency_ms)
+        finally:
+            # Safety net: if any path above bailed before settling TPM (e.g. the
+            # client cancelled the streaming response mid-flight, which raises
+            # GeneratorExit), release the prededuct so it doesn't leak for the
+            # full window.
+            if not tpm_settled:
+                try:
+                    await tpm_service.release_fully(redis, tpm_handle)
+                except Exception:
+                    pass
 
     return StreamingResponse(
         event_stream(),
