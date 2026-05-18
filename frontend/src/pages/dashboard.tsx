@@ -9,6 +9,7 @@ import { PageHeader } from "@/components/shell";
 import { api } from "@/lib/api";
 import type { LogSummary } from "@/lib/types";
 import { fmtCompactMoney, fmtRelative, statusBadgeVariant } from "@/lib/utils";
+import { useT } from "@/lib/i18n";
 
 type DashboardOut = {
   balance: string;
@@ -27,6 +28,7 @@ export function DashboardPage() {
   const [data, setData] = useState<DashboardOut | null>(null);
   const detail = useLogDetail();
   const nav = useNavigate();
+  const t = useT();
 
   useEffect(() => {
     api<DashboardOut>("/api/dashboard").then(setData).catch(() => {});
@@ -34,34 +36,37 @@ export function DashboardPage() {
 
   return (
     <div>
-      <PageHeader title="Dashboard" subtitle="Today's usage at a glance" />
+      <PageHeader title={t("dashboard.title")} subtitle={t("dashboard.subtitle")} />
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
         <KpiTile
-          label="Balance"
+          label={t("dashboard.kpiBalance")}
           value={fmtCompactMoney(data?.balance)}
-          hint={<Link to="/billing" className="text-primary hover:underline">Billing →</Link>}
+          hint={<Link to="/billing" className="text-primary hover:underline">{t("dashboard.kpiBillingLink")}</Link>}
         />
         <KpiTile
-          label="Today spend"
+          label={t("dashboard.kpiTodaySpend")}
           value={fmtCompactMoney(data?.today_spend)}
-          hint={`This month: ${fmtCompactMoney(data?.month_spend)}`}
+          hint={t("dashboard.kpiThisMonthHint", { amount: fmtCompactMoney(data?.month_spend) })}
         />
         <KpiTile
-          label="Text requests today"
+          label={t("dashboard.kpiTextRequestsToday")}
           value={data?.today_text_requests ?? 0}
-          hint={`${data?.today_image_requests ?? 0} image · ${data?.today_video_requests ?? 0} video`}
+          hint={t("dashboard.kpiMediaHint", {
+            image: data?.today_image_requests ?? 0,
+            video: data?.today_video_requests ?? 0,
+          })}
         />
         <button
           type="button"
           onClick={() => nav("/logs?status=failed")}
           className="text-left focus:outline-none focus:ring-2 focus:ring-ring rounded-md"
-          title="View all failed requests"
+          title={t("dashboard.kpiViewFailedTitle")}
         >
           <KpiTile
-            label="Failures (recent)"
+            label={t("dashboard.kpiFailuresRecent")}
             value={data?.recent_failures.length ?? 0}
-            hint={<span className="text-primary hover:underline">View failed →</span>}
+            hint={<span className="text-primary hover:underline">{t("dashboard.kpiViewFailed")}</span>}
           />
         </button>
       </div>
@@ -69,13 +74,15 @@ export function DashboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <Card className="lg:col-span-2">
           <CardHeader className="flex-row items-center justify-between">
-            <CardTitle>Recent activity</CardTitle>
-            <Link to="/logs" className="text-xs text-primary hover:underline">All logs →</Link>
+            <CardTitle>{t("dashboard.recentActivity")}</CardTitle>
+            <Link to="/logs" className="text-xs text-primary hover:underline">{t("dashboard.allLogsLink")}</Link>
           </CardHeader>
           <CardContent className="p-0">
             {data && data.recent_logs.length === 0 ? (
               <div className="px-4 py-10 text-center text-sm text-muted-foreground">
-                No requests yet. Try the <Link to="/playground" className="text-primary hover:underline">Playground</Link>.
+                {t("dashboard.emptyRecentPrefix")}
+                <Link to="/playground" className="text-primary hover:underline">{t("dashboard.emptyRecentLink")}</Link>
+                {t("dashboard.emptyRecentSuffix")}
               </div>
             ) : (
               <ul className="divide-y divide-border">
@@ -99,21 +106,21 @@ export function DashboardPage() {
 
         <div className="flex flex-col gap-4">
           <StatList
-            title="Top models"
-            empty="No data yet."
+            title={t("dashboard.topModels")}
+            empty={t("dashboard.noDataYet")}
             items={data?.top_models_by_cost ?? []}
             getKey={(m) => m.model_id ?? -1}
             getLabel={(m) => m.model_name || "—"}
-            getValue={(m) => `${fmtCompactMoney(m.cost)} · ${m.requests}`}
+            getValue={(m) => t("dashboard.statValueCostRequests", { cost: fmtCompactMoney(m.cost), requests: m.requests })}
             onClick={(m) => m.model_name && nav(`/logs?model=${encodeURIComponent(m.model_name)}`)}
           />
           <StatList
-            title="Top API keys"
-            empty="No data yet."
+            title={t("dashboard.topApiKeys")}
+            empty={t("dashboard.noDataYet")}
             items={data?.top_api_keys_by_usage ?? []}
             getKey={(k) => k.api_key_id ?? -1}
             getLabel={(k) => `${k.api_key_prefix}…`}
-            getValue={(k) => `${k.requests} req · ${fmtCompactMoney(k.cost)}`}
+            getValue={(k) => t("dashboard.statValueRequestsCost", { requests: k.requests, cost: fmtCompactMoney(k.cost) })}
             onClick={(k) => k.api_key_id && nav(`/logs?api_key_id=${k.api_key_id}`)}
           />
         </div>
