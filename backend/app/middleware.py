@@ -6,9 +6,8 @@ import uuid
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import Response
+from starlette.responses import PlainTextResponse, Response
 from starlette.types import ASGIApp, Receive, Scope, Send
-from starlette.responses import PlainTextResponse
 
 from .logging_config import get_logger, request_id_var
 
@@ -73,13 +72,16 @@ class BodySizeLimitMiddleware:
     1. If `Content-Length` is present and > max_bytes, return 413 immediately.
     2. Otherwise, count bytes as they stream in and abort once we cross the cap.
 
-    Implemented as a raw ASGI middleware (not BaseHTTPMiddleware) so we can
-    intercept the receive channel without buffering the full body in memory.
+    Implemented as raw ASGI middleware (not BaseHTTPMiddleware) so we can
+    abort streaming as soon as the cap is crossed, without buffering the
+    entire body just to size-check it. On the success path we do buffer
+    the body (bounded by max_bytes) and replay it to the downstream app.
     """
 
     def __init__(self, app: ASGIApp, max_bytes: int) -> None:
         self.app = app
         self.max_bytes = max_bytes
+        self.log = get_logger(__name__)
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
@@ -93,7 +95,14 @@ class BodySizeLimitMiddleware:
         )
         if cl is not None:
             try:
-                if int(cl) > self.max_bytes:
+                cl_int = int(cl)
+                if cl_int > self.max_bytes:
+                    self.log.warning(
+                        "body_too_large",
+                        path=scope.get("path"),
+                        max_bytes=self.max_bytes,
+                        received_bytes=cl_int,
+                    )
                     await PlainTextResponse(
                         "Request body too large.",
                         status_code=413,
@@ -112,6 +121,12 @@ class BodySizeLimitMiddleware:
                 chunk = message.get("body", b"")
                 received += len(chunk)
                 if received > self.max_bytes:
+                    self.log.warning(
+                        "body_too_large",
+                        path=scope.get("path"),
+                        max_bytes=self.max_bytes,
+                        received_bytes=received,
+                    )
                     await PlainTextResponse(
                         "Request body too large.",
                         status_code=413,
@@ -120,8 +135,9 @@ class BodySizeLimitMiddleware:
                 body_chunks.append(chunk)
                 more_body = message.get("more_body", False)
             else:
-                body_chunks.append(b"")
-                more_body = False
+                # http.disconnect (client gone) or unknown message type: abort without
+                # forwarding a partial body to the downstream app.
+                return
 
         joined = b"".join(body_chunks)
         sent = False
