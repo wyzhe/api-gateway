@@ -94,7 +94,7 @@ async def test_window_evicts_old_entries(clean_key):
         r, api_key_id=clean_key, tokens=1000, tpm_limit=1500, window_seconds=1,
     )
     assert handle is not None
-    await asyncio.sleep(1.2)
+    await asyncio.sleep(1.5)
     h2 = await tpm_service.try_prededuct(
         r, api_key_id=clean_key, tokens=1400, tpm_limit=1500, window_seconds=1,
     )

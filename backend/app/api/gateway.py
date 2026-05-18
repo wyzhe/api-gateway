@@ -40,6 +40,11 @@ _settings = get_settings()
 # to the upstream as a confusing 422.
 _INPUT_TOKEN_BUFFER = 0.95
 
+# Retry-After hint for TPM 429s. Anthropic SDK ignores Retry-After > 60s
+# (see anthropic-sdk-python/_base_client.py:1097); we use 30s for safety,
+# also serving as a reasonable midpoint of the 60s sliding window.
+_TPM_RETRY_AFTER_SECONDS = 30
+
 
 def _enforce_input_token_limit(model, prompt_tokens: int) -> None:
     """Raise HTTPException(400) if estimated prompt tokens exceed 95% of
@@ -69,8 +74,9 @@ async def _enforce_tpm_limit(api_key: ApiKey, tokens_requested: int) -> tpm_serv
     """Prededuct `tokens_requested` against the per-api_key TPM budget.
 
     Returns a handle (always non-None) on success — handle.entry_id is "" when
-    the key has no TPM limit configured. Raises 429 with Retry-After: 30 on
-    rejection. Callers MUST eventually call `tpm_service.reconcile()` (with
+    the key has no TPM limit configured. Raises 429 with
+    Retry-After: _TPM_RETRY_AFTER_SECONDS on rejection. Callers MUST eventually
+    call `tpm_service.reconcile()` (with
     actual usage) or `tpm_service.release_fully()` (on failure) for handles
     that carry a non-empty entry_id, otherwise the prededuct leaks for the
     full window."""
@@ -91,20 +97,9 @@ async def _enforce_tpm_limit(api_key: ApiKey, tokens_requested: int) -> tpm_serv
         raise HTTPException(
             status_code=429,
             detail="TPM (tokens-per-minute) limit exceeded for this API key.",
-            headers={"Retry-After": "30"},
+            headers={"Retry-After": str(_TPM_RETRY_AFTER_SECONDS)},
         )
     return handle
-
-
-def _actual_total_tokens(usage: dict | None) -> int:
-    """Best-effort sum of prompt + completion tokens for TPM reconcile, working
-    with either OpenAI (prompt_tokens/completion_tokens) or Anthropic
-    (input_tokens/output_tokens) usage shapes."""
-    if not usage:
-        return 0
-    prompt = int(usage.get("prompt_tokens") or usage.get("input_tokens") or 0)
-    completion = int(usage.get("completion_tokens") or usage.get("output_tokens") or 0)
-    return prompt + completion
 
 
 def _extract_cache_tokens(usage: dict | None) -> tuple[int, int]:
@@ -200,7 +195,7 @@ async def chat_completions(
         reservation = await gateway_service.preauthorize_spend(
             db, user=user, api_key=api_key, estimated_cost=estimate
         )
-    except BaseException:
+    except BaseException:  # incl. asyncio.CancelledError — must release TPM/reservation on cancellation
         await tpm_service.release_fully(redis, tpm_handle)
         raise
 
@@ -271,6 +266,8 @@ async def chat_completions(
     )
 
     await gateway_service.finalize_reservation(reservation, actual_cost=cost)
+    # TPM counts gross tokens through the system; the cache discount only
+    # applies to billing, not the rate-limit measurement.
     await tpm_service.reconcile(redis, tpm_handle, actual_tokens=prompt_tokens + completion_tokens)
     gateway_requests_total.labels(type="text", model=resolved.model.public_name, status="success").inc()
     gateway_cost_usd_total.labels(type="text", model=resolved.model.public_name).inc(float(cost))
@@ -314,7 +311,7 @@ async def _chat_completions_stream(
         reservation = await gateway_service.preauthorize_spend(
             db, user=user, api_key=api_key, estimated_cost=estimate
         )
-    except BaseException:
+    except BaseException:  # incl. asyncio.CancelledError — must release TPM/reservation on cancellation
         await tpm_service.release_fully(redis, tpm_handle)
         raise
 
@@ -488,7 +485,7 @@ async def messages(
         reservation = await gateway_service.preauthorize_spend(
             db, user=user, api_key=api_key, estimated_cost=estimate
         )
-    except BaseException:
+    except BaseException:  # incl. asyncio.CancelledError — must release TPM/reservation on cancellation
         await tpm_service.release_fully(redis, tpm_handle)
         raise
 
@@ -626,7 +623,7 @@ async def _messages_stream(
         reservation = await gateway_service.preauthorize_spend(
             db, user=user, api_key=api_key, estimated_cost=estimate
         )
-    except BaseException:
+    except BaseException:  # incl. asyncio.CancelledError — must release TPM/reservation on cancellation
         await tpm_service.release_fully(redis, tpm_handle)
         raise
 
