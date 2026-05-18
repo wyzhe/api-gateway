@@ -290,6 +290,21 @@ export const en = {
     sectionImageGeneration: "Image generation (async)",
     sectionVideoGeneration: "Video generation (async)",
   },
+  admin: {
+    overview: {
+      title: "Admin overview",
+      subtitle: "System-wide usage.",
+      kpiUsers: "Users",
+      kpiRequestsToday: "Requests today",
+      kpiRequestsTodayHint: "error rate {rate}%",
+      kpiTodaySpend: "Today spend",
+      kpiMonthSpend: "Month spend",
+      todayByTypeTitle: "Today by type",
+      typeText: "Text",
+      typeImage: "Image",
+      typeVideo: "Video",
+    },
+  },
 };
 
 export type EnDict = typeof en;

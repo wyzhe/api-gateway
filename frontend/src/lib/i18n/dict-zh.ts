@@ -291,4 +291,19 @@ export const zh: EnDict = {
     sectionImageGeneration: "图像生成（异步）",
     sectionVideoGeneration: "视频生成（异步）",
   },
+  admin: {
+    overview: {
+      title: "管理后台总览",
+      subtitle: "全站用量概览。",
+      kpiUsers: "用户总数",
+      kpiRequestsToday: "今日请求数",
+      kpiRequestsTodayHint: "错误率 {rate}%",
+      kpiTodaySpend: "今日花费",
+      kpiMonthSpend: "本月花费",
+      todayByTypeTitle: "今日按类型分布",
+      typeText: "文本",
+      typeImage: "图像",
+      typeVideo: "视频",
+    },
+  },
 };
