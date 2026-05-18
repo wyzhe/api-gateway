@@ -67,8 +67,7 @@ async def chat_completions(
         raise HTTPException(status_code=400, detail="Missing 'model' field")
 
     resolved = gateway_service.resolve_model(db, public_name, expected_type="text")
-    gateway_service.require_balance(user)
-    gateway_service.require_within_monthly_limit(db, api_key)
+    gateway_service.require_can_spend(db, user, api_key)
 
     request_id = gateway_service.new_request_id()
     provider_client = gateway_service.build_provider(resolved.provider)
@@ -188,8 +187,7 @@ async def _chat_completions_stream(
     if not public_name or not isinstance(public_name, str):
         raise HTTPException(status_code=400, detail="Missing 'model' field")
     resolved = gateway_service.resolve_model(db, public_name, expected_type="text")
-    gateway_service.require_balance(user)
-    gateway_service.require_within_monthly_limit(db, api_key)
+    gateway_service.require_can_spend(db, user, api_key)
 
     request_id = gateway_service.new_request_id()
     provider_client = gateway_service.build_provider(resolved.provider)

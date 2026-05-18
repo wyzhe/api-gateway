@@ -2,9 +2,7 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { CodeBlock } from "@/components/ui/code-block";
 import { Input } from "@/components/ui/input";
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import {
   Select,
   SelectContent,
@@ -13,12 +11,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { LabeledValue } from "@/components/ui/form-field";
+import { LogDetailDrawer, useLogDetail } from "@/components/log-detail-drawer";
 import { TypeBadge } from "@/components/type-badge";
 import { PageHeader } from "@/components/shell";
 import { api } from "@/lib/api";
-import type { LogDetail, LogSummary } from "@/lib/types";
-import { fmtCompactMoney, fmtDate, fmtRelative } from "@/lib/utils";
+import type { LogSummary } from "@/lib/types";
+import { fmtCompactMoney, fmtRelative, statusBadgeVariant } from "@/lib/utils";
 
 export function UsageLogsPage() {
   const [params] = useSearchParams();
@@ -27,7 +25,7 @@ export function UsageLogsPage() {
   const [status, setStatus] = useState<string>(params.get("status") ?? "__all__");
   const [model, setModel] = useState<string>(params.get("model") ?? "");
   const apiKeyId = params.get("api_key_id");
-  const [selected, setSelected] = useState<LogDetail | null>(null);
+  const detail = useLogDetail();
 
   const refresh = async () => {
     const qs = new URLSearchParams({ limit: "200" });
@@ -42,11 +40,6 @@ export function UsageLogsPage() {
   useEffect(() => {
     refresh().catch(() => {});
   }, [type, status, model, apiKeyId]);
-
-  const openDetail = async (id: number) => {
-    const d = await api<LogDetail>(`/api/logs/${id}`);
-    setSelected(d);
-  };
 
   return (
     <div>
@@ -106,15 +99,13 @@ export function UsageLogsPage() {
             {rows.map((r) => (
               <TableRow
                 key={r.id}
-                onClick={() => openDetail(r.id)}
+                onClick={() => detail.open(r.id)}
                 className="cursor-pointer"
               >
                 <TableCell><TypeBadge type={r.request_type} /></TableCell>
                 <TableCell className="mono text-xs">{r.model_name || r.upstream_model}</TableCell>
                 <TableCell>
-                  <Badge variant={r.status === "success" ? "success" : r.status === "failed" ? "danger" : "info"}>
-                    {r.status}
-                  </Badge>{" "}
+                  <Badge variant={statusBadgeVariant(r.status)}>{r.status}</Badge>{" "}
                   {r.task_status && (
                     <Badge variant="outline" className="ml-1">{r.task_status}</Badge>
                   )}
@@ -135,72 +126,7 @@ export function UsageLogsPage() {
         </Table>
       </div>
 
-      <Sheet open={!!selected} onOpenChange={(o) => !o && setSelected(null)}>
-        <SheetContent>
-          {selected && (
-            <>
-              <SheetHeader>
-                <SheetTitle className="flex items-center gap-2">
-                  <TypeBadge type={selected.request_type} />
-                  {selected.model_name || selected.upstream_model}
-                  <Badge variant={selected.status === "success" ? "success" : selected.status === "failed" ? "danger" : "info"}>
-                    {selected.status}
-                  </Badge>
-                </SheetTitle>
-                <SheetDescription className="mono">{selected.request_id}</SheetDescription>
-              </SheetHeader>
-
-              <div className="grid grid-cols-2 gap-3 mt-4 text-xs">
-                <LabeledValue label="Cost" value={fmtCompactMoney(selected.cost)} mono />
-                <LabeledValue label="Latency" value={`${selected.latency_ms ?? "—"} ms`} mono />
-                <LabeledValue label="HTTP" value={String(selected.http_status ?? "—")} mono />
-                <LabeledValue label="Tokens" value={selected.total_tokens ? `${selected.prompt_tokens} → ${selected.completion_tokens}` : "—"} mono />
-                <LabeledValue label="API key" value={selected.api_key_prefix || "—"} mono />
-                <LabeledValue label="Upstream" value={selected.upstream_model || "—"} mono />
-                <LabeledValue label="When" value={fmtDate(selected.created_at)} />
-                <LabeledValue label="Upstream request id" value={selected.upstream_request_id || "—"} mono />
-              </div>
-
-              {selected.error_message && (
-                <div className="mt-4 text-xs border border-destructive/40 bg-destructive/10 text-destructive px-3 py-2 rounded-md">
-                  {selected.error_message}
-                </div>
-              )}
-
-              {selected.asset_url && (
-                <div className="mt-4">
-                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">Asset</div>
-                  {selected.request_type === "video" ? (
-                    <video src={selected.asset_url} controls className="rounded-md border border-border max-w-full" />
-                  ) : (
-                    <a href={selected.asset_url} target="_blank" rel="noreferrer">
-                      <img src={selected.asset_url} className="rounded-md border border-border max-w-full" />
-                    </a>
-                  )}
-                </div>
-              )}
-
-              <div className="mt-4">
-                <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">Request</div>
-                <CodeBlock
-                  lang="json"
-                  code={JSON.stringify(selected.request_payload_json, null, 2)}
-                  maxHeight="14rem"
-                />
-              </div>
-              <div className="mt-3">
-                <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">Response</div>
-                <CodeBlock
-                  lang="json"
-                  code={JSON.stringify(selected.response_payload_json, null, 2)}
-                  maxHeight="20rem"
-                />
-              </div>
-            </>
-          )}
-        </SheetContent>
-      </Sheet>
+      <LogDetailDrawer log={detail.selected} onClose={detail.close} />
     </div>
   );
 }
-

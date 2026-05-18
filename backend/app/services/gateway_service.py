@@ -97,6 +97,22 @@ def mtd_cost_for_api_key(db: Session, api_key_id: int) -> Decimal:
     return Decimal(total or 0)
 
 
+def mtd_cost_for_api_keys(db: Session, api_key_ids: list[int]) -> dict[int, Decimal]:
+    """Single-query MTD cost for many keys at once. Missing keys return 0."""
+    if not api_key_ids:
+        return {}
+    rows = (
+        db.query(RequestLog.api_key_id, func.coalesce(func.sum(RequestLog.cost), 0))
+        .filter(
+            RequestLog.api_key_id.in_(api_key_ids),
+            RequestLog.created_at >= month_start_utc(),
+        )
+        .group_by(RequestLog.api_key_id)
+        .all()
+    )
+    return {kid: Decimal(c or 0) for kid, c in rows}
+
+
 def require_within_monthly_limit(db: Session, api_key: ApiKey) -> None:
     if api_key.monthly_limit is None:
         return
@@ -109,6 +125,12 @@ def require_within_monthly_limit(db: Session, api_key: ApiKey) -> None:
                 "Raise the limit or rotate the key."
             ),
         )
+
+
+def require_can_spend(db: Session, user: User, api_key: ApiKey) -> None:
+    """All preconditions for charging a /v1/* request: positive balance + within key cap."""
+    require_balance(user)
+    require_within_monthly_limit(db, api_key)
 
 
 def mark_key_used(db: Session, api_key: ApiKey) -> None:
@@ -297,8 +319,7 @@ async def submit_async_task(
     if not public_name or not isinstance(public_name, str):
         raise HTTPException(status_code=400, detail="Missing 'model' field")
     resolved = resolve_model(db, public_name, expected_type=request_type.value)
-    require_balance(user)
-    require_within_monthly_limit(db, api_key)
+    require_can_spend(db, user, api_key)
 
     request_id = new_request_id()
     provider_client = build_provider(resolved.provider)

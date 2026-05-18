@@ -45,6 +45,30 @@ export function priceLabel(m: PricedModel): string {
   }
 }
 
+export function statusBadgeVariant(
+  status: string | null | undefined,
+): "success" | "danger" | "info" | "warn" | "default" {
+  if (status === "success" || status === "succeeded" || status === "active") return "success";
+  if (status === "failed" || status === "disabled") return "danger";
+  if (status === "running" || status === "queued") return "info";
+  return "default";
+}
+
+export function limitBarColor(pct: number): string {
+  if (pct >= 100) return "var(--danger)";
+  if (pct >= 80) return "var(--warn)";
+  return "var(--accent)";
+}
+
+/** Parse a user-entered limit. Empty = "no cap" (null). Returns ok=false on garbage. */
+export function parseLimit(raw: string): { ok: true; value: number | null } | { ok: false } {
+  const trimmed = raw.trim();
+  if (!trimmed) return { ok: true, value: null };
+  const n = Number(trimmed);
+  if (!Number.isFinite(n) || n < 0) return { ok: false };
+  return { ok: true, value: n };
+}
+
 export function fmtRelative(value: string | Date | null | undefined): string {
   if (!value) return "—";
   const d = typeof value === "string" ? new Date(value) : value;

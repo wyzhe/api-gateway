@@ -3,14 +3,12 @@ import { Link, useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { KpiTile } from "@/components/kpi-tile";
 import { Badge } from "@/components/ui/badge";
-import { CodeBlock } from "@/components/ui/code-block";
-import { LabeledValue } from "@/components/ui/form-field";
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { LogDetailDrawer, useLogDetail } from "@/components/log-detail-drawer";
 import { TypeBadge } from "@/components/type-badge";
 import { PageHeader } from "@/components/shell";
 import { api } from "@/lib/api";
-import type { LogDetail, LogSummary } from "@/lib/types";
-import { fmtCompactMoney, fmtDate, fmtRelative } from "@/lib/utils";
+import type { LogSummary } from "@/lib/types";
+import { fmtCompactMoney, fmtRelative, statusBadgeVariant } from "@/lib/utils";
 
 type DashboardOut = {
   balance: string;
@@ -27,17 +25,12 @@ type DashboardOut = {
 
 export function DashboardPage() {
   const [data, setData] = useState<DashboardOut | null>(null);
-  const [selected, setSelected] = useState<LogDetail | null>(null);
+  const detail = useLogDetail();
   const nav = useNavigate();
 
   useEffect(() => {
     api<DashboardOut>("/api/dashboard").then(setData).catch(() => {});
   }, []);
-
-  const openDetail = async (id: number) => {
-    const d = await api<LogDetail>(`/api/logs/${id}`);
-    setSelected(d);
-  };
 
   return (
     <div>
@@ -89,14 +82,12 @@ export function DashboardPage() {
                 {data?.recent_logs.slice(0, 10).map((r) => (
                   <li
                     key={r.id}
-                    onClick={() => openDetail(r.id)}
+                    onClick={() => detail.open(r.id)}
                     className="px-4 py-2.5 flex items-center gap-3 text-xs cursor-pointer hover:bg-surface-2"
                   >
                     <TypeBadge type={r.request_type} />
                     <span className="mono text-foreground">{r.model_name || r.upstream_model}</span>
-                    <Badge variant={r.status === "success" ? "success" : r.status === "failed" ? "danger" : "info"}>
-                      {r.status}
-                    </Badge>
+                    <Badge variant={statusBadgeVariant(r.status)}>{r.status}</Badge>
                     <span className="text-muted-foreground ml-auto">{fmtCompactMoney(r.cost)}</span>
                     <span className="text-muted-foreground w-20 text-right">{fmtRelative(r.created_at)}</span>
                   </li>
@@ -107,89 +98,64 @@ export function DashboardPage() {
         </Card>
 
         <div className="flex flex-col gap-4">
-          <Card>
-            <CardHeader><CardTitle>Top models</CardTitle></CardHeader>
-            <CardContent className="p-0">
-              {data && data.top_models_by_cost.length === 0 ? (
-                <div className="p-4 text-xs text-muted-foreground">No data yet.</div>
-              ) : (
-                <ul className="divide-y divide-border">
-                  {data?.top_models_by_cost.map((m) => (
-                    <li
-                      key={m.model_id}
-                      onClick={() => m.model_name && nav(`/logs?model=${encodeURIComponent(m.model_name)}`)}
-                      className="px-4 py-2 flex items-center justify-between text-xs cursor-pointer hover:bg-surface-2"
-                    >
-                      <span className="mono">{m.model_name || "—"}</span>
-                      <span className="text-muted-foreground">{fmtCompactMoney(m.cost)} · {m.requests}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader><CardTitle>Top API keys</CardTitle></CardHeader>
-            <CardContent className="p-0">
-              {data && data.top_api_keys_by_usage.length === 0 ? (
-                <div className="p-4 text-xs text-muted-foreground">No data yet.</div>
-              ) : (
-                <ul className="divide-y divide-border">
-                  {data?.top_api_keys_by_usage.map((k) => (
-                    <li
-                      key={k.api_key_id}
-                      onClick={() => k.api_key_id && nav(`/logs?api_key_id=${k.api_key_id}`)}
-                      className="px-4 py-2 flex items-center justify-between text-xs cursor-pointer hover:bg-surface-2"
-                    >
-                      <span className="mono">{k.api_key_prefix}…</span>
-                      <span className="text-muted-foreground">{k.requests} req · {fmtCompactMoney(k.cost)}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </CardContent>
-          </Card>
+          <StatList
+            title="Top models"
+            empty="No data yet."
+            items={data?.top_models_by_cost ?? []}
+            getKey={(m) => m.model_id ?? -1}
+            getLabel={(m) => m.model_name || "—"}
+            getValue={(m) => `${fmtCompactMoney(m.cost)} · ${m.requests}`}
+            onClick={(m) => m.model_name && nav(`/logs?model=${encodeURIComponent(m.model_name)}`)}
+          />
+          <StatList
+            title="Top API keys"
+            empty="No data yet."
+            items={data?.top_api_keys_by_usage ?? []}
+            getKey={(k) => k.api_key_id ?? -1}
+            getLabel={(k) => `${k.api_key_prefix}…`}
+            getValue={(k) => `${k.requests} req · ${fmtCompactMoney(k.cost)}`}
+            onClick={(k) => k.api_key_id && nav(`/logs?api_key_id=${k.api_key_id}`)}
+          />
         </div>
       </div>
 
-      <Sheet open={!!selected} onOpenChange={(o) => !o && setSelected(null)}>
-        <SheetContent>
-          {selected && (
-            <>
-              <SheetHeader>
-                <SheetTitle className="flex items-center gap-2">
-                  <TypeBadge type={selected.request_type} />
-                  {selected.model_name || selected.upstream_model}
-                  <Badge variant={selected.status === "success" ? "success" : selected.status === "failed" ? "danger" : "info"}>
-                    {selected.status}
-                  </Badge>
-                </SheetTitle>
-                <SheetDescription className="mono">{selected.request_id}</SheetDescription>
-              </SheetHeader>
-              <div className="grid grid-cols-2 gap-3 mt-4 text-xs">
-                <LabeledValue label="Cost" value={fmtCompactMoney(selected.cost)} mono />
-                <LabeledValue label="Latency" value={`${selected.latency_ms ?? "—"} ms`} mono />
-                <LabeledValue label="HTTP" value={String(selected.http_status ?? "—")} mono />
-                <LabeledValue label="When" value={fmtDate(selected.created_at)} />
-              </div>
-              {selected.error_message && (
-                <div className="mt-3 text-xs border border-destructive/40 bg-destructive/10 text-destructive px-3 py-2 rounded-md">
-                  {selected.error_message}
-                </div>
-              )}
-              <div className="mt-4">
-                <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">Request</div>
-                <CodeBlock lang="json" code={JSON.stringify(selected.request_payload_json, null, 2)} maxHeight="14rem" />
-              </div>
-              <div className="mt-3">
-                <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">Response</div>
-                <CodeBlock lang="json" code={JSON.stringify(selected.response_payload_json, null, 2)} maxHeight="20rem" />
-              </div>
-            </>
-          )}
-        </SheetContent>
-      </Sheet>
+      <LogDetailDrawer log={detail.selected} onClose={detail.close} />
     </div>
+  );
+}
+
+function StatList<T>({
+  title, empty, items, getKey, getLabel, getValue, onClick,
+}: {
+  title: string;
+  empty: string;
+  items: T[];
+  getKey: (it: T) => number | string;
+  getLabel: (it: T) => string;
+  getValue: (it: T) => string;
+  onClick: (it: T) => void;
+}) {
+  return (
+    <Card>
+      <CardHeader><CardTitle>{title}</CardTitle></CardHeader>
+      <CardContent className="p-0">
+        {items.length === 0 ? (
+          <div className="p-4 text-xs text-muted-foreground">{empty}</div>
+        ) : (
+          <ul className="divide-y divide-border">
+            {items.map((it) => (
+              <li
+                key={getKey(it)}
+                onClick={() => onClick(it)}
+                className="px-4 py-2 flex items-center justify-between text-xs cursor-pointer hover:bg-surface-2"
+              >
+                <span className="mono">{getLabel(it)}</span>
+                <span className="text-muted-foreground">{getValue(it)}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
   );
 }

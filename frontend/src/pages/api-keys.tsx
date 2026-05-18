@@ -17,16 +17,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { PageHeader } from "@/components/shell";
 import { api } from "@/lib/api";
 import type { ApiKey } from "@/lib/types";
-import { fmtCompactMoney, fmtDate } from "@/lib/utils";
+import { fmtCompactMoney, fmtDate, limitBarColor, parseLimit } from "@/lib/utils";
 
 type CreatedKey = ApiKey & { key: string };
-
-function parseLimit(v: string): number | null {
-  const trimmed = v.trim();
-  if (!trimmed) return null;
-  const n = Number(trimmed);
-  return Number.isFinite(n) && n >= 0 ? n : NaN as unknown as null;
-}
 
 export function ApiKeysPage() {
   const [keys, setKeys] = useState<ApiKey[]>([]);
@@ -51,7 +44,7 @@ export function ApiKeysPage() {
   const onCreate = async () => {
     if (!newName.trim()) return;
     const limit = parseLimit(newLimit);
-    if (Number.isNaN(limit as number)) {
+    if (!limit.ok) {
       toast.error("Monthly limit must be a non-negative number");
       return;
     }
@@ -59,7 +52,7 @@ export function ApiKeysPage() {
     try {
       const k = await api<CreatedKey>("/api/keys", {
         method: "POST",
-        body: { name: newName.trim(), monthly_limit: limit },
+        body: { name: newName.trim(), monthly_limit: limit.value },
       });
       setOpenCreate(false);
       setNewName("");
@@ -81,13 +74,13 @@ export function ApiKeysPage() {
     if (!editing) return;
     if (!editName.trim()) return;
     const limit = parseLimit(editLimit);
-    if (Number.isNaN(limit as number)) {
+    if (!limit.ok) {
       toast.error("Monthly limit must be a non-negative number");
       return;
     }
     await api(`/api/keys/${editing.id}`, {
       method: "PATCH",
-      body: { name: editName.trim(), monthly_limit: limit },
+      body: { name: editName.trim(), monthly_limit: limit.value },
     });
     toast.success("Updated");
     setEditing(null);
@@ -160,11 +153,7 @@ export function ApiKeysPage() {
                       <div className="h-1 mt-1 rounded bg-surface-3 overflow-hidden w-32">
                         <div
                           className="h-full"
-                          style={{
-                            width: `${pct}%`,
-                            background:
-                              pct >= 100 ? "var(--danger)" : pct >= 80 ? "var(--warn)" : "var(--accent)",
-                          }}
+                          style={{ width: `${pct}%`, background: limitBarColor(pct) }}
                         />
                       </div>
                     )}
@@ -265,7 +254,7 @@ export function ApiKeysPage() {
             <div className="flex flex-col gap-3">
               <div className="text-xs text-muted-foreground">
                 Name: <span className="text-foreground mono">{createdKey.name}</span>
-                {createdKey.monthly_limit && (
+                {createdKey.monthly_limit !== null && (
                   <> · Monthly limit: <span className="text-foreground mono">{fmtCompactMoney(createdKey.monthly_limit)}</span></>
                 )}
               </div>

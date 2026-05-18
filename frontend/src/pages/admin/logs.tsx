@@ -16,7 +16,7 @@ import { TypeBadge } from "@/components/type-badge";
 import { PageHeader } from "@/components/shell";
 import { api } from "@/lib/api";
 import type { LogDetail as Detail, LogSummary as Log } from "@/lib/types";
-import { fmtCompactMoney, fmtDate, fmtRelative } from "@/lib/utils";
+import { fmtCompactMoney, fmtDate, fmtRelative, statusBadgeVariant } from "@/lib/utils";
 
 export function AdminLogsPage() {
   const [rows, setRows] = useState<Log[]>([]);
@@ -84,9 +84,7 @@ export function AdminLogsPage() {
                 <TableCell className="text-xs">#{r.user_id}</TableCell>
                 <TableCell className="mono text-xs">{r.model_name || r.upstream_model}</TableCell>
                 <TableCell>
-                  <Badge variant={r.status === "success" ? "success" : r.status === "failed" ? "danger" : "info"}>
-                    {r.status}
-                  </Badge>
+                  <Badge variant={statusBadgeVariant(r.status)}>{r.status}</Badge>
                 </TableCell>
                 <TableCell className="mono text-xs">{fmtCompactMoney(r.cost)}</TableCell>
                 <TableCell className="text-xs text-muted-foreground">{r.latency_ms ?? "—"}ms</TableCell>
