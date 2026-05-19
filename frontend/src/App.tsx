@@ -18,6 +18,7 @@ const AdminUsersPage = lazy(() => import("@/pages/admin/users").then((m) => ({ d
 const AdminModelsPage = lazy(() => import("@/pages/admin/models").then((m) => ({ default: m.AdminModelsPage })));
 const AdminProvidersPage = lazy(() => import("@/pages/admin/providers").then((m) => ({ default: m.AdminProvidersPage })));
 const AdminLogsPage = lazy(() => import("@/pages/admin/logs").then((m) => ({ default: m.AdminLogsPage })));
+const OAuthCompletePage = lazy(() => import("@/pages/oauth-complete").then((m) => ({ default: m.OAuthCompletePage })));
 
 function Workspace({ children }: { children: React.ReactNode }) {
   return (
@@ -45,6 +46,7 @@ export default function App() {
       <Routes>
         <Route path="/" element={<LandingPage />} />
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/auth/oauth/complete" element={<OAuthCompletePage />} />
 
         <Route path="/dashboard" element={<Workspace><DashboardPage /></Workspace>} />
         <Route path="/keys" element={<Workspace><ApiKeysPage /></Workspace>} />
