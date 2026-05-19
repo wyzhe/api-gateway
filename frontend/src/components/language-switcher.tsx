@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import type { Lang } from "@/lib/i18n";
 import { useLang } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -18,27 +19,29 @@ export function LanguageSwitcher({
   return (
     <div
       className={cn(
-        "inline-flex shrink-0 items-center rounded-md border border-border bg-surface-2 p-0.5 text-[11px]",
+        "inline-flex shrink-0 items-center gap-1 text-[11px]",
         className,
       )}
       role="group"
       aria-label="Language"
     >
-      {OPTIONS.map(([code, label, shortLabel]) => (
-        <button
-          key={code}
-          type="button"
-          onClick={() => setLang(code)}
-          aria-pressed={lang === code}
-          className={cn(
-            "whitespace-nowrap px-2 py-0.5 rounded-sm transition-colors",
-            lang === code
-              ? "bg-accent text-accent-foreground"
-              : "text-muted-foreground hover:text-foreground",
-          )}
-        >
-          {compact ? shortLabel : label}
-        </button>
+      {OPTIONS.map(([code, label, shortLabel], i) => (
+        <Fragment key={code}>
+          {i > 0 && <span className="text-faint" aria-hidden>·</span>}
+          <button
+            type="button"
+            onClick={() => setLang(code)}
+            aria-pressed={lang === code}
+            className={cn(
+              "whitespace-nowrap transition-colors px-0.5 rounded-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+              lang === code
+                ? "text-foreground font-medium"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {compact ? shortLabel : label}
+          </button>
+        </Fragment>
       ))}
     </div>
   );

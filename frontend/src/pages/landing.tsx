@@ -147,7 +147,7 @@ export function LandingPage() {
           <h2 className="mt-2 text-2xl md:text-3xl font-semibold">{t("landing.modalities.title")}</h2>
           <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-3">
             {modalities.map(({ Icon, label, desc }) => (
-              <div key={label} className="rounded-md border border-border bg-surface p-5">
+              <div key={label} className="rounded-md border border-border bg-surface p-4">
                 <div className="flex items-center gap-2 text-sm font-medium">
                   <Icon className="h-4 w-4 text-accent" />
                   {label}
@@ -166,7 +166,7 @@ export function LandingPage() {
           <p className="mt-3 max-w-2xl text-muted-foreground">{t("landing.capabilities.lede")}</p>
           <div className="mt-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             {capabilities.map(({ Icon, title, body }) => (
-              <div key={title} className="rounded-md border border-border bg-surface p-5">
+              <div key={title} className="rounded-md border border-border bg-surface p-4">
                 <div
                   className="h-7 w-7 rounded-md flex items-center justify-center mb-3"
                   style={{ background: "color-mix(in oklch, var(--accent) 12%, transparent)" }}
