@@ -73,7 +73,7 @@ export function UsageLogsPage() {
           value={model}
           onChange={(e) => setModel(e.target.value)}
         />
-        <Button variant="outline" size="sm" onClick={() => refresh()}>{t("usageLogs.refreshBtn")}</Button>
+        <Button variant="outline" onClick={() => refresh()}>{t("usageLogs.refreshBtn")}</Button>
       </div>
 
       <div className="rounded-md border border-border">
