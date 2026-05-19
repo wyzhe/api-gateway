@@ -55,6 +55,8 @@
 | 账号合并 key | `(provider, provider_subject)` 唯一,不用 email | OIDC core |
 | 注册门槛 | 完全开放,默认 `balance=0`(`preauthorize_spend` 兜底 /v1 计费) + IP signup 限流 + 每用户每天创建 API key 上限 | Supabase / Auth0 / Clerk 通用反滥用基线 |
 | 密码登录 | 保留,`password_hash` 改 nullable;OAuth-only 用户可调 `POST /api/auth/me/password` 自助设密码 | Google / GitHub / Stripe / Notion 通用做法,避免单 provider 失败时账号被锁死 |
+| 密码强度规则 | **NIST 800-63B compliant**:长度 ≥ 12、≤ 128;不做 character class;查 breached top-10k 静态列表 | NIST §5.1.1.2 明确反对 composition rules、要求 breached check;Google / GitHub / Auth0 默认行为 |
+| OIDC id_token 校验 | Authlib OIDCClient 默认行为(iss / aud / exp / signature),**不引入 nonce** | nonce 在 server-side auth code + PKCE flow 增量价值 ≈ 0(NextAuth / Auth0 同结论)|
 | Admin 新建用户 | 默认 `email_verified_at=now()`(admin 输入即断言)| 主流 admin-create 行为(Clerk / Supabase) |
 | 前端登录 UX | OAuth 按钮 + "or" 分割线 + 邮箱密码表单 | Vercel / Linear / Supabase 通用布局 |
 | 补 verify 流程 | MVP 阶段:管理员在 admin panel 手动标记;未来接 SMTP | 避免在本次引入 SMTP 依赖 |
@@ -172,7 +174,7 @@ GET /api/auth/oauth/google/callback?code=...&state=...
 1. Redis: `GETDEL oauth_state:{state}` —— 如果 nil,审计 `oauth_state_mismatch`,返回 400。
 2. 校验状态中的 `provider` 与路由的 `provider` 一致,否则 400。
 3. Authlib `OAuth2Client.fetch_token(code, code_verifier=...)` 走 token endpoint(对 Google: `https://oauth2.googleapis.com/token`)。
-4. 验证 `id_token`(Authlib 用 Google JWKS 自动验)→ 解出 `{sub, email, email_verified, name, picture}`。
+4. 验证 `id_token`(Authlib 的 `OIDCClient` 用 Google JWKS 自动验 signature **以及 `iss == "https://accounts.google.com"`、`aud == GOOGLE_OAUTH_CLIENT_ID`、`exp` 未过期**——这些是 OIDC core §3.1.3.7 必须做的校验,Authlib 默认就做,我们不另写)→ 解出 `{sub, email, email_verified, name, picture}`。**不引入 `nonce`**:在 server-side authorization_code + PKCE flow 里 nonce 增量价值 ≈ 0(state 已防 CSRF、PKCE 已防 code injection、id_token 不暴露给前端无可重放),OWASP / Auth0 / NextAuth 在此场景普遍不强制 nonce。
 5. 如果 `email_verified != True`,审计 `oauth_unverified_email`,302 回前端 `/login?error=email_unverified`。
 6. 调用 `OAuthLinkingService.find_or_create_user(provider, subject, email, name)`(详见 §6)。
    - 如果服务抛 `OAuthEmailConflict`,审计 `oauth_email_conflict`,302 回前端 `/login?error=email_already_registered`。
@@ -288,17 +290,20 @@ Content-Type: application/json
 2. 如果 `user.password_hash` 非 NULL:
    - 必须提供 `current_password`,否则 400
    - bcrypt verify `current_password` 与现有 `password_hash`,失败 401
-3. 新密码强度校验(沿用项目 settings 现有 weak-value 风格,但用于用户密码):
-   - 长度 ≥ 12
-   - 至少包含三类:大写字母、小写字母、数字、符号
-   - 不在常见弱密码列表(沿用 settings 启动校验里的弱值表)
+3. 新密码强度校验(**遵循 [NIST SP 800-63B](https://pages.nist.gov/800-63-3/sp800-63b.html) §5.1.1.2**):
+   - 长度 ≥ 12(NIST 最低 8,我们略严)
+   - 长度 ≤ 128(防 DoS 类 bcrypt 输入)
+   - **不做** character class 检查(NIST §5.1.1.2 明确反对 "SHOULD NOT impose other composition rules"——逼用户用 `Password1!` 这种烂密码反而帮倒忙)
+   - **必做** breached password list 检查(NIST §5.1.1.2 "SHALL compare against a list ... containing values known to be ... compromised"):MVP 阶段用本地静态 top-10k 列表(从 [SecLists](https://github.com/danielmiessler/SecLists/blob/master/Passwords/Common-Credentials/10-million-password-list-top-10000.txt) 打包进 `backend/app/data/breached_top10k.txt`,~80KB,启动时 load 到内存 set),命中 → 422 + 错误 "this password appears in known breach lists, please choose another"
+   - 拒绝密码包含用户 email 本地部分或 display_name(超过 4 个连续字符)作为子串
+   - **Future Work**: 接 [HIBP k-anonymity API](https://haveibeenpwned.com/API/v3#PwnedPasswords) `https://api.pwnedpasswords.com/range/{sha1_prefix}`,5+ 亿条覆盖率,无需打包字典
 4. `user.password_hash = bcrypt.hash(new_password)`,写 DB
 5. **撤销所有现有 `refresh_tokens`**(强制其它设备重登,标准 Auth0 / Stripe 等行为):`DELETE FROM refresh_tokens WHERE user_id = ?`
 6. 当前调用方的 access token 不撤销(15 分钟自然过期),但 refresh token 必须重新签发——因为刚刚被全删了。调用 `security.issue_token_pair(user)` 拿新对。
 7. 写 audit_log: action=`password_set`(`password_was_null=True`)或 `password_changed`(`password_was_null=False`)
 8. 200 返回 `RefreshResponse` shape:`{access_token, refresh_token, token_type:"bearer", access_expires_in}`(不返回 user,前端已有);前端用新对替换旧 access/refresh,其它设备的 refresh 已失效。
 
-**Rate limit**: 5/min/JWT(防止穷举旧密码)
+**Rate limit**: `5/min/JWT` AND `10/min/IP`(两者都要满足)。仅按 JWT 限会让 JWT 被偷后从大量 IP 攻同一账号变成 5/min total;两者取严防这条路径。
 
 **前端**(`/settings/security` 或并入 `/settings/connections`):
 
@@ -538,7 +543,7 @@ structlog 记录 `/api/auth/oauth/**` 的请求时附加:
 | `POST /api/auth/oauth/{provider}/link/start` | 30/min/JWT |
 | `GET /api/auth/oauth/{provider}/callback` | 60/min/IP |
 | `POST /api/auth/oauth/exchange` | 不限(32B 一次性 cookie,无法穷举) |
-| `POST /api/auth/me/password` | 5/min/JWT |
+| `POST /api/auth/me/password` | 5/min/JWT 且 10/min/IP(两者取严)|
 | `DELETE /api/settings/connections/{identity_id}` | 30/min/JWT |
 
 ### 9.5 Open redirect 防护
@@ -636,6 +641,19 @@ auth_password_changes_total = Counter(
 - access / refresh token 仍然走现有的「JSON 返回 + 前端持有」模式(`api.ts` 管理),**没有引入持久 cookie**,只引入这一个 60s 一次性 cookie。
 - `oauth_exchange` cookie 的 `Path=/api/auth/oauth/exchange` 限定路径,其它路由不会带,降低暴露面。
 
+### 9.10 CORS 配置
+
+`/api/auth/oauth/exchange` 端点要让浏览器自动带 `oauth_exchange` cookie(`credentials: 'include'` 或 `withCredentials`),所以 CORS response 必须满足:
+
+- `Access-Control-Allow-Credentials: true`
+- `Access-Control-Allow-Origin: <具体前端 origin>`(**不能** `*`,带 credentials 时 `*` 浏览器拒绝)
+- `Access-Control-Allow-Methods: POST, OPTIONS`
+- `Access-Control-Allow-Headers: Content-Type`
+
+具体 origin 从 `OAUTH_FRONTEND_BASE_URL` 推导。
+
+**对现有 `CORSMiddleware` 的影响**:CLAUDE.md 已说 CORS_ORIGINS 是严格 allowlist——确保 `OAUTH_FRONTEND_BASE_URL` 的 origin 在 `CORS_ORIGINS` 里,且 middleware 配置开启了 `allow_credentials=True`。如果当前是 `False`,本次要改成 `True`(独立的 access/refresh 走 JSON 不依赖 cookie,这个改动只影响 `/exchange`)。
+
 ## 10. CLAUDE.md / README 同步
 
 **CLAUDE.md 改动**:
@@ -705,10 +723,15 @@ auth_password_changes_total = Counter(
 `backend/tests/test_self_service_password.py`:
 
 - `test_set_password_for_oauth_only_user_succeeds_without_current`
-- `test_set_password_for_oauth_only_user_with_weak_password_rejected`
+- `test_set_password_rejected_when_too_short` (< 12)
+- `test_set_password_rejected_when_too_long` (> 128)
+- `test_set_password_rejected_when_in_breached_top10k` ← NIST §5.1.1.2 compliance
+- `test_set_password_rejected_when_contains_email_local_part`
+- `test_set_password_accepts_long_passphrase_without_composition_rules` ← 验证不要 character class
 - `test_change_password_requires_correct_current`
 - `test_change_password_revokes_all_refresh_tokens_except_returned_new_one`
-- `test_password_endpoint_rate_limited_5_per_min`
+- `test_password_endpoint_rate_limited_5_per_min_per_jwt`
+- `test_password_endpoint_rate_limited_10_per_min_per_ip`
 - `test_password_change_writes_audit_log_with_password_was_null_flag`
 
 ### 11.4 反滥用基线测试
@@ -748,6 +771,9 @@ auth_password_changes_total = Counter(
 - **Provider 端凭据轮换**:Google / GitHub OAuth client_secret 长期不变也能用,但建议每年轮换一次。本次不引入自动轮换机制。
 - **多 OIDC provider 通用化**:目前 Google / GitHub 各写一套 client 注册。如果未来加超过 3 个 provider,值得抽象成 OIDC discovery + 配置驱动。本次先 hardcode 两个 provider 在 `oauth_providers.py`。
 - **跨站部署支持**:本设计要求 frontend 与 backend 同站(共享 eTLD+1),因为 `oauth_exchange` cookie 用 `SameSite=Strict`。如果未来需要跨站部署(frontend 与 backend 在不同 eTLD+1),需要升级到 `SameSite=None; Secure` 并补加 CSRF token,或者切回 query string + fragment 的方案(不推荐)。
+- **Account lockout for `/api/auth/login`**:当前仅有 IP 限流(10/15min,CLAUDE.md 既定)。OWASP Authentication Cheat Sheet 推荐 per-account lockout 防御「跨 IP 慢速 brute force 单账号」。不在本次 OAuth PR 的 scope,但密码自助端点上线后 brute force 表面扩大,值得下一迭代加。
+- **HIBP API 替换本地 breached list**:本次 MVP 用 SecLists top-10k 静态文件(80KB,覆盖最常被字典攻击的密码)。下个迭代接 HIBP k-anonymity API,覆盖 5 亿+ 条已泄露密码,且不需要应用层维护字典。HIBP 是 k-anonymity 设计,只发送 SHA-1 前缀,不泄露用户密码。
+- **Refresh token rotation**:CLAUDE.md Known Gaps 已列。我们是 confidential client,RFC 9700 §2.2.1 说 SHOULD(不是 MUST)。本次 OAuth 不解决,继承现状。一旦实现,密码改密码端点的「撤销所有 refresh」会更彻底(配合 family-level detection 能发现复用)。
 
 ---
 
