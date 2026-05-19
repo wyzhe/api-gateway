@@ -7,8 +7,10 @@ Each provider has:
 """
 from __future__ import annotations
 
+import asyncio
+import time
 from dataclasses import dataclass
-from typing import Awaitable, Callable
+from typing import Any, Awaitable, Callable
 
 from authlib.integrations.httpx_client import AsyncOAuth2Client
 
@@ -51,18 +53,46 @@ class ProviderConfig:
         return f"{base}/api/auth/oauth/{self.name}/callback"
 
 
-async def _google_profile(client: AsyncOAuth2Client, token: dict) -> NormalizedProfile:
-    from authlib.jose import jwt, JsonWebKey
+_JWKS_CACHE: dict[str, tuple[float, Any]] = {}  # url -> (expires_at_monotonic, jwks)
+_JWKS_TTL_SECONDS = 3600  # 1h — Google rotates on days, not requests
+_JWKS_LOCK = asyncio.Lock()
+
+
+async def _fetch_jwks_cached(url: str) -> Any:
+    """Cache JWKS for `_JWKS_TTL_SECONDS`. Lazily refreshes on expiry.
+
+    Concurrent callers race on first miss; the lock keeps only one network
+    fetch in flight at a time.
+    """
+    from authlib.jose import JsonWebKey
     import httpx
+
+    now = time.monotonic()
+    cached = _JWKS_CACHE.get(url)
+    if cached and cached[0] > now:
+        return cached[1]
+
+    async with _JWKS_LOCK:
+        # Double-check after acquiring lock
+        cached = _JWKS_CACHE.get(url)
+        if cached and cached[0] > time.monotonic():
+            return cached[1]
+        async with httpx.AsyncClient(timeout=5.0) as h:
+            resp = await h.get(url)
+            resp.raise_for_status()
+            jwks = JsonWebKey.import_key_set(resp.json())
+        _JWKS_CACHE[url] = (time.monotonic() + _JWKS_TTL_SECONDS, jwks)
+        return jwks
+
+
+async def _google_profile(client: AsyncOAuth2Client, token: dict) -> NormalizedProfile:
+    from authlib.jose import jwt
 
     id_token = token.get("id_token")
     if not id_token:
         raise OAuthError("google id_token missing in token response")
 
-    async with httpx.AsyncClient(timeout=5.0) as h:
-        jwks_resp = await h.get("https://www.googleapis.com/oauth2/v3/certs")
-        jwks_resp.raise_for_status()
-        jwks = JsonWebKey.import_key_set(jwks_resp.json())
+    jwks = await _fetch_jwks_cached("https://www.googleapis.com/oauth2/v3/certs")
 
     claims = jwt.decode(
         id_token,
