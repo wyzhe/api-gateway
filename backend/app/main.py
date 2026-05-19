@@ -18,6 +18,7 @@ from .api import gateway as gateway_api
 from .api import keys as keys_api
 from .api import logs as logs_api
 from .api import models as models_api
+from .api import oauth as oauth_api
 from .config import get_settings
 from .database import SessionLocal, engine
 from .logging_config import configure_logging, get_logger
@@ -188,6 +189,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 
 app.include_router(auth_api.router)
+app.include_router(oauth_api.router)
 app.include_router(keys_api.router)
 app.include_router(models_api.router)
 app.include_router(billing_api.router)
