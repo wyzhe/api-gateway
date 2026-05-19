@@ -2,7 +2,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, model_validator
 
 
 class LoginRequest(BaseModel):
@@ -42,22 +42,31 @@ class UserOut(BaseModel):
 
     model_config = {"from_attributes": True}
 
+    @model_validator(mode="before")
     @classmethod
-    def model_validate(cls, obj: Any, *args, **kwargs):
-        if hasattr(obj, "password_hash"):
-            data = {
-                "id": obj.id,
-                "email": obj.email,
-                "display_name": obj.display_name,
-                "role": obj.role,
-                "status": obj.status,
-                "balance": obj.balance,
-                "has_password": obj.password_hash is not None,
-                "email_verified_at": obj.email_verified_at,
-                "created_at": obj.created_at,
-            }
-            return super().model_validate(data, *args, **kwargs)
-        return super().model_validate(obj, *args, **kwargs)
+    def _derive_has_password(cls, data: Any) -> Any:
+        """Inject ``has_password`` derived from ``password_hash``.
+
+        Works for both dict inputs and ORM instances. By introspecting
+        ``cls.model_fields`` we stay forward-compatible: new fields on
+        ``UserOut`` flow through automatically without amending this hook.
+        """
+        if isinstance(data, dict):
+            if "has_password" not in data and "password_hash" in data:
+                data = dict(data)
+                data["has_password"] = data.pop("password_hash") is not None
+            return data
+        # ORM instance: build a dict containing each declared field, computing
+        # ``has_password`` from the source ``password_hash`` attribute.
+        if hasattr(data, "password_hash"):
+            out: dict[str, Any] = {}
+            for field_name in cls.model_fields:
+                if field_name == "has_password":
+                    out["has_password"] = getattr(data, "password_hash", None) is not None
+                else:
+                    out[field_name] = getattr(data, field_name, None)
+            return out
+        return data
 
 
 class PasswordChangeRequest(BaseModel):
