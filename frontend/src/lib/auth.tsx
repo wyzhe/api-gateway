@@ -1,16 +1,9 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { api, clearAuth, getRefreshToken, getToken, setRefreshToken, setToken } from "./api";
+import type { User } from "./types";
 
-export type User = {
-  id: number;
-  email: string;
-  display_name: string | null;
-  role: "user" | "admin";
-  status: "active" | "disabled";
-  balance: string;
-  created_at: string;
-};
+export type { User };
 
 type AuthCtx = {
   user: User | null;

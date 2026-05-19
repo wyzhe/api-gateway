@@ -115,3 +115,34 @@ export type HealthCheckResult = {
   error: string | null;
   sample: string | null;
 };
+
+export type OAuthProvidersStatus = {
+  google: boolean;
+  github: boolean;
+};
+
+export type OAuthIdentity = {
+  id: number;
+  provider: "google" | "github";
+  last_login_at: string | null;
+  created_at: string;
+};
+
+export type PasswordChangeResponse = {
+  access_token: string;
+  refresh_token: string;
+  token_type: "bearer";
+  access_expires_in: number;
+};
+
+export type User = {
+  id: number;
+  email: string;
+  display_name: string | null;
+  role: "user" | "admin";
+  status: "active" | "disabled";
+  balance: string;
+  has_password: boolean;
+  email_verified_at: string | null;
+  created_at: string;
+};
