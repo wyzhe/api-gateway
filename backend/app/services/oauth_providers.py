@@ -131,12 +131,13 @@ async def _github_profile(client: AsyncOAuth2Client, token: dict) -> NormalizedP
             "X-GitHub-Api-Version": "2022-11-28",
         },
     ) as h:
-        user_resp = await h.get("https://api.github.com/user")
+        user_resp, emails_resp = await asyncio.gather(
+            h.get("https://api.github.com/user"),
+            h.get("https://api.github.com/user/emails"),
+        )
         user_resp.raise_for_status()
-        user = user_resp.json()
-
-        emails_resp = await h.get("https://api.github.com/user/emails")
         emails_resp.raise_for_status()
+        user = user_resp.json()
         emails = emails_resp.json()
 
     primary_verified = next(
