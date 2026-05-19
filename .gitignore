@@ -36,4 +36,4 @@ references/
 /mockups/
 /ref-*.png
 /linear-*.png
-/.playwright-mcp/
+/.playwright-mcp/.superpowers/
