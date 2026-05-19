@@ -1,12 +1,9 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Navigate, useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { BrandMark } from "@/components/brand-mark";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { GitHubIcon } from "@/components/ui/github-icon";
 import { GoogleIcon } from "@/components/ui/google-icon";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { getOAuthProviders, startOAuthLogin } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -67,90 +64,88 @@ export function LoginPage() {
     }
   };
 
+  const hasOAuth = providers.google || providers.github;
+
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 relative">
+    <div className="min-h-screen flex items-center justify-center px-4 relative">
       <div className="absolute top-4 right-4">
         <LanguageSwitcher />
       </div>
-      <div className="w-full max-w-sm">
-        <div className="flex items-center justify-center gap-2 mb-6">
-          <BrandMark className="h-7 w-7" />
-          <span className="font-semibold">Relay</span>
+      <div className="w-full max-w-xs flex flex-col items-center gap-5">
+        <div className="h-12 w-12 rounded-xl bg-accent flex items-center justify-center">
+          <span className="text-xl font-bold text-accent-foreground">R</span>
         </div>
+        <h1 className="text-base font-medium">{t("login.title")}</h1>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>{t("login.title")}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-col gap-3">
-              {(providers.google || providers.github) && (
-                <>
-                  <div className="flex flex-col gap-2">
-                    {providers.google && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => startOAuthLogin("google", redirectTo)}
-                      >
-                        <GoogleIcon className="h-4 w-4 mr-2" />
-                        {t("login.withGoogle")}
-                      </Button>
-                    )}
-                    {providers.github && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => startOAuthLogin("github", redirectTo)}
-                      >
-                        <GitHubIcon className="h-4 w-4 mr-2" />
-                        {t("login.withGitHub")}
-                      </Button>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground my-1">
-                    <div className="flex-1 h-px bg-border" />
-                    <span>{t("login.orDivider")}</span>
-                    <div className="flex-1 h-px bg-border" />
-                  </div>
-                </>
-              )}
+        {hasOAuth && (
+          <div className="w-full flex flex-col gap-2">
+            {providers.google && (
+              <Button
+                type="button"
+                variant="outline"
+                className="h-10 rounded-full"
+                onClick={() => startOAuthLogin("google", redirectTo)}
+              >
+                <GoogleIcon className="h-4 w-4" />
+                {t("login.withGoogle")}
+              </Button>
+            )}
+            {providers.github && (
+              <Button
+                type="button"
+                variant="outline"
+                className="h-10 rounded-full"
+                onClick={() => startOAuthLogin("github", redirectTo)}
+              >
+                <GitHubIcon className="h-4 w-4" />
+                {t("login.withGitHub")}
+              </Button>
+            )}
+          </div>
+        )}
 
-              <form onSubmit={onSubmit} className="flex flex-col gap-3">
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="email">{t("login.emailLabel")}</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    autoComplete="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                  />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="password">{t("login.passwordLabel")}</Label>
-                  <Input
-                    id="password"
-                    type="password"
-                    autoComplete="current-password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                  />
-                </div>
-                {error && (
-                  <div className="text-xs text-destructive border border-destructive/40 bg-destructive/10 px-2 py-1.5 rounded">
-                    {error}
-                  </div>
-                )}
-                <Button type="submit" disabled={busy}>
-                  {busy ? t("login.submitting") : t("login.submit")}
-                </Button>
-              </form>
+        {hasOAuth && (
+          <div className="w-full flex items-center gap-3 text-[11px] text-faint">
+            <div className="flex-1 h-px bg-border" />
+            <span>{t("login.orDivider")}</span>
+            <div className="flex-1 h-px bg-border" />
+          </div>
+        )}
+
+        <form onSubmit={onSubmit} className="w-full flex flex-col gap-3">
+          <Input
+            type="email"
+            autoComplete="email"
+            placeholder={t("login.emailLabel")}
+            aria-label={t("login.emailLabel")}
+            className="h-10 rounded-full px-5"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+          />
+          <Input
+            type="password"
+            autoComplete="current-password"
+            placeholder={t("login.passwordLabel")}
+            aria-label={t("login.passwordLabel")}
+            className="h-10 rounded-full px-5"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+          />
+          {error && (
+            <div className="text-xs text-destructive border border-destructive/40 bg-destructive/10 px-4 py-2 rounded-full text-center">
+              {error}
             </div>
-          </CardContent>
-        </Card>
+          )}
+          <Button type="submit" disabled={busy} className="h-10 rounded-full">
+            {busy ? t("login.submitting") : t("login.submit")}
+          </Button>
+        </form>
+
+        <p className="text-[11px] text-faint text-center mt-1">
+          {t("login.inviteOnly")}
+        </p>
       </div>
     </div>
   );

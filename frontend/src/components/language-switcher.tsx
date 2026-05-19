@@ -2,12 +2,18 @@ import type { Lang } from "@/lib/i18n";
 import { useLang } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
-const OPTIONS: ReadonlyArray<readonly [Lang, string]> = [
-  ["en", "EN"],
-  ["zh", "中文"],
+const OPTIONS: ReadonlyArray<readonly [Lang, string, string]> = [
+  ["en", "EN", "EN"],
+  ["zh", "中文", "中"],
 ];
 
-export function LanguageSwitcher({ className }: { className?: string }) {
+export function LanguageSwitcher({
+  className,
+  compact = false,
+}: {
+  className?: string;
+  compact?: boolean;
+}) {
   const { lang, setLang } = useLang();
   return (
     <div
@@ -18,7 +24,7 @@ export function LanguageSwitcher({ className }: { className?: string }) {
       role="group"
       aria-label="Language"
     >
-      {OPTIONS.map(([code, label]) => (
+      {OPTIONS.map(([code, label, shortLabel]) => (
         <button
           key={code}
           type="button"
@@ -31,7 +37,7 @@ export function LanguageSwitcher({ className }: { className?: string }) {
               : "text-muted-foreground hover:text-foreground",
           )}
         >
-          {label}
+          {compact ? shortLabel : label}
         </button>
       ))}
     </div>
