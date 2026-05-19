@@ -44,6 +44,28 @@ def _redis_reachable() -> bool:
 needs_redis = pytest.mark.skipif(not _redis_reachable(), reason="Redis unreachable")
 
 
+def _reset_login_rate_limit() -> None:
+    """Best-effort: delete any fastapi-limiter Redis keys so tests can log in.
+
+    Login is rate-limited (10/15min by IP). Repeat test runs share state and
+    trip 429s; clearing the keys lets each test start with a fresh window.
+    """
+    import os
+
+    try:
+        import redis  # type: ignore[import-not-found]
+    except Exception:  # pragma: no cover
+        return
+    url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+    try:
+        client = redis.Redis.from_url(url)
+        for key in client.scan_iter("fastapi-limiter:*"):
+            client.delete(key)
+        client.close()
+    except Exception:  # pragma: no cover
+        pass
+
+
 @pytest.fixture(scope="session")
 def settings():
     return get_settings()
@@ -131,3 +153,39 @@ def user_api_key_funded(client, jwt_funded) -> str:
         "/api/keys", headers={"Authorization": f"Bearer {jwt_funded}"}, json={"name": "pytest"}
     )
     return r.json()["key"]
+
+
+TEST_ADMIN_EMAIL = "pytest-admin@example.com"
+
+
+@pytest.fixture
+def admin_user(db_session) -> Iterator[User]:
+    u = db_session.query(User).filter(User.email == TEST_ADMIN_EMAIL).one_or_none()
+    if u is None:
+        u = User(
+            email=TEST_ADMIN_EMAIL,
+            password_hash=hash_password(TEST_USER_PASSWORD),
+            display_name="Pytest Admin",
+            role="admin",
+            status="active",
+            balance=Decimal("0"),
+        )
+        db_session.add(u)
+        db_session.commit()
+        db_session.refresh(u)
+    else:
+        u.role = "admin"
+        u.status = "active"
+        u.password_hash = hash_password(TEST_USER_PASSWORD)
+        db_session.commit()
+        db_session.refresh(u)
+    yield u
+    # don't delete: keep admin around between tests in case multiple use it concurrently
+
+
+@pytest.fixture
+def admin_jwt(client, admin_user) -> str:
+    r = client.post(
+        "/api/auth/login", json={"email": admin_user.email, "password": TEST_USER_PASSWORD}
+    )
+    return r.json()["access_token"]

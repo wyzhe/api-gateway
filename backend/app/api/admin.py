@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -139,6 +139,10 @@ def create_user(
         role=payload.role,
         status="active",
         balance=Decimal("0"),
+        # Admin-created accounts are trusted — their email is treated as verified
+        # so they can later link OAuth providers without hitting the
+        # account pre-hijacking guard.
+        email_verified_at=datetime.now(timezone.utc),
     )
     db.add(u)
     db.flush()
@@ -256,6 +260,34 @@ def recharge_user(
     )
     db.commit()
     return TransactionOut.model_validate(txn)
+
+
+@router.post("/users/{user_id}/mark-email-verified")
+def mark_email_verified(
+    user_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+) -> dict[str, datetime | None]:
+    u = db.query(User).filter_by(id=user_id).with_for_update().one_or_none()
+    if u is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    if u.email_verified_at is not None:
+        return {"email_verified_at": u.email_verified_at}
+    now = datetime.now(timezone.utc)
+    u.email_verified_at = now
+    audit_service.record(
+        db,
+        actor_user_id=admin.id,
+        action="user.mark_email_verified",
+        target_type="user",
+        target_id=u.id,
+        before={"email_verified_at": None},
+        after={"email_verified_at": now.isoformat()},
+        ip=_ip(request),
+    )
+    db.commit()
+    return {"email_verified_at": now}
 
 
 @router.get(
