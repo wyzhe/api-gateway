@@ -77,5 +77,12 @@ auth_signup_rate_limited_total = Counter(
 )
 
 
+auth_password_changes_total = Counter(
+    "auth_password_changes_total",
+    "Self-service password set/change",
+    labelnames=("kind",),  # set | changed
+)
+
+
 def render_metrics() -> tuple[bytes, str]:
     return generate_latest(), CONTENT_TYPE_LATEST

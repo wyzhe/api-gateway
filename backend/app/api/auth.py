@@ -4,18 +4,20 @@ from sqlalchemy.orm import Session
 from ..config import get_settings
 from ..deps import get_current_user, get_db
 from ..logging_config import get_logger
-from ..metrics import auth_logins_total
-from ..models import User
+from ..metrics import auth_logins_total, auth_password_changes_total
+from ..models import AuditLog, RefreshToken, User
 from ..rate_limit import make_limiter
 from ..schemas.auth import (
     LoginRequest,
     LoginResponse,
+    PasswordChangeRequest,
+    PasswordChangeResponse,
     RefreshRequest,
     RefreshResponse,
     UserOut,
 )
-from ..security import create_access_token, verify_password
-from ..services import auth_service
+from ..security import create_access_token, hash_password, verify_password
+from ..services import auth_service, password_policy_service
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 log = get_logger(__name__)
@@ -116,3 +118,63 @@ def _client_ip(request: Request) -> str | None:
     if request.client is None:
         return None
     return request.client.host
+
+
+_password_limiter_jwt = make_limiter(5, seconds=60)
+_password_limiter_ip = make_limiter(10, seconds=60)
+
+
+@router.post(
+    "/me/password",
+    response_model=PasswordChangeResponse,
+    dependencies=[Depends(_password_limiter_jwt), Depends(_password_limiter_ip)],
+)
+def change_password(
+    payload: PasswordChangeRequest,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    user_agent: str | None = Header(default=None, alias="User-Agent"),
+) -> PasswordChangeResponse:
+    password_was_null = user.password_hash is None
+
+    if not password_was_null:
+        if not payload.current_password:
+            raise HTTPException(400, "current_password required")
+        if not verify_password(payload.current_password, user.password_hash):
+            raise HTTPException(401, "current_password incorrect")
+
+    err = password_policy_service.validate_password(payload.new_password, email=user.email)
+    if err is not None:
+        raise HTTPException(422, detail=f"password_rejected:{err}")
+
+    user.password_hash = hash_password(payload.new_password)
+    db.query(RefreshToken).filter(RefreshToken.user_id == user.id).delete()
+    db.add(AuditLog(
+        actor_user_id=user.id,
+        action=("password_set" if password_was_null else "password_changed"),
+        target_type="user", target_id=str(user.id),
+    ))
+    db.commit()
+
+    access = create_access_token(str(user.id), extra={"role": user.role})
+    refresh, _ = auth_service.issue_refresh_token(
+        db, user_id=user.id,
+        user_agent=(user_agent or "")[:255] or None,
+        ip=_client_ip(request),
+    )
+
+    auth_password_changes_total.labels(
+        kind=("set" if password_was_null else "changed"),
+    ).inc()
+    log.info(
+        "password_change_ok",
+        user_id=user.id,
+        kind=("set" if password_was_null else "changed"),
+    )
+
+    return PasswordChangeResponse(
+        access_token=access,
+        refresh_token=refresh,
+        access_expires_in=_access_expires_in(),
+    )
