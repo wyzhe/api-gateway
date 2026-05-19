@@ -12,12 +12,15 @@
 
 本次设计涵盖:
 
-- 后端 OAuth `start` / `callback` / `exchange` 三个路由,基于 [Authlib](https://docs.authlib.org/)
+- 后端 OAuth `start` / `callback` / `exchange` / `link/start` 四个路由,基于 [Authlib](https://docs.authlib.org/)
 - 数据模型新增 `oauth_identities` 表、`User` 表两个字段
-- 前端登录页加入 OAuth 按钮、新增 `/auth/oauth/complete` 中转页、新增 `/settings/connections` 关联管理页
+- 前端登录页加入 OAuth 按钮、新增 `/auth/oauth/complete` 中转页、新增 `/settings/connections` 关联管理页、新增 `/settings/security` 密码自助管理页
+- `POST /api/auth/me/password` 自助设密码 / 改密码端点(供 OAuth-only 用户给自己加备用登录方式,避免 provider 失败时账号锁死)
 - 管理员面板加「标记邮箱已验证」按钮,作为现有密码用户接入 OAuth 自动合并的过渡路径
+- 开放注册的反滥用基线:IP signup 限流(默认 10/IP/day)+ 每用户每天 API key 创建上限(默认 5/user/day)
+- Prometheus 指标 + audit log 全覆盖
 - CLAUDE.md 同步更新项目定位
-- 安全控制:PKCE、state 一次性 nonce、exchange code、scrub list、rate limit、account pre-hijacking 防护
+- 安全控制:PKCE、state 一次性 nonce、HttpOnly+SameSite=Strict exchange cookie、scrub list、rate limit、account pre-hijacking 防护
 
 不在本次范围:
 
@@ -47,13 +50,15 @@
 |---|---|---|
 | OAuth 实现形态 | Backend-driven authorization_code + Authlib | FastAPI 圈主流 |
 | 安全增强 | **PKCE (S256)** 全程开启,即使是 confidential client | RFC 9700 (OAuth 2.1) |
-| Token 回传方式 | **一次性 exchange code**(60s TTL),token 不进 URL | Notion / GitHub Device Flow 模式 |
+| Exchange code 传递 | **HttpOnly cookie**(60s TTL,narrow Path),token 不进 URL,exchange code 不进 URL | Auth0 / NextAuth / Clerk / Stripe 一致做法 |
 | 账号合并 | 同 verified email 自动合并 **当且仅当** 现有 User `email_verified_at IS NOT NULL`;否则 409 拒绝,引导手动 link | NextAuth `allowDangerousEmailAccountLinking=false` 默认 |
 | 账号合并 key | `(provider, provider_subject)` 唯一,不用 email | OIDC core |
-| 注册门槛 | 完全开放,默认 `balance=0`(由 `preauthorize_spend` 兜底滥用) | 用户决策 |
-| 密码登录 | 保留,`password_hash` 改 nullable | 保留 admin 备用通道 |
+| 注册门槛 | 完全开放,默认 `balance=0`(`preauthorize_spend` 兜底 /v1 计费) + IP signup 限流 + 每用户每天创建 API key 上限 | Supabase / Auth0 / Clerk 通用反滥用基线 |
+| 密码登录 | 保留,`password_hash` 改 nullable;OAuth-only 用户可调 `POST /api/auth/me/password` 自助设密码 | Google / GitHub / Stripe / Notion 通用做法,避免单 provider 失败时账号被锁死 |
+| Admin 新建用户 | 默认 `email_verified_at=now()`(admin 输入即断言)| 主流 admin-create 行为(Clerk / Supabase) |
 | 前端登录 UX | OAuth 按钮 + "or" 分割线 + 邮箱密码表单 | Vercel / Linear / Supabase 通用布局 |
 | 补 verify 流程 | MVP 阶段:管理员在 admin panel 手动标记;未来接 SMTP | 避免在本次引入 SMTP 依赖 |
+| CAPTCHA / bot detection | **Future Work**(下个迭代接 Cloudflare Turnstile)| MVP 用 IP 限流即可 |
 
 ## 4. 数据模型变更
 
@@ -109,6 +114,7 @@ class User(Base):
 
 - OAuth 注册 / 自动合并时:`now()`(由 provider 已 verified)
 - 现存密码用户:初始为 NULL;admin 在 user 详情页点「标记邮箱已验证」后变为 `now()`
+- **Admin 通过 admin panel 新建用户时**:默认填 `now()`(admin 输入即断言对该邮箱的归属判断)。admin 创建表单上可选「邮箱待用户自验证」复选框,勾选则保持 NULL。该默认值由 `backend/app/api/admin.py` 中创建用户的路由实现,不在 User 模型层加默认值——因为 OAuth 走 service、admin 走 endpoint,语义来源不同。
 - 当 `email_verified_at IS NULL` 时,**禁止**该 User 被 OAuth 自动合并
 
 ### 4.3 Alembic migration
@@ -175,28 +181,49 @@ GET /api/auth/oauth/google/callback?code=...&state=...
 8. 生成一次性 exchange code:`exchange_code = secrets.token_urlsafe(32)`
 9. Redis: `SET oauth_exchange:{exchange_code} {"user_id": user.id} EX 60`
 10. 写 `audit_logs`,action 取 `oauth_login` / `oauth_signup` / `oauth_link`(依 service 返回的 outcome)。
-11. 302 → `{OAUTH_FRONTEND_BASE_URL}/auth/oauth/complete?code={exchange_code}&return_to={return_to_from_state}`
+11. 302 → `{OAUTH_FRONTEND_BASE_URL}/auth/oauth/complete?return_to={return_to_from_state}`,**响应头同时附**:
+    ```
+    Set-Cookie: oauth_exchange={exchange_code}; HttpOnly; Secure; SameSite=Strict;
+                Path=/api/auth/oauth/exchange; Max-Age=60
+    ```
+    - `HttpOnly`:JS 读不到,杜绝 XSS exfiltrate
+    - `Secure`:只走 HTTPS(dev 环境 settings.is_production=False 时 Secure 可选,本地 http://localhost 浏览器仍接收)
+    - `SameSite=Strict`:绝对不在跨站请求中带,防 CSRF
+    - `Path=/api/auth/oauth/exchange`:cookie 只在调 exchange 端点时被发送,其它路由不暴露
+    - `Max-Age=60`:同 Redis TTL,过期即丢
+    - **不设 `Domain`**:默认绑当前 host,跨子域不泄露
 
-**注意**: callback 路由本身**不签发 JWT**——JWT 只在 exchange 步骤里发出,降低 token 暴露面。
+**注意**: callback 路由本身**不签发 JWT**——JWT 只在 exchange 步骤里发出,降低 token 暴露面。**Exchange code 完全不进 URL,只走 HttpOnly cookie**(主流做法,Auth0 / NextAuth / Clerk 同模式)。
 
 ### 5.3 `POST /api/auth/oauth/exchange`
 
 ```
 POST /api/auth/oauth/exchange
-Content-Type: application/json
-
-{ "code": "..." }
+Cookie: oauth_exchange={exchange_code}
 ```
+
+无 body。Cookie 由浏览器自动附加(`Path=/api/auth/oauth/exchange` 限定只在此端点发送)。
 
 **逻辑**:
 
-1. Redis: `GETDEL oauth_exchange:{code}` —— 如果 nil,401。
-2. 取出 `user_id`,DB 查 User(若不存在或 status≠active,401)。
-3. 调用 `security.issue_token_pair(user)` —— 复用现有签发逻辑,产出 `{access, refresh, refresh_expires_at}`。
-4. 写 refresh token 行(复用现有 `refresh_tokens` 表)。
-5. JSON 返回 `{access, refresh, user: UserOut}`。
+1. 读取 `Cookie: oauth_exchange`。缺失 → 401。
+2. Redis: `GETDEL oauth_exchange:{code}` —— 如果 nil,401(已过期 / 已用 / 伪造)。
+3. 取出 `user_id`,DB 查 User(若不存在或 status≠active,401)。
+4. 调用 `security.issue_token_pair(user)` —— 复用现有签发逻辑。
+5. 写 refresh token 行(复用现有 `refresh_tokens` 表)。
+6. JSON 返回 `LoginResponse`(`backend/app/schemas/auth.py` 现有 schema):`{access_token, refresh_token, token_type:"bearer", access_expires_in, user}`。前端 auth store 不分叉。
 
-**Rate limit**: 60/min/IP(防止穷举 code,虽然 32B 随机几乎不可穷举,但作为标准 hardening)。
+**所有响应**(成功 200、各种 401)**都附**:
+```
+Set-Cookie: oauth_exchange=; HttpOnly; Secure; SameSite=Strict;
+            Path=/api/auth/oauth/exchange; Max-Age=0
+```
+
+显式过期 cookie。即使 Redis 已 GETDEL,浏览器端也立刻丢掉残留 cookie,避免后续误带。
+
+**Rate limit**: 不限。Exchange code 是 32B 一次性随机值,无法穷举,且 `Max-Age=60` 自然限速。
+
+**CSRF 处理**:`SameSite=Strict` 已经阻断了第三方站点带 cookie 发请求的可能;额外的 CSRF token 不需要。
 
 ### 5.4 GitHub 差异
 
@@ -237,9 +264,47 @@ Content-Type: application/json
 - 若 Redis 中 `mode=link`,跳过 `find_or_create_user`,改走 `OAuthLinkingService.attach_to_existing(linker_user_id, provider, subject, email)`:
   - 如果 `(provider, subject)` 已绑定其它 User → 审计 `oauth_provider_in_use`,302 回 `/settings/connections?error=provider_in_use`
   - 否则插入 `OAuthIdentity(user_id=linker_user_id, ...)`,如果 `linker.email_verified_at IS NULL` 且 OAuth email 和 linker.email 一致,顺手把 `email_verified_at = now()` 写上(因为用户在 OAuth 那侧已经证明了对该邮箱的控制权)
-- 不签发新 token、不走 exchange,302 回前端 `/settings/connections?linked={provider}`
+- 不签发新 token、不走 exchange、**不设 oauth_exchange cookie**,302 回前端 `/settings/connections?linked={provider}`
 
 **注意**:link 流程的 callback 完成后,linker_user_id 对应的用户 access token **可能已经过期**(从 link/start 到 callback 走 OAuth 来回最长可能几分钟)。这不影响 link 操作本身——`linker_user_id` 已经在 Redis state 里,代表用户在发起 link 的瞬间是登录的。但前端跳回 `/settings/connections` 时,可能需要 refresh 一次 token(走现有 `refresh_tokens` 流程)。
+
+### 5.6 `POST /api/auth/me/password` — 自助设密码 / 改密码
+
+**动机**:OAuth-only 用户(`password_hash IS NULL`)必须有自助设密码的能力。否则一旦其 OAuth provider 不可用(账号封禁、provider 故障、用户主动删除 Google/GitHub 账号),用户**永远无法登录**——本项目 MVP 阶段没有 magic link / SMTP fallback。Google、GitHub、Stripe、Notion、Clerk 等业内主流都允许 OAuth-only 用户自助设密码。
+
+```
+POST /api/auth/me/password
+Authorization: Bearer <access_token>
+Content-Type: application/json
+
+{ "current_password": "...", "new_password": "..." }
+```
+
+`current_password` 可选:仅当 `User.password_hash IS NOT NULL` 时必填且必须正确,OAuth-only 用户首次设密码可省略。
+
+**逻辑**(`backend/app/api/auth.py`):
+
+1. 取当前 User(`get_current_user` 依赖)
+2. 如果 `user.password_hash` 非 NULL:
+   - 必须提供 `current_password`,否则 400
+   - bcrypt verify `current_password` 与现有 `password_hash`,失败 401
+3. 新密码强度校验(沿用项目 settings 现有 weak-value 风格,但用于用户密码):
+   - 长度 ≥ 12
+   - 至少包含三类:大写字母、小写字母、数字、符号
+   - 不在常见弱密码列表(沿用 settings 启动校验里的弱值表)
+4. `user.password_hash = bcrypt.hash(new_password)`,写 DB
+5. **撤销所有现有 `refresh_tokens`**(强制其它设备重登,标准 Auth0 / Stripe 等行为):`DELETE FROM refresh_tokens WHERE user_id = ?`
+6. 当前调用方的 access token 不撤销(15 分钟自然过期),但 refresh token 必须重新签发——因为刚刚被全删了。调用 `security.issue_token_pair(user)` 拿新对。
+7. 写 audit_log: action=`password_set`(`password_was_null=True`)或 `password_changed`(`password_was_null=False`)
+8. 200 返回 `RefreshResponse` shape:`{access_token, refresh_token, token_type:"bearer", access_expires_in}`(不返回 user,前端已有);前端用新对替换旧 access/refresh,其它设备的 refresh 已失效。
+
+**Rate limit**: 5/min/JWT(防止穷举旧密码)
+
+**前端**(`/settings/security` 或并入 `/settings/connections`):
+
+- OAuth-only 用户:显示「设置密码」按钮,弹窗只要 `new_password` + 确认
+- 已有密码用户:显示「修改密码」按钮,需要 `current_password` + `new_password`
+- 完成后弹 toast「密码已更新,其它设备需重新登录」
 
 ## 6. 账号关联服务 `OAuthLinkingService`
 
@@ -370,6 +435,10 @@ github_oauth_client_id: str | None = None
 github_oauth_client_secret: str | None = None
 oauth_backend_base_url: str | None = None    # e.g. https://api.example.com
 oauth_frontend_base_url: str | None = None   # e.g. https://app.example.com
+
+# 反滥用阈值(默认值偏严格,可调高)
+signup_per_ip_per_day: int = 10
+api_key_per_user_per_day: int = 5
 ```
 
 **启动校验**(在 `settings.py` 现有 strict 校验里加):
@@ -377,6 +446,8 @@ oauth_frontend_base_url: str | None = None   # e.g. https://app.example.com
 - 如果 `ENV=production`:
   - 凡配了 `*_client_id` 必须也配 `*_client_secret`,否则启动失败。
   - 配了任一 OAuth provider 时,`oauth_backend_base_url` 必须是 `https://`,否则启动失败。
+  - `oauth_backend_base_url` 与 `oauth_frontend_base_url` 必须是同站(共享 eTLD+1),否则启动失败。原因:`oauth_exchange` cookie 用 `SameSite=Strict`,跨站部署会导致 cookie 不被发送、exchange 始终失败。
+- `signup_per_ip_per_day` 和 `api_key_per_user_per_day` 必须 `>= 1`,否则启动失败(0 等于完全关掉反滥用,不允许默认这样)。
 
 `/api/auth/oauth/providers` 路由按这些 env 返回 `{google: bool, github: bool}`,前端据此显示/隐藏按钮。
 
@@ -402,13 +473,14 @@ oauth_frontend_base_url: str | None = None   # e.g. https://app.example.com
 
 | 文件 | 变更 |
 |---|---|
-| `frontend/src/lib/api.ts` | 新增 `getOAuthProviders()` / `startOAuthLogin(provider)`(直接 `window.location.assign('/api/auth/oauth/{provider}/start?return_to=...')`)/ `startOAuthLink(provider)`(先 POST 拿 redirect_url 再 `assign`)/ `exchangeOAuth(code)` / `detachOAuthIdentity(id)` |
-| `frontend/src/pages/login.tsx` | 顶部加 OAuth 按钮区 + "or" 分割线;按 `getOAuthProviders()` 显隐 |
-| `frontend/src/pages/oauth-complete.tsx` | **新增**。读 `?code=`,调 `exchangeOAuth`,塞 token,`router.replace(return_to)`。错误时显示「登录失败」+ 返回 `/login` 链接。 |
-| `frontend/src/pages/settings-connections.tsx` | **新增**。列出当前 User 的所有 `oauth_identities`,「绑定 / 解绑」按钮 |
-| `frontend/src/App.tsx` | 注册 `/auth/oauth/complete` 路由;在已登录区注册 `/settings/connections` |
-| `frontend/src/components/shell.tsx` | 侧栏「设置」下加「关联账号」入口 |
-| `frontend/src/lib/types.ts` | 加 `OAuthProviderStatus`、`OAuthIdentity` 类型 |
+| `frontend/src/lib/api.ts` | 新增 `getOAuthProviders()` / `startOAuthLogin(provider, returnTo?)`(直接 `window.location.assign(...)`)/ `startOAuthLink(provider)`(先 POST 拿 redirect_url 再 `assign`)/ `exchangeOAuth()`(无参,POST `/api/auth/oauth/exchange`,`credentials: 'include'` 让浏览器带 cookie)/ `detachOAuthIdentity(id)` / `setOrChangePassword({current?, new})` |
+| `frontend/src/pages/login.tsx` | 顶部加 OAuth 按钮区 + "or" 分割线;按 `getOAuthProviders()` 显隐;URL 中如有 `?error=...` 显示对应文案(见 § 9.6 错误文案表)|
+| `frontend/src/pages/oauth-complete.tsx` | **新增**。挂载后立即调 `exchangeOAuth()`(不读 URL,token 走 HttpOnly cookie);成功后塞 access/refresh 到现有 auth store,`router.replace(return_to)`。失败时显示「登录失败,请重试」+ 返回 `/login` 链接。读 query `?return_to=` 决定跳哪。 |
+| `frontend/src/pages/settings-connections.tsx` | **新增**。列出当前 User 的所有 `oauth_identities`,「绑定 / 解绑」按钮;解绑按钮在「会让账号失去所有登录方式」时禁用 + tooltip 解释 |
+| `frontend/src/pages/settings-security.tsx` | **新增**。「设置 / 修改密码」表单(根据 `user.has_password` 决定显示哪一个)。OAuth-only 用户提示「设置密码作为备用登录方式」。 |
+| `frontend/src/App.tsx` | 注册 `/auth/oauth/complete` 路由;在已登录区注册 `/settings/connections`、`/settings/security` |
+| `frontend/src/components/shell.tsx` | 侧栏「设置」下加「关联账号」「安全」入口 |
+| `frontend/src/lib/types.ts` | 加 `OAuthProviderStatus`、`OAuthIdentity` 类型;`UserOut` 加两字段 — `has_password: boolean`(后端从 `password_hash != NULL` 派生)和 `email_verified_at: string \| null`(ISO 8601)。`backend/app/schemas/auth.py::UserOut` 同步加这两个字段。 |
 
 ### 8.2 设计准则
 
@@ -431,7 +503,11 @@ oauth_frontend_base_url: str | None = None   # e.g. https://app.example.com
 | `oauth_email_conflict` | Case 2 命中但 verified_at=NULL | NULL(metadata 含 email hash) |
 | `oauth_disabled_user` | identity / user 找到但 status≠active | user_id |
 | `oauth_provider_in_use` | `attach_to_existing` 撞已绑其它用户 | linker_user_id |
+| `oauth_signup_rate_limited` | IP signup 限流触发(见 § 9.7) | NULL(metadata: ip_hash) |
 | `email_marked_verified` | admin 在 admin panel 标记 | user_id |
+| `password_set` | OAuth-only 用户首次设密码(`password_was_null=True`) | user_id |
+| `password_changed` | 已有密码用户改密码(`password_was_null=False`) | user_id |
+| `api_key_quota_exceeded` | 用户单日创建 key 数超限(见 § 9.7) | user_id |
 
 ### 9.2 结构化日志字段
 
@@ -461,28 +537,122 @@ structlog 记录 `/api/auth/oauth/**` 的请求时附加:
 | `GET /api/auth/oauth/{provider}/start` | 不限 |
 | `POST /api/auth/oauth/{provider}/link/start` | 30/min/JWT |
 | `GET /api/auth/oauth/{provider}/callback` | 60/min/IP |
-| `POST /api/auth/oauth/exchange` | 60/min/IP |
+| `POST /api/auth/oauth/exchange` | 不限(32B 一次性 cookie,无法穷举) |
+| `POST /api/auth/me/password` | 5/min/JWT |
 | `DELETE /api/settings/connections/{identity_id}` | 30/min/JWT |
 
 ### 9.5 Open redirect 防护
 
-`return_to` 参数白名单规则:必须以 `/` 开头、不以 `//` 开头、不包含 `:`。任何不合规一律视为 `/`。
+`return_to` 参数白名单规则:用 `urllib.parse.urlparse(return_to)` 解析,要求 `scheme == ''` 且 `netloc == ''` 且 `path.startswith('/')` 且不以 `//` 开头。任何不合规一律视为 `/`。比纯字符串规则更稳。
 
-### 9.6 CSRF 与 SameSite
+### 9.6 错误回跳 UX
 
-- exchange code 走 POST + JSON body,本身需要前端主动调用,默认有 SameSite=Lax cookie 保护
-- 不引入新 cookie——继续走现有的「access token 在内存 + refresh token 在内存」模式(由 `api.ts` 管理)
-- `/api/auth/oauth/exchange` 不需要登录态,所以不需要 CSRF token——它是「我刚刚 OAuth 完成、redirect 带 code 回来兑换」的一次性流程,exchange code 本身就是凭证
+OAuth callback 在各种错误情况下都 302 回 `/login?error={code}` 或 `/settings/connections?error={code}`,前端按 code 显示文案。
+
+| code | 文案 | 出路 |
+|---|---|---|
+| `email_unverified` | 你的 {Google/GitHub} 邮箱尚未验证,请到 provider 完成邮箱验证后再试 | 跳 provider 验证流程 |
+| `email_already_registered` | 该邮箱(`{masked_email}`)已被本地账号占用。请用密码登录后在「设置 → 关联账号」绑定 {provider}。如忘记密码,请联系管理员重置。 | 显示密码登录表单聚焦;给「联系管理员」邮件链接 |
+| `account_disabled` | 该账号已被禁用,请联系管理员 | 显示管理员联系方式 |
+| `provider_in_use` (link 模式) | 此 {provider} 账号已被其它用户绑定,请使用其它账号 | 返回 settings/connections |
+| `upstream_failure` | 与 {provider} 通信失败,请稍后重试 | 「重试」按钮 |
+| `state_expired` | 登录会话已过期(超过 5 分钟),请重新发起 | 跳 `/login` |
+| `signup_rate_limited` | 新账号注册过于频繁,请稍后再试 | 显示等待提示 |
+
+masked_email 规则: `a***@example.com`(给用户足够提示但不全曝露)。
+
+### 9.7 反滥用基线
+
+#### 9.7.1 IP signup 限流
+
+在 `/api/auth/oauth/*/callback` 的 **signup 分支**(即 `find_or_create_user` 返回 `signup`)前加 Redis 计数:
+
+```python
+ip_signup_key = f"signup_ip_count:{client_ip}:{today_yyyymmdd}"
+count = redis.incr(ip_signup_key)
+if count == 1:
+    redis.expire(ip_signup_key, 86400)
+if count > SIGNUP_PER_IP_PER_DAY:  # 默认 10,环境变量可调
+    audit("oauth_signup_rate_limited", metadata={"ip_hash": sha256(ip)[:16]})
+    302 → /login?error=signup_rate_limited
+    return
+```
+
+**不限 login / link 分支**——已有账号正常使用不应受影响。
+
+#### 9.7.2 每用户每天创建 API key 数量上限
+
+在 `POST /api/keys` 加 Redis 计数:
+
+```python
+key_quota_key = f"api_key_quota:{user.id}:{today_yyyymmdd}"
+count = redis.incr(key_quota_key)
+if count == 1:
+    redis.expire(key_quota_key, 86400)
+if count > API_KEY_PER_USER_PER_DAY:  # 默认 5
+    audit("api_key_quota_exceeded", target=user.id)
+    raise HTTPException(429, "Daily API key creation limit reached, try tomorrow")
+```
+
+环境变量:`SIGNUP_PER_IP_PER_DAY=10`、`API_KEY_PER_USER_PER_DAY=5`(都可调,默认值偏严格)。
+
+#### 9.7.3 后续(Future Work)
+
+- Cloudflare Turnstile / hCaptcha 集成,加在登录页前端 + callback 后端校验 `cf-turnstile-response` 头
+- 跨日滑动窗口而不是日历日计数(更平滑)
+- 「新账号 24h 限制」(类似 GitHub:24h 内不能 fork 大仓 / invite 他人)
+
+### 9.8 Prometheus 指标
+
+复用现有 `prometheus-client`,在 `backend/app/metrics.py` 加:
+
+```python
+auth_oauth_total = Counter(
+    "auth_oauth_total",
+    "OAuth flow outcomes",
+    labelnames=("provider", "outcome"),  # outcome ∈ signup|login|link|error_state|error_email|...
+)
+auth_oauth_latency_ms = Histogram(
+    "auth_oauth_latency_ms",
+    "OAuth callback total latency in ms",
+    labelnames=("provider",),
+    buckets=(50, 100, 200, 500, 1000, 2000, 5000),
+)
+auth_signup_rate_limited_total = Counter(
+    "auth_signup_rate_limited_total",
+    "Signup attempts blocked by IP rate limit",
+)
+auth_password_changes_total = Counter(
+    "auth_password_changes_total",
+    "Self-service password set/change",
+    labelnames=("kind",),  # kind ∈ set | changed
+)
+```
+
+### 9.9 CSRF 与 SameSite
+
+- `oauth_exchange` cookie 带 `SameSite=Strict`(只在同站 fetch 时附加),已经阻断跨站 CSRF。
+- `/api/auth/oauth/exchange` 端点不需要额外 CSRF token——cookie + SameSite=Strict + HttpOnly 三重保护。
+- access / refresh token 仍然走现有的「JSON 返回 + 前端持有」模式(`api.ts` 管理),**没有引入持久 cookie**,只引入这一个 60s 一次性 cookie。
+- `oauth_exchange` cookie 的 `Path=/api/auth/oauth/exchange` 限定路径,其它路由不会带,降低暴露面。
 
 ## 10. CLAUDE.md / README 同步
 
 **CLAUDE.md 改动**:
 
 1. `## What this is, what it isn't` 节中 `**Isn't**` 段:删除 "There's no signup" 句;改成 "Self-serve sign-up via Google / GitHub OAuth is supported; admin manual provisioning still works as before." 并保留其余约束(no online payments, no per-org workspaces, no chat product)。
-2. `## Critical invariants — do not break` 加一条:
+2. `## Critical invariants — do not break` 加两条:
    > **OAuth 自动账号合并要求 verified email**:在 `OAuthLinkingService` 路径里,合并到已存在 User 必须满足 `User.email_verified_at IS NOT NULL`,否则抛 `OAuthEmailConflict`。这是对 [Account Pre-hijacking](https://www.usenix.org/conference/usenixsecurity22/presentation/sudhodanan) 攻击的核心防护,不要绕过。
-3. `## Configuration & startup safety` 节加 OAuth 相关环境变量校验说明。
-4. `## Where the seams are if you need to extend` 表加一行:`Add a new OAuth provider | New entry in OAUTH_PROVIDERS dict in oauth_providers.py + env vars + Authlib registration`.
+   >
+   > **OAuth signup IP 限流不能绕**:`/api/auth/oauth/*/callback` 的 signup 分支必须先过 `signup_ip_count` 计数器(默认 10/IP/day)。`/api/keys` 必须先过 `api_key_quota` 计数器(默认 5/user/day)。这是开放注册的反滥用基线,绕过会让 DB / Redis 在被扫的时候撑爆。
+3. `## Configuration & startup safety` 节加 OAuth 相关环境变量校验说明 + 反滥用阈值环境变量说明。
+4. `## Frontend conventions` 节加一段:
+   > **OAuth 一次性 exchange cookie 是唯一被允许的 HttpOnly cookie**。callback 后到 exchange 之间用 `oauth_exchange` cookie 传一次性 code,60s TTL,`Path=/api/auth/oauth/exchange`,`SameSite=Strict`。除此之外项目其它 token 仍走「JSON 返回 + 前端持有」模式,不要不假思索地把别的会话状态也搬到 cookie。
+5. `## Where the seams are if you need to extend` 表加两行:
+   - `Add a new OAuth provider | New entry in OAUTH_PROVIDERS dict in oauth_providers.py + env vars + Authlib registration`
+   - `Change abuse-mitigation thresholds | SIGNUP_PER_IP_PER_DAY / API_KEY_PER_USER_PER_DAY env vars; default values are deliberately strict`
+6. `## Things to NOT reintroduce` 加一条:
+   > **Auto-link OAuth identity to any existing User by email alone** — 必须用 `email_verified_at IS NOT NULL` 做 gate。详见 spec § 6.1 Case 2 和上面的 Account Pre-hijacking 引用。
 
 **README 改动**:
 
@@ -514,47 +684,80 @@ structlog 记录 `/api/auth/oauth/**` 的请求时附加:
 - `test_callback_rejects_unknown_state`
 - `test_callback_rejects_mismatched_provider_in_state`
 - `test_callback_rejects_unverified_email`
-- `test_callback_creates_exchange_code_on_success`
-- `test_exchange_returns_token_pair_and_consumes_code`
+- `test_callback_sets_exchange_cookie_with_httponly_strict_path_60s`
+- `test_callback_does_not_put_exchange_code_in_redirect_url`  ← 确认 cookie-only 传递
+- `test_exchange_reads_cookie_not_body`
+- `test_exchange_returns_token_pair_and_clears_cookie`
+- `test_exchange_401_when_cookie_missing`
 - `test_exchange_401_when_code_already_used`
 - `test_exchange_401_when_user_disabled`
 - `test_link_start_requires_jwt`
 - `test_link_start_returns_redirect_url_and_stores_linker_in_state`
 - `test_link_mode_callback_attaches_to_current_user`
 - `test_link_mode_callback_redirects_to_settings_on_provider_in_use`
+- `test_link_mode_callback_does_not_set_exchange_cookie`
 - `test_return_to_open_redirect_rejected`
+- `test_signup_blocked_after_ip_quota_reached`  ← § 9.7.1 反滥用
+- `test_signup_quota_does_not_block_existing_user_login`
 
-### 11.3 现有测试回归
+### 11.3 密码自助管理测试
+
+`backend/tests/test_self_service_password.py`:
+
+- `test_set_password_for_oauth_only_user_succeeds_without_current`
+- `test_set_password_for_oauth_only_user_with_weak_password_rejected`
+- `test_change_password_requires_correct_current`
+- `test_change_password_revokes_all_refresh_tokens_except_returned_new_one`
+- `test_password_endpoint_rate_limited_5_per_min`
+- `test_password_change_writes_audit_log_with_password_was_null_flag`
+
+### 11.4 反滥用基线测试
+
+`backend/tests/test_abuse_mitigation.py`:
+
+- `test_api_key_creation_blocked_after_per_user_daily_quota`
+- `test_api_key_quota_resets_next_day`
+- `test_admin_user_not_subject_to_api_key_quota`  ← 如果接受 admin 豁免;否则改为「admin 也受限但默认值更高」
+
+### 11.5 现有测试回归
 
 跑一次 `tests/test_auth.py` —— 确认密码登录 / refresh / logout 不受 `password_hash` nullable 改造影响。
+跑一次 `tests/test_keys.py` —— 确认 API key 创建在 quota 内不变,只在超 quota 时 429。
 
-### 11.4 PKCE 验证
+### 11.6 PKCE 验证
 
 `test_callback_includes_code_verifier_when_calling_token_endpoint` —— 用 mock 捕获 Authlib 发给 token endpoint 的请求,断言带了 `code_verifier`。
 
-### 11.5 前端
+### 11.7 前端
 
 最小烟囱测试,跑通:
 
 - `/login` 页 OAuth 按钮可见(mock `/api/auth/oauth/providers` 返回 `{google: true, github: true}`)
-- `/auth/oauth/complete?code=xxx` 调 `exchange` 后正确跳转
+- `/login?error=email_already_registered` 显示正确文案
+- `/auth/oauth/complete` 挂载后调 `exchange`(cookie 在 jsdom 测试里手动注入)、成功后跳 `return_to`
+- `/settings/security` 设置密码后弹「其它设备需重新登录」 toast
+- `/settings/connections` 当用户只有一个登录方式时「解绑」按钮被禁用 + tooltip
 
 ## 12. 已知遗留 / Future Work
 
 - **SMTP 邮件验证流程**:本次只支持 admin 手动标记 verified。未来接入 SMTP 后,在 `/settings` 加「发送验证邮件」按钮,完成后 `email_verified_at = now()`,使现存密码用户可以通过 OAuth 自动合并。
-- **Token 存储升级**:当前 access token 在前端内存里。未来可升级为 httpOnly cookie + CSRF token,降低 XSS 暴露面。这是更大的前端重构,与本次 OAuth 解耦。
+- **Token 存储升级**:当前 access / refresh token 在前端内存里(本次只引入了一个 60s `oauth_exchange` cookie,不是 session cookie)。未来可升级为 httpOnly session cookie + CSRF token,降低 XSS 暴露面。这是更大的前端重构,与本次 OAuth 解耦。
 - **Refresh token family-level reuse detection**:CLAUDE.md 已经在 Known gaps 里列出,本次不解决。OAuth 路径用现有 `issue_token_pair`,所以继承现状。
+- **CAPTCHA / bot detection**:本次只引入 IP 限流 + 用户配额作为反滥用基线。下个迭代接 Cloudflare Turnstile(免费、隐私友好),在登录页前端放 widget、callback 后端校验 `cf-turnstile-response` 头。
+- **SMTP 邮件验证流程**:本次只支持 admin 手动标记 verified。未来接入 SMTP 后,在 `/settings` 加「发送验证邮件」按钮,完成后 `email_verified_at = now()`,使现存密码用户可以通过 OAuth 自动合并;同时支持「忘记密码」magic link,补足 OAuth-only 用户被锁死的另一条出路。
 - **Provider 端凭据轮换**:Google / GitHub OAuth client_secret 长期不变也能用,但建议每年轮换一次。本次不引入自动轮换机制。
 - **多 OIDC provider 通用化**:目前 Google / GitHub 各写一套 client 注册。如果未来加超过 3 个 provider,值得抽象成 OIDC discovery + 配置驱动。本次先 hardcode 两个 provider 在 `oauth_providers.py`。
+- **跨站部署支持**:本设计要求 frontend 与 backend 同站(共享 eTLD+1),因为 `oauth_exchange` cookie 用 `SameSite=Strict`。如果未来需要跨站部署(frontend 与 backend 在不同 eTLD+1),需要升级到 `SameSite=None; Secure` 并补加 CSRF token,或者切回 query string + fragment 的方案(不推荐)。
 
 ---
 
 ## 实施提交计划(给后续 writing-plans 的输入)
 
-建议拆三个 PR,但都在本设计的 scope 之内:
+建议拆四个 PR,都在本设计的 scope 之内:
 
-1. **后端 OAuth 基础设施**:数据模型 + Alembic + `OAuthLinkingService` + 路由 + Authlib 注册 + 单元测试。不动前端。
-2. **前端 UI**:登录页 OAuth 按钮 + `/auth/oauth/complete` + `/settings/connections` + admin panel 「标记邮箱已验证」按钮。
-3. **文档**:CLAUDE.md / README 同步更新(可以和 PR 1 合并)。
+1. **后端 OAuth 基础设施**:数据模型 + Alembic + `OAuthLinkingService` + 路由(start/callback/exchange/link/start) + Authlib 注册 + cookie 设置 + 单元测试 + 反滥用基线(IP signup 限流 + API key quota)+ Prometheus 指标 + CLAUDE.md 更新。不动前端。
+2. **后端密码自助管理**:`POST /api/auth/me/password` 端点 + 密码强度校验 + refresh token 撤销 + audit + 测试。独立于 OAuth,可并行做。
+3. **前端 UI**:登录页 OAuth 按钮 + 错误文案显示 + `/auth/oauth/complete` + `/settings/connections` + `/settings/security` + admin panel 「标记邮箱已验证」按钮。
+4. **文档 / README**:OAuth env 示例 + 部署指南(可以和 PR 1 合并)。
 
 writing-plans 阶段会把 PR 1 拆成更细的可独立验证 task。
