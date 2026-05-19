@@ -1,7 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field, ValidationInfo, field_validator
+from pydantic import Field, ValidationInfo, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
@@ -61,6 +61,18 @@ class Settings(BaseSettings):
     rate_limit_refresh_per_hour: int = Field(default=60)
     rate_limit_gateway_rpm: int = Field(default=60)
 
+    # --- OAuth ---
+    google_oauth_client_id: str | None = Field(default=None)
+    google_oauth_client_secret: str | None = Field(default=None)
+    github_oauth_client_id: str | None = Field(default=None)
+    github_oauth_client_secret: str | None = Field(default=None)
+    oauth_backend_base_url: str | None = Field(default=None)
+    oauth_frontend_base_url: str | None = Field(default=None)
+
+    # --- Anti-abuse thresholds ---
+    signup_per_ip_per_day: int = Field(default=10)
+    api_key_per_user_per_day: int = Field(default=5)
+
     # --- Worker ---
     worker_task_scan_interval_seconds: int = Field(default=30)
 
@@ -112,6 +124,58 @@ class Settings(BaseSettings):
                 "auto-generate, or set a strong password."
             )
         return v
+
+    @field_validator("signup_per_ip_per_day", "api_key_per_user_per_day")
+    @classmethod
+    def _positive_quota(cls, v: int, info: ValidationInfo) -> int:
+        if v < 1:
+            raise ValueError(f"{info.field_name} must be >= 1 (0 disables anti-abuse)")
+        return v
+
+    @field_validator("oauth_backend_base_url", "oauth_frontend_base_url")
+    @classmethod
+    def _oauth_url_https_in_prod(cls, v: str | None, info: ValidationInfo) -> str | None:
+        env = (info.data.get("env") or "").lower()
+        if env == "production" and v and not v.startswith("https://"):
+            raise ValueError(
+                f"{info.field_name} must use https:// in production (got {v!r})"
+            )
+        return v
+
+    @field_validator("google_oauth_client_secret", "github_oauth_client_secret")
+    @classmethod
+    def _client_id_requires_secret(cls, v: str | None, info: ValidationInfo) -> str | None:
+        env = (info.data.get("env") or "").lower()
+        if env != "production":
+            return v
+        provider = info.field_name.split("_oauth_client_secret")[0]
+        cid = info.data.get(f"{provider}_oauth_client_id")
+        if cid and not v:
+            raise ValueError(
+                f"{provider}_oauth_client_id is set but client_secret is missing"
+            )
+        return v
+
+    @model_validator(mode="after")
+    def _oauth_urls_same_site(self) -> "Settings":
+        if not self.is_production:
+            return self
+        if not (self.oauth_backend_base_url and self.oauth_frontend_base_url):
+            return self
+        from urllib.parse import urlparse
+        b = urlparse(self.oauth_backend_base_url).hostname or ""
+        f = urlparse(self.oauth_frontend_base_url).hostname or ""
+
+        def _registrable(h: str) -> str:
+            parts = h.rsplit(".", 2)
+            return ".".join(parts[-2:]) if len(parts) >= 2 else h
+
+        if _registrable(b) != _registrable(f):
+            raise ValueError(
+                f"oauth_backend_base_url ({b}) and oauth_frontend_base_url ({f}) "
+                f"must be same site (share registrable domain), otherwise SameSite=Strict cookies fail"
+            )
+        return self
 
 
 @lru_cache
