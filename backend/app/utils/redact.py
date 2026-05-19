@@ -25,6 +25,13 @@ REDACT_KEYS: frozenset[str] = frozenset({
     "access_token",
     "refresh_token",
     "key_hash",
+    # OAuth flow secrets — codes, PKCE pieces, state, provider tokens.
+    "code",
+    "state",
+    "code_verifier",
+    "code_challenge",
+    "id_token",
+    "client_secret",
 })
 
 REDACTED = "***redacted***"
