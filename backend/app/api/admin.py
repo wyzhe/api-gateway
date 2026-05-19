@@ -177,6 +177,8 @@ def update_user(
     if not u:
         raise HTTPException(status_code=404, detail="User not found")
     data = payload.model_dump(exclude_unset=True)
+    if user_id == admin.id and data.get("role") not in (None, "admin"):
+        raise HTTPException(status_code=400, detail="Cannot demote your own admin account")
     before = {k: getattr(u, k) for k in data.keys() if k != "password"}
     if "password" in data:
         u.password_hash = hash_password(data.pop("password"))
@@ -200,6 +202,8 @@ def disable_user(
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
 ) -> AdminUserOut:
+    if user_id == admin.id:
+        raise HTTPException(status_code=400, detail="Cannot disable your own admin account")
     u = db.get(User, user_id)
     if not u:
         raise HTTPException(status_code=404, detail="User not found")

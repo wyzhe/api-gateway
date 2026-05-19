@@ -29,6 +29,24 @@ export function fmtCompactMoney(value: number | string | null | undefined): stri
   return `$${n.toFixed(2)}`;
 }
 
+/**
+ * Format a balance value losslessly: keeps up to 6 decimals, never rounds
+ * sub-cent precision away. Use for actual account balances and ledger
+ * "balance after" fields where a debit must remain visible.
+ */
+export function fmtBalance(value: number | string | null | undefined): string {
+  if (value === null || value === undefined) return "—";
+  const n = typeof value === "string" ? Number(value) : value;
+  if (Number.isNaN(n)) return "—";
+  if (n === 0) return "$0";
+  const sign = n < 0 ? "-" : "";
+  const abs = Math.abs(n);
+  const fixed = abs.toFixed(6).replace(/0+$/, "").replace(/\.$/, "");
+  const [intPart, decPart = ""] = fixed.split(".");
+  const padded = decPart.length < 2 ? decPart.padEnd(2, "0") : decPart;
+  return `${sign}$${intPart}.${padded}`;
+}
+
 export function fmtDate(value: string | Date | null | undefined): string {
   if (!value) return "—";
   const d = typeof value === "string" ? new Date(value) : value;
