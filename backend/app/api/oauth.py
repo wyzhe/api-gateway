@@ -19,8 +19,8 @@ from sqlalchemy.orm import Session
 from ..config import get_settings
 from ..deps import get_current_user, get_db
 from ..logging_config import get_logger
-from ..metrics import auth_oauth_total
-from ..models import AuditLog
+from ..metrics import auth_oauth_total, auth_signup_rate_limited_total
+from ..models import AuditLog, OAuthIdentity
 from ..models import User as UserModel
 from ..schemas.auth import LoginResponse, UserOut
 from ..schemas.oauth import (
@@ -29,7 +29,12 @@ from ..schemas.oauth import (
     OAuthProvidersStatus,
 )
 from ..security import create_access_token
-from ..services import auth_service, oauth_linking_service, oauth_state_service
+from ..services import (
+    abuse_mitigation_service,
+    auth_service,
+    oauth_linking_service,
+    oauth_state_service,
+)
 from ..services.oauth_providers import (
     OAUTH_PROVIDERS,
     NormalizedProfile,
@@ -63,6 +68,13 @@ def _safe_return_to(raw: str | None) -> str:
     if not raw.startswith("/") or raw.startswith("//"):
         return "/"
     return raw
+
+
+def _client_ip(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
 
 
 def _pkce_challenge(verifier: str) -> str:
@@ -226,6 +238,36 @@ async def callback(
             )
 
     # login mode
+    client_ip = _client_ip(request)
+
+    # Predict if this is a signup (read-only, outside any transaction).
+    existing_identity = (
+        db.query(OAuthIdentity)
+          .filter_by(provider=provider, provider_subject=profile.sub)
+          .first()
+    )
+    will_signup = False
+    if existing_identity is None:
+        existing_user = (
+            db.query(UserModel).filter_by(email=profile.email.lower()).first()
+        )
+        will_signup = existing_user is None
+
+    if will_signup:
+        allowed, _count = await abuse_mitigation_service.check_and_incr_signup_ip(client_ip)
+        if not allowed:
+            _audit(db, "oauth_signup_rate_limited")
+            db.commit()
+            auth_signup_rate_limited_total.inc()
+            return RedirectResponse(
+                _frontend_url("/login?error=signup_rate_limited"),
+                status_code=302,
+            )
+
+    # Release the implicit read-only transaction so the next `with db.begin():`
+    # starts a fresh one.
+    db.rollback()
+
     try:
         with db.begin():
             outcome, user = oauth_linking_service.find_or_create_user(

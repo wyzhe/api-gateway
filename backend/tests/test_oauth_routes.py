@@ -342,3 +342,67 @@ def test_link_callback_attaches_identity_to_current_user(monkeypatch, jwt, test_
         db.commit()
     finally:
         db.close()
+
+
+def test_callback_signup_blocked_after_ip_quota_reached(monkeypatch):
+    import asyncio
+    _set_google_configured(monkeypatch)
+
+    # Force a low cap directly on the service's cached settings — reloading
+    # would not update the live FastAPI route (its endpoint reference is
+    # captured by the app at registration time).
+    from app.services import abuse_mitigation_service
+    monkeypatch.setattr(
+        abuse_mitigation_service.settings, "signup_per_ip_per_day", 1
+    )
+
+    # Clear Redis counter for this test (then drop the cached client so the
+    # next TestClient call binds Redis to a fresh event loop).
+    from app import redis_client as _rc
+    from app.redis_client import get_redis
+
+    async def _clear_and_close():
+        r = get_redis()
+        await r.delete(f"signup_ip_count:testclient:{abuse_mitigation_service._today()}")
+        await _rc.close_redis()
+
+    asyncio.get_event_loop().run_until_complete(_clear_and_close())
+
+    # 1st signup OK
+    _stub_profile(monkeypatch, "google", NormalizedProfile(
+        sub="quota-1", email="quota-1@example.com",
+        email_verified=True, name="Q1",
+    ))
+    state1 = asyncio.get_event_loop().run_until_complete(_seed_state())
+    r1 = client.get(f"/api/auth/oauth/google/callback?code=x&state={state1}",
+                    follow_redirects=False)
+    assert any(c.startswith("oauth_exchange=") for c in r1.headers.get_list("set-cookie")), r1.headers
+
+    # Drop the cached Redis client so the next TestClient call binds Redis
+    # to its own fresh event loop.
+    _rc.set_redis_for_tests(None)
+
+    # 2nd different email/sub — blocked
+    _stub_profile(monkeypatch, "google", NormalizedProfile(
+        sub="quota-2", email="quota-2@example.com",
+        email_verified=True, name="Q2",
+    ))
+    state2 = asyncio.get_event_loop().run_until_complete(_seed_state())
+    r2 = client.get(f"/api/auth/oauth/google/callback?code=x&state={state2}",
+                    follow_redirects=False)
+    assert "error=signup_rate_limited" in r2.headers["location"]
+
+    # cleanup DB rows (monkeypatch auto-restores the settings cap)
+    from app.database import SessionLocal
+    from app.models import OAuthIdentity, User
+    db = SessionLocal()
+    try:
+        db.query(OAuthIdentity).filter(
+            OAuthIdentity.provider_subject.in_(["quota-1", "quota-2"])
+        ).delete(synchronize_session=False)
+        db.query(User).filter(
+            User.email.in_(["quota-1@example.com", "quota-2@example.com"])
+        ).delete(synchronize_session=False)
+        db.commit()
+    finally:
+        db.close()
