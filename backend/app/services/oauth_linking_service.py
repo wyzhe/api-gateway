@@ -80,12 +80,12 @@ def find_or_create_user(
             raise OAuthEmailConflict(email)
         if user.status != "active":
             raise OAuthUserDisabled(user.id)
-        db.add(OAuthIdentity(
-            user_id=user.id,
+        user.oauth_identities.append(OAuthIdentity(
             provider=provider,
             provider_subject=subject,
             last_login_at=_now(),
         ))
+        db.flush()
         return ("link", user)
 
     user = User(
@@ -97,12 +97,67 @@ def find_or_create_user(
         balance=Decimal("0"),
         email_verified_at=_now(),
     )
-    db.add(user)
-    db.flush()
-    db.add(OAuthIdentity(
-        user_id=user.id,
+    user.oauth_identities.append(OAuthIdentity(
         provider=provider,
         provider_subject=subject,
         last_login_at=_now(),
     ))
+    db.add(user)
+    db.flush()
     return ("signup", user)
+
+
+def attach_to_existing(
+    db: Session,
+    *,
+    user_id: int,
+    provider: str,
+    subject: str,
+    email: str,
+) -> User:
+    email = email.lower()
+
+    existing = (
+        db.query(OAuthIdentity)
+          .filter_by(provider=provider, provider_subject=subject)
+          .with_for_update()
+          .one_or_none()
+    )
+    if existing is not None and existing.user_id != user_id:
+        raise OAuthProviderInUse(provider)
+    if existing is not None:
+        return existing.user
+
+    user = db.query(User).filter_by(id=user_id).with_for_update().one()
+    user.oauth_identities.append(OAuthIdentity(
+        provider=provider,
+        provider_subject=subject,
+        last_login_at=_now(),
+    ))
+    if user.email_verified_at is None and user.email == email:
+        user.email_verified_at = _now()
+    db.flush()
+    return user
+
+
+def detach(db: Session, *, user_id: int, identity_id: int) -> None:
+    identity = (
+        db.query(OAuthIdentity)
+          .filter_by(id=identity_id, user_id=user_id)
+          .with_for_update()
+          .one_or_none()
+    )
+    if identity is None:
+        raise OAuthIdentityNotFound()
+
+    user = db.query(User).filter_by(id=user_id).with_for_update().one()
+    other_count = (
+        db.query(func.count(OAuthIdentity.id))
+          .filter(OAuthIdentity.user_id == user_id,
+                  OAuthIdentity.id != identity_id)
+          .scalar()
+    )
+    if user.password_hash is None and other_count == 0:
+        raise OAuthCannotDetachLast()
+
+    db.delete(identity)

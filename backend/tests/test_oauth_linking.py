@@ -145,3 +145,168 @@ def test_refuses_disabled_user_via_identity():
     finally:
         _cleanup(db, [email])
         db.close()
+
+
+# ---- attach_to_existing ----
+
+def test_attach_to_existing_adds_identity_when_no_conflict():
+    db = SessionLocal()
+    email = "attach-1@example.com"
+    _cleanup(db, [email])
+    try:
+        with db.begin():
+            _, user = svc.find_or_create_user(
+                db, provider="google", subject="g-1",
+                email=email, name="X",
+            )
+            uid = user.id
+        with db.begin():
+            attached = svc.attach_to_existing(
+                db, user_id=uid, provider="github",
+                subject="gh-1", email=email,
+            )
+        assert attached.id == uid
+        db.refresh(attached)
+        assert {i.provider for i in attached.oauth_identities} == {"google", "github"}
+    finally:
+        _cleanup(db, [email])
+        db.close()
+
+
+def test_attach_to_existing_idempotent_for_same_user():
+    db = SessionLocal()
+    email = "attach-2@example.com"
+    _cleanup(db, [email])
+    try:
+        with db.begin():
+            _, user = svc.find_or_create_user(
+                db, provider="google", subject="g-2",
+                email=email, name="X",
+            )
+            uid = user.id
+        with db.begin():
+            svc.attach_to_existing(db, user_id=uid, provider="github",
+                                   subject="gh-2", email=email)
+        with db.begin():
+            svc.attach_to_existing(db, user_id=uid, provider="github",
+                                   subject="gh-2", email=email)
+        u = db.query(User).filter_by(id=uid).one()
+        assert len([i for i in u.oauth_identities if i.provider == "github"]) == 1
+    finally:
+        _cleanup(db, [email])
+        db.close()
+
+
+def test_attach_to_existing_rejects_provider_in_use_by_other_user():
+    db = SessionLocal()
+    emails = ["attach-3a@example.com", "attach-3b@example.com"]
+    _cleanup(db, emails)
+    try:
+        with db.begin():
+            _, u1 = svc.find_or_create_user(
+                db, provider="github", subject="gh-3",
+                email=emails[0], name="A",
+            )
+            _, u2 = svc.find_or_create_user(
+                db, provider="google", subject="g-3",
+                email=emails[1], name="B",
+            )
+            u1_id, u2_id = u1.id, u2.id
+        with pytest.raises(svc.OAuthProviderInUse):
+            with db.begin():
+                svc.attach_to_existing(
+                    db, user_id=u2_id, provider="github",
+                    subject="gh-3", email=emails[1],
+                )
+    finally:
+        _cleanup(db, emails)
+        db.close()
+
+
+def test_attach_sets_email_verified_when_matches_and_was_null():
+    db = SessionLocal()
+    email = "attach-verify@example.com"
+    _cleanup(db, [email])
+    try:
+        with db.begin():
+            u = User(email=email, password_hash="x", role="user",
+                    status="active", balance=Decimal("0"),
+                    email_verified_at=None)
+            db.add(u); db.flush()
+            uid = u.id
+        with db.begin():
+            svc.attach_to_existing(db, user_id=uid, provider="github",
+                                   subject="gh-verify", email=email)
+        u = db.query(User).filter_by(id=uid).one()
+        assert u.email_verified_at is not None
+    finally:
+        _cleanup(db, [email])
+        db.close()
+
+
+# ---- detach ----
+
+def test_detach_fails_when_last_login_method_oauth_only():
+    db = SessionLocal()
+    email = "detach-last@example.com"
+    _cleanup(db, [email])
+    try:
+        with db.begin():
+            _, user = svc.find_or_create_user(
+                db, provider="google", subject="g-last",
+                email=email, name="X",
+            )
+            iid = user.oauth_identities[0].id
+            uid = user.id
+        with pytest.raises(svc.OAuthCannotDetachLast):
+            with db.begin():
+                svc.detach(db, user_id=uid, identity_id=iid)
+    finally:
+        _cleanup(db, [email])
+        db.close()
+
+
+def test_detach_succeeds_when_password_exists():
+    db = SessionLocal()
+    email = "detach-with-pwd@example.com"
+    _cleanup(db, [email])
+    try:
+        with db.begin():
+            _, user = svc.find_or_create_user(
+                db, provider="google", subject="g-pwd",
+                email=email, name="X",
+            )
+            user.password_hash = "bcrypt-something"
+            iid = user.oauth_identities[0].id
+            uid = user.id
+        with db.begin():
+            svc.detach(db, user_id=uid, identity_id=iid)
+        u = db.query(User).filter_by(id=uid).one()
+        assert len(u.oauth_identities) == 0
+    finally:
+        _cleanup(db, [email])
+        db.close()
+
+
+def test_detach_succeeds_when_other_identity_remains():
+    db = SessionLocal()
+    email = "detach-other-id@example.com"
+    _cleanup(db, [email])
+    try:
+        with db.begin():
+            _, user = svc.find_or_create_user(
+                db, provider="google", subject="g-other",
+                email=email, name="X",
+            )
+            uid = user.id
+            iid = user.oauth_identities[0].id
+        with db.begin():
+            svc.attach_to_existing(db, user_id=uid, provider="github",
+                                   subject="gh-other", email=email)
+        with db.begin():
+            svc.detach(db, user_id=uid, identity_id=iid)
+        u = db.query(User).filter_by(id=uid).one()
+        assert {i.provider for i in u.oauth_identities} == {"github"}
+    finally:
+        _cleanup(db, [email])
+        db.close()
