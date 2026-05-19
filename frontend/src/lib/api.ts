@@ -1,4 +1,10 @@
 import { toast } from "sonner";
+import type {
+  OAuthIdentity,
+  OAuthProvidersStatus,
+  PasswordChangeResponse,
+  User,
+} from "./types";
 
 const BASE = (import.meta as unknown as { env: Record<string, string> }).env?.VITE_API_BASE_URL || "";
 
@@ -229,4 +235,76 @@ export async function* gatewayStream(
       }
     }
   }
+}
+
+// ---- OAuth ----
+
+export async function getOAuthProviders(): Promise<OAuthProvidersStatus> {
+  return api<OAuthProvidersStatus>("/api/auth/oauth/providers", { silent: true });
+}
+
+export function startOAuthLogin(
+  provider: "google" | "github",
+  returnTo: string = "/dashboard",
+): void {
+  const qs = new URLSearchParams({ return_to: returnTo });
+  window.location.assign(`${BASE}/api/auth/oauth/${provider}/start?${qs.toString()}`);
+}
+
+export async function startOAuthLink(
+  provider: "google" | "github",
+  returnTo: string = "/settings/connections",
+): Promise<void> {
+  const resp = await api<{ redirect_url: string }>(
+    `/api/auth/oauth/${provider}/link/start`,
+    { method: "POST", body: { return_to: returnTo } },
+  );
+  window.location.assign(resp.redirect_url);
+}
+
+export async function exchangeOAuth(): Promise<{
+  access_token: string;
+  refresh_token: string;
+  user: User;
+}> {
+  const res = await fetch(`${BASE}/api/auth/oauth/exchange`, {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new ApiError(res.status, txt, `Exchange failed (${res.status})`);
+  }
+  return res.json();
+}
+
+// ---- Settings: connections ----
+
+export async function listConnections(): Promise<OAuthIdentity[]> {
+  return api<OAuthIdentity[]>("/api/settings/connections");
+}
+
+export async function detachConnection(identityId: number): Promise<void> {
+  await api(`/api/settings/connections/${identityId}`, { method: "DELETE", silent: true });
+}
+
+// ---- Settings: password ----
+
+export async function setOrChangePassword(
+  currentPassword: string | null,
+  newPassword: string,
+): Promise<PasswordChangeResponse> {
+  return api<PasswordChangeResponse>("/api/auth/me/password", {
+    method: "POST",
+    body: {
+      current_password: currentPassword,
+      new_password: newPassword,
+    },
+  });
+}
+
+// ---- Admin: mark email verified ----
+
+export async function adminMarkEmailVerified(userId: number): Promise<void> {
+  await api(`/api/admin/users/${userId}/mark-email-verified`, { method: "POST" });
 }
