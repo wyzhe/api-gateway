@@ -28,13 +28,21 @@ resp = client.chat.completions.create(
 )
 print(resp.choices[0].message.content)`;
 
-function PrimaryCta({ size = "default", iconClass = "h-3.5 w-3.5" }: { size?: "default" | "lg"; iconClass?: string }) {
+function PrimaryCta({
+  size = "default",
+  iconClass = "h-3.5 w-3.5",
+  className,
+}: {
+  size?: "default" | "lg";
+  iconClass?: string;
+  className?: string;
+}) {
   const t = useT();
   const { user } = useAuth();
   const to = user ? "/dashboard" : "/login";
   const label = user ? t("landing.nav.openDashboard") : t("landing.nav.signIn");
   return (
-    <Button asChild size={size}>
+    <Button asChild size={size} className={className}>
       <Link to={to}>{label} <ArrowRight className={iconClass} /></Link>
     </Button>
   );
@@ -80,7 +88,7 @@ export function LandingPage() {
           </nav>
           <div className="flex items-center gap-2">
             <LanguageSwitcher />
-            <PrimaryCta />
+            <PrimaryCta className="min-w-[96px]" />
           </div>
         </div>
       </header>
@@ -107,8 +115,8 @@ export function LandingPage() {
             {t("landing.hero.lede")}
           </p>
           <div className="mt-8 flex flex-wrap items-center gap-3">
-            <PrimaryCta size="lg" iconClass="h-4 w-4" />
-            <Button asChild variant="outline" size="lg">
+            <PrimaryCta size="lg" iconClass="h-4 w-4" className="min-w-[160px]" />
+            <Button asChild variant="outline" size="lg" className="min-w-[160px]">
               <a href="#quickstart">{t("landing.hero.ctaQuickstart")}</a>
             </Button>
             <span className="text-xs text-muted-foreground mono">{t("landing.hero.ctaNoSignup")}</span>

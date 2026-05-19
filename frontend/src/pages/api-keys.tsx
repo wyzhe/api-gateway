@@ -251,7 +251,7 @@ export function ApiKeysPage() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-6 px-2 text-[11px]"
+                        className="h-6 px-2 text-[11px] min-w-[64px]"
                         onClick={() => onToggle(k)}
                         title={k.status === "active" ? t("apiKeys.disable") : t("apiKeys.enable")}
                       >
