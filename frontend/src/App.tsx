@@ -20,6 +20,7 @@ const AdminProvidersPage = lazy(() => import("@/pages/admin/providers").then((m)
 const AdminLogsPage = lazy(() => import("@/pages/admin/logs").then((m) => ({ default: m.AdminLogsPage })));
 const OAuthCompletePage = lazy(() => import("@/pages/oauth-complete").then((m) => ({ default: m.OAuthCompletePage })));
 const SettingsConnectionsPage = lazy(() => import("@/pages/settings-connections").then((m) => ({ default: m.SettingsConnectionsPage })));
+const SettingsSecurityPage = lazy(() => import("@/pages/settings-security").then((m) => ({ default: m.SettingsSecurityPage })));
 
 function Workspace({ children }: { children: React.ReactNode }) {
   return (
@@ -51,6 +52,7 @@ export default function App() {
 
         <Route path="/dashboard" element={<Workspace><DashboardPage /></Workspace>} />
         <Route path="/settings/connections" element={<Workspace><SettingsConnectionsPage /></Workspace>} />
+        <Route path="/settings/security" element={<Workspace><SettingsSecurityPage /></Workspace>} />
         <Route path="/keys" element={<Workspace><ApiKeysPage /></Workspace>} />
         <Route path="/logs" element={<Workspace><UsageLogsPage /></Workspace>} />
         <Route path="/playground" element={<Workspace><PlaygroundPage /></Workspace>} />
