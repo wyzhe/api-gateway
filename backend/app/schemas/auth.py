@@ -60,4 +60,16 @@ class UserOut(BaseModel):
         return super().model_validate(obj, *args, **kwargs)
 
 
+class PasswordChangeRequest(BaseModel):
+    current_password: str | None = None
+    new_password: str = Field(min_length=1)
+
+
+class PasswordChangeResponse(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+    access_expires_in: int
+
+
 LoginResponse.model_rebuild()
