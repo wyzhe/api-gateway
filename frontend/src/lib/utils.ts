@@ -6,6 +6,19 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+/** API key shape — kept in sync with backend `API_KEY_PREFIX` (security.py). */
+export const API_KEY_RE = /^sk-[A-Za-z0-9_-]+$/;
+
+/** Copy text to the clipboard. Returns true on success. Caller renders toasts. */
+export async function copyToClipboard(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function fmtCompactMoney(value: number | string | null | undefined): string {
   if (value === null || value === undefined) return "—";
   const n = typeof value === "string" ? Number(value) : value;

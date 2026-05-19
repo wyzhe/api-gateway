@@ -40,7 +40,6 @@ export function GenerationsPage() {
     <div>
       <PageHeader
         title={t("generations.title")}
-        subtitle={t("generations.subtitle")}
         actions={<Button variant="outline" onClick={refresh}>{t("generations.refreshBtn")}</Button>}
       />
 

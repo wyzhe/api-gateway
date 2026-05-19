@@ -77,7 +77,7 @@ def hash_refresh_token(plain: str) -> str:
 
 # --- API keys ---
 
-API_KEY_PREFIX = "lgw_"
+API_KEY_PREFIX = "sk-"
 API_KEY_BODY_LEN = 32
 
 

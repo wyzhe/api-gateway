@@ -65,7 +65,7 @@ export function AdminProvidersPage() {
 
   return (
     <div>
-      <PageHeader title={t("admin.providers.title")} subtitle={t("admin.providers.subtitle")} />
+      <PageHeader title={t("admin.providers.title")} />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         {rows.map((p) => (

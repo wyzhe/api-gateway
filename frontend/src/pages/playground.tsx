@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Play, Square } from "lucide-react";
+import { Image as ImageIcon, Play, Square, Type as TypeIcon, Video as VideoIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,13 +17,12 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { TypeBadge } from "@/components/type-badge";
 import { PageHeader } from "@/components/shell";
 import { api, gateway, gatewayStream } from "@/lib/api";
 import { useDefaultModel } from "@/lib/hooks";
 import { useT } from "@/lib/i18n";
 import type { ApiKey, Model } from "@/lib/types";
-import { fmtCompactMoney, reqStatusKey } from "@/lib/utils";
+import { API_KEY_RE, fmtCompactMoney, reqStatusKey } from "@/lib/utils";
 
 export function PlaygroundPage() {
   const t = useT();
@@ -64,10 +63,7 @@ export function PlaygroundPage() {
 
   return (
     <div>
-      <PageHeader
-        title={t("playground.title")}
-        subtitle={t("playground.subtitle")}
-      />
+      <PageHeader title={t("playground.title")} />
 
       <Card className="mb-4">
         <CardContent className="flex flex-wrap items-end gap-3">
@@ -79,26 +75,33 @@ export function PlaygroundPage() {
               className="mono"
               value={keyValue}
               onChange={(e) => onKeyChange(e.target.value)}
-              pattern="^lgw_[A-Za-z0-9_-]+$"
-              aria-invalid={!!keyValue && !/^lgw_[A-Za-z0-9_-]+$/.test(keyValue)}
+              pattern={API_KEY_RE.source}
+              aria-invalid={!!keyValue && !API_KEY_RE.test(keyValue)}
             />
-            <span className="text-[10px] text-muted-foreground">
-              {t("playground.apiKeySessionWarning")}
-              {keys.length > 0 &&
-                t("playground.apiKeyActive", {
+            {keys.length > 0 && (
+              <span className="text-[10px] text-muted-foreground">
+                {t("playground.apiKeyActive", {
                   count: keys.length,
                   prefixes: keys.map((k) => k.key_prefix).join(", "),
                 })}
-            </span>
+              </span>
+            )}
           </div>
         </CardContent>
       </Card>
 
       <Tabs defaultValue="chat">
         <TabsList>
-          <TabsTrigger value="chat"><TypeBadge type="text" />&nbsp;{t("playground.tabChat")}</TabsTrigger>
-          <TabsTrigger value="image"><TypeBadge type="image" />&nbsp;{t("playground.tabImage")}</TabsTrigger>
-          <TabsTrigger value="video"><TypeBadge type="video" />&nbsp;{t("playground.tabVideo")}</TabsTrigger>
+          {([
+            { value: "chat", Icon: TypeIcon, label: t("playground.tabChat") },
+            { value: "image", Icon: ImageIcon, label: t("playground.tabImage") },
+            { value: "video", Icon: VideoIcon, label: t("playground.tabVideo") },
+          ] as const).map(({ value, Icon, label }) => (
+            <TabsTrigger key={value} value={value} className="gap-1.5 min-w-24">
+              <Icon className="h-3.5 w-3.5" />
+              {label}
+            </TabsTrigger>
+          ))}
         </TabsList>
 
         <TabsContent value="chat">

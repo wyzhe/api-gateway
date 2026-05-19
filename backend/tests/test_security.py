@@ -40,8 +40,8 @@ def test_jwt_rejects_garbage():
 
 def test_api_key_generation_shape():
     full, prefix, hashed = generate_api_key()
-    assert full.startswith("lgw_")
-    assert len(full) == 4 + 32  # "lgw_" + 32 body chars
+    assert full.startswith("sk-")
+    assert len(full) == 3 + 32  # "sk-" + 32 body chars
     assert prefix == full[:11]
     assert hashed == hash_api_key(full)
     # Different invocations give different keys
@@ -50,6 +50,6 @@ def test_api_key_generation_shape():
 
 
 def test_api_key_hash_is_deterministic():
-    k = "lgw_abc123"
+    k = "sk-abc123"
     assert hash_api_key(k) == hash_api_key(k)
     assert len(hash_api_key(k)) == 64  # sha256 hex

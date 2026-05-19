@@ -34,7 +34,7 @@ def test_api_key_lifecycle(client, jwt):
 
     created = client.post("/api/keys", headers=hdr, json={"name": "test-key"}).json()
     full = created["key"]
-    assert full.startswith("lgw_")
+    assert full.startswith("sk-")
     assert created["key_prefix"] == full[:11]
 
     rows = client.get("/api/keys", headers=hdr).json()
@@ -56,6 +56,6 @@ def test_non_admin_cannot_access_admin_routes(client, jwt):
 
 
 def test_gateway_endpoint_rejects_jwt(client, jwt):
-    """`/v1/*` must use the user API key (lgw_), not the dashboard JWT."""
+    """`/v1/*` must use the user API key (sk-), not the dashboard JWT."""
     r = client.get("/v1/models", headers={"Authorization": f"Bearer {jwt}"})
     assert r.status_code == 401

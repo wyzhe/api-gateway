@@ -1,4 +1,4 @@
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { Check, Copy, Pencil, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { CodeBlock } from "@/components/ui/code-block";
@@ -18,7 +18,7 @@ import { PageHeader } from "@/components/shell";
 import { api } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import type { ApiKey } from "@/lib/types";
-import { fmtCompactMoney, fmtDate, limitBarColor, parseLimit } from "@/lib/utils";
+import { copyToClipboard, fmtCompactMoney, fmtDate, limitBarColor, parseLimit } from "@/lib/utils";
 
 type CreatedKey = ApiKey & { key: string };
 
@@ -49,6 +49,14 @@ export function ApiKeysPage() {
   const [editRpm, setEditRpm] = useState("");
   const [editTpm, setEditTpm] = useState("");
   const [editConc, setEditConc] = useState("");
+  const [revealCopied, setRevealCopied] = useState(false);
+
+  const copyText = async (text: string) => {
+    const ok = await copyToClipboard(text);
+    if (ok) toast.success(t("common.toastCopied"));
+    else toast.error(t("common.toastCopyFailed"));
+    return ok;
+  };
 
   const refresh = async () => {
     const rows = await api<ApiKey[]>("/api/keys");
@@ -162,7 +170,6 @@ export function ApiKeysPage() {
     <div>
       <PageHeader
         title={t("apiKeys.title")}
-        subtitle={t("apiKeys.subtitle")}
         actions={
           <Button onClick={() => setOpenCreate(true)}>
             <Plus className="h-4 w-4" /> {t("apiKeys.createBtn")}
@@ -198,7 +205,20 @@ export function ApiKeysPage() {
               return (
                 <TableRow key={k.id}>
                   <TableCell className="font-medium">{k.name}</TableCell>
-                  <TableCell className="mono text-xs">{k.key_prefix}…</TableCell>
+                  <TableCell className="mono text-xs">
+                    <span className="inline-flex items-center gap-1.5">
+                      <span>{k.key_prefix}…</span>
+                      <button
+                        type="button"
+                        onClick={() => copyText(k.key_prefix)}
+                        className="text-muted-foreground hover:text-foreground"
+                        aria-label={t("apiKeys.revealDialog.copyBtn")}
+                        title={t("apiKeys.revealDialog.copyBtn")}
+                      >
+                        <Copy className="h-3 w-3" />
+                      </button>
+                    </span>
+                  </TableCell>
                   <TableCell>
                     <Badge variant={k.status === "active" ? "success" : "warn"}>{statusLabel(k.status)}</Badge>
                   </TableCell>
@@ -329,7 +349,15 @@ export function ApiKeysPage() {
       </Dialog>
 
       {/* Reveal modal — only time the full key is visible */}
-      <Dialog open={!!createdKey} onOpenChange={(o) => !o && setCreatedKey(null)}>
+      <Dialog
+        open={!!createdKey}
+        onOpenChange={(o) => {
+          if (!o) {
+            setCreatedKey(null);
+            setRevealCopied(false);
+          }
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{t("apiKeys.revealDialog.title")}</DialogTitle>
@@ -348,8 +376,26 @@ export function ApiKeysPage() {
               <CodeBlock code={createdKey.key} lang="apikey" />
             </div>
           )}
-          <div className="flex justify-end mt-2">
-            <Button onClick={() => setCreatedKey(null)}>{t("apiKeys.revealDialog.acknowledge")}</Button>
+          <div className="flex justify-end gap-2 mt-2">
+            {createdKey && (
+              <Button
+                variant="outline"
+                onClick={async () => {
+                  const ok = await copyText(createdKey.key);
+                  if (ok) {
+                    setRevealCopied(true);
+                    setTimeout(() => setRevealCopied(false), 1500);
+                  }
+                }}
+              >
+                {revealCopied ? (
+                  <><Check className="h-3.5 w-3.5" /> {t("common.copied")}</>
+                ) : (
+                  <><Copy className="h-3.5 w-3.5" /> {t("apiKeys.revealDialog.copyBtn")}</>
+                )}
+              </Button>
+            )}
+            <Button onClick={() => { setCreatedKey(null); setRevealCopied(false); }}>{t("apiKeys.revealDialog.acknowledge")}</Button>
           </div>
         </DialogContent>
       </Dialog>

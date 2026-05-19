@@ -1,7 +1,8 @@
 import { Check, Copy } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils";
+import { useT } from "@/lib/i18n";
+import { cn, copyToClipboard } from "@/lib/utils";
 
 interface CodeBlockProps {
   code: string;
@@ -18,15 +19,15 @@ export function CodeBlock({
   copyable = true,
   maxHeight = "32rem",
 }: CodeBlockProps) {
+  const t = useT();
   const [copied, setCopied] = useState(false);
   const onCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(code);
+    if (await copyToClipboard(code)) {
       setCopied(true);
-      toast.success("Copied to clipboard");
+      toast.success(t("common.toastCopied"));
       setTimeout(() => setCopied(false), 1500);
-    } catch {
-      toast.error("Failed to copy");
+    } else {
+      toast.error(t("common.toastCopyFailed"));
     }
   };
   return (

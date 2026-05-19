@@ -143,7 +143,6 @@ export function AdminUsersPage() {
     <div>
       <PageHeader
         title={t("admin.users.title")}
-        subtitle={t("admin.users.subtitleCount", { count: rows.length })}
         actions={
           <Button onClick={() => setOpenCreate(true)}>
             <Plus className="h-4 w-4" /> {t("admin.users.newUserBtn")}

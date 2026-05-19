@@ -13,7 +13,7 @@ def test_v1_models_via_user_key(client, user_api_key):
 
 
 def test_v1_rejects_invalid_key(client):
-    r = client.get("/v1/models", headers={"Authorization": "Bearer lgw_not-real"})
+    r = client.get("/v1/models", headers={"Authorization": "Bearer sk-not-real"})
     assert r.status_code == 401
 
 

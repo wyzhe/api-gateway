@@ -45,7 +45,7 @@ export function UsageLogsPage() {
 
   return (
     <div>
-      <PageHeader title={t("usageLogs.title")} subtitle={t("usageLogs.subtitle")} />
+      <PageHeader title={t("usageLogs.title")} />
 
       <div className="flex flex-wrap gap-2 mb-3">
         <Select value={type} onValueChange={setType}>

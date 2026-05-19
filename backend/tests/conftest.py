@@ -118,7 +118,7 @@ def jwt_funded(client, test_user_funded) -> str:
 
 @pytest.fixture
 def user_api_key(client, jwt) -> str:
-    """Freshly-created lgw_ key for /v1/* calls. Returns the plaintext."""
+    """Freshly-created sk- key for /v1/* calls. Returns the plaintext."""
     r = client.post(
         "/api/keys", headers={"Authorization": f"Bearer {jwt}"}, json={"name": "pytest"}
     )

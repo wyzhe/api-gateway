@@ -65,10 +65,7 @@ export function ModelsPage() {
 
   return (
     <div>
-      <PageHeader
-        title={t("models.title")}
-        subtitle={t("models.subtitle", { count: models.length })}
-      />
+      <PageHeader title={t("models.title")} />
 
       <Tabs defaultValue="all">
         <TabsList>

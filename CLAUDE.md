@@ -33,9 +33,9 @@ When you need to change anything that talks to APIMart, **the only file that sho
 
 3. **Failed requests never debit.** Persist `status="failed"` with `cost=0`. Async task transitions from `running → succeeded` do debit, but only inside the locked finalization path. Async task transitions from `running → failed` never debit; if a debit was somehow already taken (shouldn't be possible by construction), it must be refunded via `billing_service.refund()`.
 
-4. **Plain-text API keys never touch the DB.** Generation in `app/security.py` returns `(full_key, prefix, sha256_hash)`. The full key is returned exactly once on creation. Lookups go via `sha256(presented_key)` → `key_hash`. Bearer key format is enforced (`lgw_…`) before the DB lookup.
+4. **Plain-text API keys never touch the DB.** Generation in `app/security.py` returns `(full_key, prefix, sha256_hash)`. The full key is returned exactly once on creation. Lookups go via `sha256(presented_key)` → `key_hash`. Bearer key format is enforced (`sk-…`) before the DB lookup.
 
-5. **The `/api/*` endpoints take a JWT. The `/v1/*` endpoints take a user API key (`lgw_…`).** These are distinct auth modes with distinct dependencies. `deps.get_current_user` (JWT) and `deps.get_api_key_user` (API key) enforce this. JWTs have an access/refresh pair — only refresh tokens hit the DB (revocable). Access tokens are short-lived (15 min default) and not revocable mid-window.
+5. **The `/api/*` endpoints take a JWT. The `/v1/*` endpoints take a user API key (`sk-…`).** These are distinct auth modes with distinct dependencies. `deps.get_current_user` (JWT) and `deps.get_api_key_user` (API key) enforce this. JWTs have an access/refresh pair — only refresh tokens hit the DB (revocable). Access tokens are short-lived (15 min default) and not revocable mid-window.
 
 6. **Don't hardcode model lists in the frontend.** The catalog comes from `GET /api/models` (user side) and `GET /api/admin/models` (admin). Pricing, visibility, public-vs-upstream-name mapping all live in the `models` table.
 
@@ -135,6 +135,7 @@ A failed worker job is retried with exponential backoff. Worker job exceptions a
 
 ## Frontend conventions
 
+- **Visual design — read `DESIGN.md` before any UI change.** Tokens, components, do/don't, layout rules, and the "what mistakes are easy to make in this codebase" list all live there. When the code and `DESIGN.md` disagree, the code is wrong; fix the code, don't retro-edit the doc. If you're adding a new visual primitive, document it under `## Components` in `DESIGN.md` in the same change.
 - All shadcn-style primitives are hand-written under `src/components/ui/`. No `shadcn/ui` CLI was used because it requires interactive prompts. New primitives go there too.
 - Dark theme is the only theme. Tokens live in `src/index.css` under `:root` and are exported into Tailwind via `@theme inline`.
 - API calls go through `src/lib/api.ts`. JWT access token is auto-attached for `/api/*`. The client transparently refreshes on 401 if a refresh token is present. `gateway()` and `gatewayStream()` are for `/v1/*` with a user API key.

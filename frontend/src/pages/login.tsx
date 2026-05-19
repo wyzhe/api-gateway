@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
+import { BrandMark } from "@/components/brand-mark";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -14,8 +15,8 @@ export function LoginPage() {
   const loc = useLocation();
   const t = useT();
   const redirectTo = (loc.state as { from?: string } | null)?.from ?? "/dashboard";
-  const [email, setEmail] = useState("admin@example.com");
-  const [password, setPassword] = useState("admin123");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -43,14 +44,7 @@ export function LoginPage() {
       </div>
       <div className="w-full max-w-sm">
         <div className="flex items-center justify-center gap-2 mb-6">
-          <div
-            className="h-7 w-7 rounded-md flex items-center justify-center"
-            style={{ background: "var(--accent)" }}
-          >
-            <span className="text-sm font-bold" style={{ color: "var(--accent-foreground)" }}>
-              R
-            </span>
-          </div>
+          <BrandMark className="h-7 w-7" />
           <span className="font-semibold">Relay</span>
         </div>
 
@@ -91,9 +85,6 @@ export function LoginPage() {
                 {busy ? t("login.submitting") : t("login.submit")}
               </Button>
             </form>
-            <p className="text-xs text-muted-foreground mt-4">
-              {t("login.defaultHint", { email: "admin@example.com", password: "admin123" })}
-            </p>
           </CardContent>
         </Card>
       </div>

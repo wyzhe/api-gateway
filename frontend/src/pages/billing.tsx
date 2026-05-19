@@ -39,10 +39,7 @@ export function BillingPage() {
 
   return (
     <div>
-      <PageHeader
-        title={t("billing.title")}
-        subtitle={t("billing.subtitle")}
-      />
+      <PageHeader title={t("billing.title")} />
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
         <KpiTile label={t("billing.kpiBalance")} value={fmtCompactMoney(summary?.balance)} />

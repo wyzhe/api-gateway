@@ -7,23 +7,23 @@ export function DocsPage() {
   const t = useT();
   const base = location.origin;
   const curlChat = `curl ${base}/v1/chat/completions \\
-  -H "Authorization: Bearer lgw_YOUR_KEY" \\
+  -H "Authorization: Bearer sk-YOUR_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
     "model": "gpt-4o",
     "messages": [{"role": "user", "content": "Hello"}]
   }'`;
   const curlImg = `curl ${base}/v1/images/generations \\
-  -H "Authorization: Bearer lgw_YOUR_KEY" \\
+  -H "Authorization: Bearer sk-YOUR_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{"model":"gpt-image-2","prompt":"a small red apple","resolution":"1k"}'
 
 # returns { "task_id": "task_42", ... }
 
 curl ${base}/v1/tasks/task_42 \\
-  -H "Authorization: Bearer lgw_YOUR_KEY"`;
+  -H "Authorization: Bearer sk-YOUR_KEY"`;
   const curlVid = `curl ${base}/v1/videos/generations \\
-  -H "Authorization: Bearer lgw_YOUR_KEY" \\
+  -H "Authorization: Bearer sk-YOUR_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
     "model":"sora2",
@@ -35,7 +35,7 @@ curl ${base}/v1/tasks/task_42 \\
   const pySdk = `from openai import OpenAI
 
 client = OpenAI(
-    api_key="lgw_YOUR_KEY",
+    api_key="sk-YOUR_KEY",
     base_url="${base}/v1",
 )
 
@@ -47,7 +47,7 @@ print(resp.choices[0].message.content)`;
 
   return (
     <div className="max-w-4xl">
-      <PageHeader title={t("docs.title")} subtitle={t("docs.subtitle")} />
+      <PageHeader title={t("docs.title")} />
 
       <div className="flex flex-col gap-4">
         <Card>
@@ -55,7 +55,7 @@ print(resp.choices[0].message.content)`;
           <CardContent className="text-sm text-muted-foreground flex flex-col gap-3">
             <p>
               All <span className="mono text-foreground">/v1/*</span> calls require an{" "}
-              <span className="mono text-foreground">Authorization: Bearer lgw_…</span> header. Create a key
+              <span className="mono text-foreground">Authorization: Bearer sk-…</span> header. Create a key
               on the <span className="text-foreground">API Keys</span> page.
             </p>
             <p>Dashboard APIs under <span className="mono text-foreground">/api/*</span> use a JWT obtained at <span className="mono text-foreground">/api/auth/login</span>.</p>
@@ -79,7 +79,7 @@ print(resp.choices[0].message.content)`;
           <CardHeader><CardTitle>{t("docs.sectionImageGeneration")}</CardTitle></CardHeader>
           <CardContent className="flex flex-col gap-3">
             <p className="text-sm text-muted-foreground">
-              APIMart processes images asynchronously. The gateway returns a{" "}
+              Image generation is asynchronous. The gateway returns a{" "}
               <span className="mono text-foreground">task_id</span>; poll{" "}
               <span className="mono text-foreground">/v1/tasks/{`{task_id}`}</span> until status is{" "}
               <span className="mono text-foreground">succeeded</span>.

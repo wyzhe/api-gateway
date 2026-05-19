@@ -36,7 +36,7 @@ export function DashboardPage() {
 
   return (
     <div>
-      <PageHeader title={t("dashboard.title")} subtitle={t("dashboard.subtitle")} />
+      <PageHeader title={t("dashboard.title")} />
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
         <KpiTile
@@ -119,7 +119,7 @@ export function DashboardPage() {
             empty={t("dashboard.noDataYet")}
             items={data?.top_api_keys_by_usage ?? []}
             getKey={(k) => k.api_key_id ?? -1}
-            getLabel={(k) => `${k.api_key_prefix}…`}
+            getLabel={(k) => k.api_key_prefix ? `${k.api_key_prefix}…` : t("dashboard.deletedKey")}
             getValue={(k) => t("dashboard.statValueRequestsCost", { requests: k.requests, cost: fmtCompactMoney(k.cost) })}
             onClick={(k) => k.api_key_id && nav(`/logs?api_key_id=${k.api_key_id}`)}
           />

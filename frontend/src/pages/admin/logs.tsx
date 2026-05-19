@@ -41,7 +41,7 @@ export function AdminLogsPage() {
 
   return (
     <div>
-      <PageHeader title={t("admin.logs.title")} subtitle={t("admin.logs.subtitle")} />
+      <PageHeader title={t("admin.logs.title")} />
       <div className="flex flex-wrap gap-2 mb-3">
         <Select value={type} onValueChange={setType}>
           <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>

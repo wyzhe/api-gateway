@@ -1,6 +1,6 @@
 """OpenAI-compatible gateway routes mounted at /v1/*.
 
-Authentication: user API key (Authorization: Bearer lgw_...).
+Authentication: user API key (Authorization: Bearer sk-...).
 NOT the dashboard JWT — those endpoints live under /api/.
 """
 from __future__ import annotations
@@ -183,7 +183,7 @@ def _extract_cache_tokens(usage: dict | None) -> tuple[int, int]:
 async def _api_key_rate_identifier(request: Request) -> str:
     """Rate-limit key for /v1/*: prefer the api key hash; fall back to client IP."""
     auth = request.headers.get("authorization", "")
-    if auth.lower().startswith("bearer ") and auth[7:].startswith("lgw_"):
+    if auth.lower().startswith("bearer ") and auth[7:].startswith("sk-"):
         return f"k:{hash_api_key(auth[7:].strip())}"
     if request.client is None:
         return "ip:unknown"

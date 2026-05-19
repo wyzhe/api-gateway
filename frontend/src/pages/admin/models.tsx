@@ -263,7 +263,6 @@ export function AdminModelsPage() {
     <div>
       <PageHeader
         title={t("admin.models.title")}
-        subtitle={t("admin.models.subtitle", { count: rows.length })}
         actions={
           <Button onClick={startCreate}>
             <Plus className="h-4 w-4" /> {t("admin.models.newModelBtn")}

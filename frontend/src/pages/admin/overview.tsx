@@ -24,7 +24,7 @@ export function AdminOverviewPage() {
 
   return (
     <div>
-      <PageHeader title={t("admin.overview.title")} subtitle={t("admin.overview.subtitle")} />
+      <PageHeader title={t("admin.overview.title")} />
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <KpiTile label={t("admin.overview.kpiUsers")} value={data?.users ?? 0} />
         <KpiTile

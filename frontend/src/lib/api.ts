@@ -146,7 +146,7 @@ export async function api<T = unknown>(path: string, opts: ReqOpts = {}): Promis
  * an opaque JSON record because the Anthropic/OpenAI/task envelopes differ. */
 export type GatewayBody = Record<string, unknown> | unknown[] | string | null;
 
-/* Gateway API call using a USER api key (lgw_...). For Playground. */
+/* Gateway API call using a USER api key (sk-...). For Playground. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function gateway(
   path: string,

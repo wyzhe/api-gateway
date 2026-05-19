@@ -17,6 +17,7 @@ import {
 import type { ReactNode } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
+import { BrandMark } from "@/components/brand-mark";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { useAuth } from "@/lib/auth";
 import { useT, type TKey } from "@/lib/i18n";
@@ -52,18 +53,8 @@ export function Shell({ children }: { children: ReactNode }) {
     <div className="flex h-screen overflow-hidden">
       <aside className="w-56 shrink-0 border-r border-border bg-surface flex flex-col">
         <div className="p-4 border-b border-border">
-          <Link to="/dashboard" className="flex items-center gap-2">
-            <div
-              className="h-6 w-6 rounded-md flex items-center justify-center"
-              style={{ background: "var(--accent)" }}
-            >
-              <span
-                className="text-[12px] font-bold"
-                style={{ color: "var(--accent-foreground)" }}
-              >
-                R
-              </span>
-            </div>
+          <Link to="/" className="flex items-center gap-2" title={t("nav.toLanding")}>
+            <BrandMark />
             <span className="font-semibold text-sm">Relay</span>
           </Link>
         </div>
@@ -91,17 +82,17 @@ export function Shell({ children }: { children: ReactNode }) {
             </NavLink>
           ))}
 
-          {user?.role === "admin" && (
+          {user?.role === "admin" && isAdminArea && (
             <>
               <div className="text-[10px] uppercase tracking-wider text-muted-foreground px-2 py-1.5 mt-4">
                 {t("nav.sectionSwitch")}
               </div>
               <Link
-                to={isAdminArea ? "/dashboard" : "/admin"}
+                to="/dashboard"
                 className="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-muted-foreground hover:text-foreground hover:bg-surface-2"
               >
                 <Shield className="h-4 w-4" />
-                {isAdminArea ? t("nav.toWorkspace") : t("nav.toAdmin")}
+                {t("nav.toWorkspace")}
               </Link>
             </>
           )}
@@ -113,7 +104,19 @@ export function Shell({ children }: { children: ReactNode }) {
               <div className="text-xs text-foreground truncate">{user?.email}</div>
               <div className="text-[10px] text-muted-foreground capitalize">{user?.role}</div>
             </div>
-            <LanguageSwitcher />
+            <div className="flex items-center gap-1">
+              {user?.role === "admin" && !isAdminArea && (
+                <Link
+                  to="/admin"
+                  className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-surface-2"
+                  title={t("nav.toAdmin")}
+                  aria-label={t("nav.toAdmin")}
+                >
+                  <Shield className="h-3.5 w-3.5" />
+                </Link>
+              )}
+              <LanguageSwitcher />
+            </div>
           </div>
           <Button
             variant="ghost"

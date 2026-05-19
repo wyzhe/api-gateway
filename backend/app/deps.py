@@ -57,7 +57,7 @@ def get_api_key_user(
     db: Session = Depends(get_db),
     authorization: str | None = Header(default=None),
 ) -> tuple[User, ApiKey]:
-    """For /v1/* gateway endpoints. Validates user API key (lgw_...)."""
+    """For /v1/* gateway endpoints. Validates user API key (sk-...)."""
     if not authorization or not authorization.lower().startswith("bearer "):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -65,7 +65,7 @@ def get_api_key_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
     presented = authorization.split(" ", 1)[1].strip()
-    if not presented.startswith("lgw_"):
+    if not presented.startswith("sk-"):
         raise HTTPException(status_code=401, detail="Invalid API key format")
     key_hash = hash_api_key(presented)
     api_key = db.query(ApiKey).filter(ApiKey.key_hash == key_hash).one_or_none()
