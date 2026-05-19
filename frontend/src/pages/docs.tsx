@@ -1,8 +1,10 @@
 import { CodeBlock } from "@/components/ui/code-block";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/shell";
+import { useT } from "@/lib/i18n";
 
 export function DocsPage() {
+  const t = useT();
   const base = location.origin;
   const curlChat = `curl ${base}/v1/chat/completions \\
   -H "Authorization: Bearer lgw_YOUR_KEY" \\
@@ -45,11 +47,11 @@ print(resp.choices[0].message.content)`;
 
   return (
     <div className="max-w-4xl">
-      <PageHeader title="Docs" subtitle="OpenAI-compatible — drop-in replacement for most SDKs." />
+      <PageHeader title={t("docs.title")} subtitle={t("docs.subtitle")} />
 
       <div className="flex flex-col gap-4">
         <Card>
-          <CardHeader><CardTitle>Authentication</CardTitle></CardHeader>
+          <CardHeader><CardTitle>{t("docs.sectionAuthentication")}</CardTitle></CardHeader>
           <CardContent className="text-sm text-muted-foreground flex flex-col gap-3">
             <p>
               All <span className="mono text-foreground">/v1/*</span> calls require an{" "}
@@ -61,7 +63,7 @@ print(resp.choices[0].message.content)`;
         </Card>
 
         <Card>
-          <CardHeader><CardTitle>Chat completions</CardTitle></CardHeader>
+          <CardHeader><CardTitle>{t("docs.sectionChatCompletions")}</CardTitle></CardHeader>
           <CardContent className="flex flex-col gap-3">
             <CodeBlock lang="bash" code={curlChat} />
             <p className="text-xs text-muted-foreground">
@@ -74,7 +76,7 @@ print(resp.choices[0].message.content)`;
         </Card>
 
         <Card>
-          <CardHeader><CardTitle>Image generation (async)</CardTitle></CardHeader>
+          <CardHeader><CardTitle>{t("docs.sectionImageGeneration")}</CardTitle></CardHeader>
           <CardContent className="flex flex-col gap-3">
             <p className="text-sm text-muted-foreground">
               APIMart processes images asynchronously. The gateway returns a{" "}
@@ -87,7 +89,7 @@ print(resp.choices[0].message.content)`;
         </Card>
 
         <Card>
-          <CardHeader><CardTitle>Video generation (async)</CardTitle></CardHeader>
+          <CardHeader><CardTitle>{t("docs.sectionVideoGeneration")}</CardTitle></CardHeader>
           <CardContent className="flex flex-col gap-3">
             <CodeBlock lang="bash" code={curlVid} />
             <p className="text-xs text-muted-foreground">

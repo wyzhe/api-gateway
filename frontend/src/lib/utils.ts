@@ -1,5 +1,6 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
+import type { TKey } from "@/lib/i18n";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -54,12 +55,58 @@ export function priceLabel(m: PricedModel): string {
   }
 }
 
+/** Translation key for a model's pricing_mode badge. */
+export function pricingModeKey(mode: string): TKey {
+  const known = ["per_token", "per_image", "per_second", "per_generation"];
+  return (
+    known.includes(mode) ? `common.pricingMode.${mode}` : `common.pricingMode.per_token`
+  ) as TKey;
+}
+
 export function statusBadgeVariant(
   status: string | null | undefined,
 ): "success" | "danger" | "info" | "warn" | "default" {
   if (status === "success" || status === "succeeded" || status === "active") return "success";
   if (status === "failed" || status === "disabled") return "danger";
   if (status === "running" || status === "queued") return "info";
+  return "default";
+}
+
+/**
+ * Translation key for a backend request/task status badge label.
+ * Falls back to "failed" if the value isn't one of the known enum members
+ * (keeps the badge readable even if upstream adds a new status).
+ */
+export function reqStatusKey(status: string | null | undefined): TKey {
+  const known = [
+    "success",
+    "failed",
+    "queued",
+    "running",
+    "succeeded",
+    "pending",
+    "cancelled",
+    "submitting",
+  ];
+  return (
+    known.includes(status ?? "")
+      ? `common.reqStatus.${status}`
+      : `common.reqStatus.failed`
+  ) as TKey;
+}
+
+/** Translation key for a transaction type label. */
+export function txnTypeKey(type: string): TKey {
+  const known = ["recharge", "debit", "adjustment", "refund"];
+  return (
+    known.includes(type) ? `common.txnType.${type}` : `common.txnType.adjustment`
+  ) as TKey;
+}
+
+/** Badge variant for a transaction type. */
+export function txnBadgeVariant(type: string): "success" | "warn" | "default" {
+  if (type === "recharge") return "success";
+  if (type === "debit") return "warn";
   return "default";
 }
 
@@ -78,12 +125,20 @@ export function parseLimit(raw: string): { ok: true; value: number | null } | { 
   return { ok: true, value: n };
 }
 
-export function fmtRelative(value: string | Date | null | undefined): string {
+type Translator = (key: TKey, vars?: Record<string, string | number>) => string;
+
+export function fmtRelative(value: string | Date | null | undefined, t?: Translator): string {
   if (!value) return "—";
   const d = typeof value === "string" ? new Date(value) : value;
   const diff = (Date.now() - d.getTime()) / 1000;
-  if (diff < 60) return `${Math.floor(diff)}s ago`;
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-  return `${Math.floor(diff / 86400)}d ago`;
+  if (!t) {
+    if (diff < 60) return `${Math.floor(diff)}s ago`;
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+    return `${Math.floor(diff / 86400)}d ago`;
+  }
+  if (diff < 60) return t("common.relativeTime.secAgo", { n: Math.floor(diff) });
+  if (diff < 3600) return t("common.relativeTime.minAgo", { n: Math.floor(diff / 60) });
+  if (diff < 86400) return t("common.relativeTime.hourAgo", { n: Math.floor(diff / 3600) });
+  return t("common.relativeTime.dayAgo", { n: Math.floor(diff / 86400) });
 }

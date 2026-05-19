@@ -21,10 +21,12 @@ import { TypeBadge } from "@/components/type-badge";
 import { PageHeader } from "@/components/shell";
 import { api, gateway, gatewayStream } from "@/lib/api";
 import { useDefaultModel } from "@/lib/hooks";
+import { useT } from "@/lib/i18n";
 import type { ApiKey, Model } from "@/lib/types";
-import { fmtCompactMoney } from "@/lib/utils";
+import { fmtCompactMoney, reqStatusKey } from "@/lib/utils";
 
 export function PlaygroundPage() {
+  const t = useT();
   const [models, setModels] = useState<Model[]>([]);
   const [keys, setKeys] = useState<ApiKey[]>([]);
   // Playground API key lives in sessionStorage only (cleared on tab close) so
@@ -63,17 +65,17 @@ export function PlaygroundPage() {
   return (
     <div>
       <PageHeader
-        title="Playground"
-        subtitle="API debugger — hits /v1/* with one of your real API keys."
+        title={t("playground.title")}
+        subtitle={t("playground.subtitle")}
       />
 
       <Card className="mb-4">
         <CardContent className="flex flex-wrap items-end gap-3">
           <div className="flex flex-col gap-1.5 grow min-w-72">
-            <Label>API Key (Bearer)</Label>
+            <Label>{t("playground.apiKeyLabel")}</Label>
             <Input
               type="password"
-              placeholder="Paste your lgw_... key here"
+              placeholder={t("playground.apiKeyPlaceholder")}
               className="mono"
               value={keyValue}
               onChange={(e) => onKeyChange(e.target.value)}
@@ -81,10 +83,12 @@ export function PlaygroundPage() {
               aria-invalid={!!keyValue && !/^lgw_[A-Za-z0-9_-]+$/.test(keyValue)}
             />
             <span className="text-[10px] text-muted-foreground">
-              Held in <code>sessionStorage</code> only — cleared when you close this tab. Keys are write-once on creation; paste here to use.
-              {keys.length > 0 && (
-                <> {keys.length} active key{keys.length > 1 ? "s" : ""} on your account (prefixes: {keys.map((k) => k.key_prefix).join(", ")}).</>
-              )}
+              {t("playground.apiKeySessionWarning")}
+              {keys.length > 0 &&
+                t("playground.apiKeyActive", {
+                  count: keys.length,
+                  prefixes: keys.map((k) => k.key_prefix).join(", "),
+                })}
             </span>
           </div>
         </CardContent>
@@ -92,9 +96,9 @@ export function PlaygroundPage() {
 
       <Tabs defaultValue="chat">
         <TabsList>
-          <TabsTrigger value="chat"><TypeBadge type="text" />&nbsp;Chat</TabsTrigger>
-          <TabsTrigger value="image"><TypeBadge type="image" />&nbsp;Image</TabsTrigger>
-          <TabsTrigger value="video"><TypeBadge type="video" />&nbsp;Video</TabsTrigger>
+          <TabsTrigger value="chat"><TypeBadge type="text" />&nbsp;{t("playground.tabChat")}</TabsTrigger>
+          <TabsTrigger value="image"><TypeBadge type="image" />&nbsp;{t("playground.tabImage")}</TabsTrigger>
+          <TabsTrigger value="video"><TypeBadge type="video" />&nbsp;{t("playground.tabVideo")}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="chat">
@@ -120,6 +124,7 @@ function useUnmountCleanup(cleanup: () => void) {
 
 /* ---------------- Chat ---------------- */
 function ChatTab({ models, apiKey }: { models: Model[]; apiKey: string }) {
+  const t = useT();
   const [model, setModel] = useState("");
   const [system, setSystem] = useState("You are a helpful assistant.");
   const [userMsg, setUserMsg] = useState("Reply with the single word PONG.");
@@ -147,8 +152,8 @@ function ChatTab({ models, apiKey }: { models: Model[]; apiKey: string }) {
   });
 
   const run = async () => {
-    if (!apiKey) return toast.error("Paste an API key above first.");
-    if (!model) return toast.error("Pick a model.");
+    if (!apiKey) return toast.error(t("playground.toastNeedApiKey"));
+    if (!model) return toast.error(t("playground.toastPickModel"));
     setOutput("");
     setRawResp(null);
     const payload = buildPayload();
@@ -163,7 +168,7 @@ function ChatTab({ models, apiKey }: { models: Model[]; apiKey: string }) {
         for await (const ev of gatewayStream("/v1/chat/completions", apiKey, payload, abortRef.current.signal)) {
           if (!ev.parsed) continue;
           if (ev.parsed.error) {
-            toast.error(ev.parsed.error.message || "Stream error");
+            toast.error(ev.parsed.error.message || t("playground.toastStreamError"));
             setRawResp(ev.parsed);
             return;
           }
@@ -200,13 +205,13 @@ function ChatTab({ models, apiKey }: { models: Model[]; apiKey: string }) {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
       <Card>
-        <CardHeader><CardTitle>Request</CardTitle></CardHeader>
+        <CardHeader><CardTitle>{t("playground.cardRequest")}</CardTitle></CardHeader>
         <CardContent className="flex flex-col gap-3">
           <div className="grid grid-cols-3 gap-3">
             <div className="col-span-2 flex flex-col gap-1.5">
-              <Label>Model</Label>
+              <Label>{t("playground.modelLabel")}</Label>
               <Select value={model} onValueChange={setModel}>
-                <SelectTrigger><SelectValue placeholder="Choose a model" /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder={t("playground.modelPlaceholder")} /></SelectTrigger>
                 <SelectContent>
                   {models.map((m) => (
                     <SelectItem key={m.id} value={m.public_name}>{m.public_name}</SelectItem>
@@ -216,23 +221,23 @@ function ChatTab({ models, apiKey }: { models: Model[]; apiKey: string }) {
             </div>
             <div className="flex items-end gap-2">
               <div className="flex flex-col gap-1.5 grow">
-                <Label>Stream</Label>
+                <Label>{t("playground.streamLabel")}</Label>
                 <Switch checked={stream} onCheckedChange={setStream} />
               </div>
             </div>
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <Label>System prompt</Label>
+            <Label>{t("playground.systemPromptLabel")}</Label>
             <Textarea value={system} onChange={(e) => setSystem(e.target.value)} rows={2} />
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label>User message</Label>
+            <Label>{t("playground.userMessageLabel")}</Label>
             <Textarea value={userMsg} onChange={(e) => setUserMsg(e.target.value)} rows={5} />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1.5">
-              <Label>Temperature</Label>
+              <Label>{t("playground.temperatureLabel")}</Label>
               <Input
                 type="number"
                 step="0.1"
@@ -241,7 +246,7 @@ function ChatTab({ models, apiKey }: { models: Model[]; apiKey: string }) {
               />
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label>Max tokens</Label>
+              <Label>{t("playground.maxTokensLabel")}</Label>
               <Input
                 type="number"
                 value={maxTokens}
@@ -250,10 +255,10 @@ function ChatTab({ models, apiKey }: { models: Model[]; apiKey: string }) {
             </div>
           </div>
           <div className="flex gap-2">
-            <Button onClick={run} disabled={busy}><Play className="h-3.5 w-3.5" /> Run</Button>
+            <Button onClick={run} disabled={busy}><Play className="h-3.5 w-3.5" /> {t("playground.runBtn")}</Button>
             {busy && (
               <Button variant="outline" onClick={() => abortRef.current?.abort()}>
-                <Square className="h-3.5 w-3.5" /> Stop
+                <Square className="h-3.5 w-3.5" /> {t("playground.stopBtn")}
               </Button>
             )}
           </div>
@@ -261,28 +266,28 @@ function ChatTab({ models, apiKey }: { models: Model[]; apiKey: string }) {
       </Card>
 
       <Card>
-        <CardHeader><CardTitle>Response</CardTitle></CardHeader>
+        <CardHeader><CardTitle>{t("playground.cardResponse")}</CardTitle></CardHeader>
         <CardContent className="flex flex-col gap-3">
           <div className="rounded-md border border-border bg-surface-2 min-h-32 p-3 text-sm whitespace-pre-wrap mono">
-            {output || <span className="text-muted-foreground">— output appears here —</span>}
+            {output || <span className="text-muted-foreground">{t("playground.outputEmpty")}</span>}
           </div>
           {rawResp?.usage && (
             <div className="text-xs text-muted-foreground flex gap-3">
-              <span>Tokens: {rawResp.usage.total_tokens}</span>
-              {rawResp._gateway?.cost && <span>Cost: {fmtCompactMoney(rawResp._gateway.cost)}</span>}
-              {rawResp._gateway?.latency_ms && <span>Latency: {rawResp._gateway.latency_ms}ms</span>}
+              <span>{t("playground.usageTokens", { tokens: rawResp.usage.total_tokens })}</span>
+              {rawResp._gateway?.cost && <span>{t("playground.usageCost", { cost: fmtCompactMoney(rawResp._gateway.cost) })}</span>}
+              {rawResp._gateway?.latency_ms && <span>{t("playground.usageLatency", { ms: rawResp._gateway.latency_ms })}</span>}
             </div>
           )}
           <div>
-            <Label>Raw request</Label>
+            <Label>{t("playground.rawRequest")}</Label>
             <CodeBlock lang="json" code={JSON.stringify(rawReq, null, 2)} maxHeight="10rem" />
           </div>
           <div>
-            <Label>Raw response</Label>
+            <Label>{t("playground.rawResponse")}</Label>
             <CodeBlock lang="json" code={JSON.stringify(rawResp, null, 2)} maxHeight="14rem" />
           </div>
           <div>
-            <Label>curl</Label>
+            <Label>{t("playground.curlLabel")}</Label>
             <CodeBlock lang="bash" code={curl} maxHeight="10rem" />
           </div>
         </CardContent>
@@ -293,6 +298,7 @@ function ChatTab({ models, apiKey }: { models: Model[]; apiKey: string }) {
 
 /* ---------------- Image ---------------- */
 function ImageTab({ models, apiKey }: { models: Model[]; apiKey: string }) {
+  const t = useT();
   const [model, setModel] = useState("");
   const [prompt, setPrompt] = useState("a small red apple on a white background, studio lighting");
   const [size, setSize] = useState("1:1");
@@ -311,7 +317,7 @@ function ImageTab({ models, apiKey }: { models: Model[]; apiKey: string }) {
   const buildPayload = () => ({ model, prompt, size, n, resolution: "1k" });
 
   const run = async () => {
-    if (!apiKey) return toast.error("Paste an API key above first.");
+    if (!apiKey) return toast.error(t("playground.toastNeedApiKey"));
     cancelRef.current = { cancelled: false };
     const cancel = cancelRef.current;
     setBusy(true);
@@ -332,7 +338,7 @@ function ImageTab({ models, apiKey }: { models: Model[]; apiKey: string }) {
       }
       const taskId: string | undefined = res.body?.task_id;
       if (!taskId) {
-        toast.error("Upstream did not return a task_id");
+        toast.error(t("playground.toastNoTaskId"));
         setTaskStatus("failed");
         return;
       }
@@ -351,12 +357,12 @@ function ImageTab({ models, apiKey }: { models: Model[]; apiKey: string }) {
         if (s === "succeeded") {
           setAssetUrl(p.body?.asset_url);
           setPollResp(p.body);
-          toast.success("Image ready");
+          toast.success(t("playground.toastImageReady"));
           break;
         }
         if (s === "failed") {
           setPollResp(p.body);
-          toast.error(p.body?.error_message || "Generation failed");
+          toast.error(p.body?.error_message || t("playground.toastImageFailed"));
           break;
         }
       }
@@ -375,24 +381,24 @@ function ImageTab({ models, apiKey }: { models: Model[]; apiKey: string }) {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
       <Card>
-        <CardHeader><CardTitle>Request</CardTitle></CardHeader>
+        <CardHeader><CardTitle>{t("playground.cardRequest")}</CardTitle></CardHeader>
         <CardContent className="flex flex-col gap-3">
           <div className="flex flex-col gap-1.5">
-            <Label>Model</Label>
+            <Label>{t("playground.modelLabel")}</Label>
             <Select value={model} onValueChange={setModel}>
-              <SelectTrigger><SelectValue placeholder="Choose a model" /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder={t("playground.modelPlaceholder")} /></SelectTrigger>
               <SelectContent>
                 {models.map((m) => <SelectItem key={m.id} value={m.public_name}>{m.public_name}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label>Prompt</Label>
+            <Label>{t("playground.promptLabel")}</Label>
             <Textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={4} />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1.5">
-              <Label>Size</Label>
+              <Label>{t("playground.sizeLabel")}</Label>
               <Select value={size} onValueChange={setSize}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -403,20 +409,20 @@ function ImageTab({ models, apiKey }: { models: Model[]; apiKey: string }) {
               </Select>
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label>N</Label>
+              <Label>{t("playground.nLabel")}</Label>
               <Input type="number" min={1} max={4} value={n} onChange={(e) => setN(Number(e.target.value))} />
             </div>
           </div>
-          <Button onClick={run} disabled={busy}><Play className="h-3.5 w-3.5" /> Generate</Button>
+          <Button onClick={run} disabled={busy}><Play className="h-3.5 w-3.5" /> {t("playground.generateBtn")}</Button>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader className="flex-row items-center justify-between">
-          <CardTitle>Result</CardTitle>
+          <CardTitle>{t("playground.cardResult")}</CardTitle>
           {taskStatus && (
             <Badge variant={taskStatus === "succeeded" ? "success" : taskStatus === "failed" ? "danger" : "info"}>
-              {taskStatus}
+              {t(reqStatusKey(taskStatus))}
             </Badge>
           )}
         </CardHeader>
@@ -427,25 +433,25 @@ function ImageTab({ models, apiKey }: { models: Model[]; apiKey: string }) {
                 <img src={assetUrl} className="max-w-full max-h-96 object-contain" />
               </a>
             ) : (
-              <span className="text-muted-foreground text-sm">{busy ? "Waiting for upstream…" : "— image appears here —"}</span>
+              <span className="text-muted-foreground text-sm">{busy ? t("playground.waitingUpstream") : t("playground.imageEmpty")}</span>
             )}
           </div>
           <div>
-            <Label>Raw request</Label>
+            <Label>{t("playground.rawRequest")}</Label>
             <CodeBlock lang="json" code={JSON.stringify(rawReq, null, 2)} maxHeight="8rem" />
           </div>
           <div>
-            <Label>Submission response</Label>
+            <Label>{t("playground.submissionResponse")}</Label>
             <CodeBlock lang="json" code={JSON.stringify(submitResp, null, 2)} maxHeight="10rem" />
           </div>
           {pollResp && (
             <div>
-              <Label>Last poll</Label>
+              <Label>{t("playground.lastPoll")}</Label>
               <CodeBlock lang="json" code={JSON.stringify(pollResp, null, 2)} maxHeight="10rem" />
             </div>
           )}
           <div>
-            <Label>curl</Label>
+            <Label>{t("playground.curlLabel")}</Label>
             <CodeBlock lang="bash" code={curl} maxHeight="8rem" />
           </div>
         </CardContent>
@@ -456,6 +462,7 @@ function ImageTab({ models, apiKey }: { models: Model[]; apiKey: string }) {
 
 /* ---------------- Video ---------------- */
 function VideoTab({ models, apiKey }: { models: Model[]; apiKey: string }) {
+  const t = useT();
   const [model, setModel] = useState("");
   const [prompt, setPrompt] = useState("a calm ocean wave at sunset, cinematic");
   const [duration, setDuration] = useState(4);
@@ -475,7 +482,7 @@ function VideoTab({ models, apiKey }: { models: Model[]; apiKey: string }) {
   const buildPayload = () => ({ model, prompt, duration, aspect_ratio: aspect, resolution });
 
   const run = async () => {
-    if (!apiKey) return toast.error("Paste an API key above first.");
+    if (!apiKey) return toast.error(t("playground.toastNeedApiKey"));
     cancelRef.current = { cancelled: false };
     const cancel = cancelRef.current;
     setBusy(true);
@@ -496,7 +503,7 @@ function VideoTab({ models, apiKey }: { models: Model[]; apiKey: string }) {
       }
       const taskId: string | undefined = res.body?.task_id;
       if (!taskId) {
-        toast.error("Upstream did not return a task_id");
+        toast.error(t("playground.toastNoTaskId"));
         setTaskStatus("failed");
         return;
       }
@@ -515,12 +522,12 @@ function VideoTab({ models, apiKey }: { models: Model[]; apiKey: string }) {
         if (s === "succeeded") {
           setAssetUrl(p.body?.asset_url);
           setPollResp(p.body);
-          toast.success("Video ready");
+          toast.success(t("playground.toastVideoReady"));
           break;
         }
         if (s === "failed") {
           setPollResp(p.body);
-          toast.error(p.body?.error_message || "Video failed");
+          toast.error(p.body?.error_message || t("playground.toastVideoFailed"));
           break;
         }
       }
@@ -539,28 +546,28 @@ function VideoTab({ models, apiKey }: { models: Model[]; apiKey: string }) {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
       <Card>
-        <CardHeader><CardTitle>Request</CardTitle></CardHeader>
+        <CardHeader><CardTitle>{t("playground.cardRequest")}</CardTitle></CardHeader>
         <CardContent className="flex flex-col gap-3">
           <div className="flex flex-col gap-1.5">
-            <Label>Model</Label>
+            <Label>{t("playground.modelLabel")}</Label>
             <Select value={model} onValueChange={setModel}>
-              <SelectTrigger><SelectValue placeholder="Choose a model" /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder={t("playground.modelPlaceholder")} /></SelectTrigger>
               <SelectContent>
                 {models.map((m) => <SelectItem key={m.id} value={m.public_name}>{m.public_name}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label>Prompt</Label>
+            <Label>{t("playground.promptLabel")}</Label>
             <Textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={3} />
           </div>
           <div className="grid grid-cols-3 gap-3">
             <div className="flex flex-col gap-1.5">
-              <Label>Duration (s)</Label>
+              <Label>{t("playground.durationLabel")}</Label>
               <Input type="number" min={4} max={20} value={duration} onChange={(e) => setDuration(Number(e.target.value))} />
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label>Aspect</Label>
+              <Label>{t("playground.aspectLabel")}</Label>
               <Select value={aspect} onValueChange={setAspect}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -570,7 +577,7 @@ function VideoTab({ models, apiKey }: { models: Model[]; apiKey: string }) {
               </Select>
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label>Resolution</Label>
+              <Label>{t("playground.resolutionLabel")}</Label>
               <Select value={resolution} onValueChange={setResolution}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -581,17 +588,17 @@ function VideoTab({ models, apiKey }: { models: Model[]; apiKey: string }) {
               </Select>
             </div>
           </div>
-          <Button onClick={run} disabled={busy}><Play className="h-3.5 w-3.5" /> Generate</Button>
-          <p className="text-xs text-muted-foreground">Video tasks typically take 1–3 minutes. The page polls automatically.</p>
+          <Button onClick={run} disabled={busy}><Play className="h-3.5 w-3.5" /> {t("playground.generateBtn")}</Button>
+          <p className="text-xs text-muted-foreground">{t("playground.videoPollingHint")}</p>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader className="flex-row items-center justify-between">
-          <CardTitle>Result</CardTitle>
+          <CardTitle>{t("playground.cardResult")}</CardTitle>
           {taskStatus && (
             <Badge variant={taskStatus === "succeeded" ? "success" : taskStatus === "failed" ? "danger" : "info"}>
-              {taskStatus}
+              {t(reqStatusKey(taskStatus))}
             </Badge>
           )}
         </CardHeader>
@@ -600,25 +607,25 @@ function VideoTab({ models, apiKey }: { models: Model[]; apiKey: string }) {
             {assetUrl ? (
               <video src={assetUrl} controls className="max-w-full max-h-96" />
             ) : (
-              <span className="text-muted-foreground text-sm">{busy ? "Generating…" : "— video appears here —"}</span>
+              <span className="text-muted-foreground text-sm">{busy ? t("playground.generating") : t("playground.videoEmpty")}</span>
             )}
           </div>
           <div>
-            <Label>Raw request</Label>
+            <Label>{t("playground.rawRequest")}</Label>
             <CodeBlock lang="json" code={JSON.stringify(rawReq, null, 2)} maxHeight="8rem" />
           </div>
           <div>
-            <Label>Submission response</Label>
+            <Label>{t("playground.submissionResponse")}</Label>
             <CodeBlock lang="json" code={JSON.stringify(submitResp, null, 2)} maxHeight="10rem" />
           </div>
           {pollResp && (
             <div>
-              <Label>Last poll</Label>
+              <Label>{t("playground.lastPoll")}</Label>
               <CodeBlock lang="json" code={JSON.stringify(pollResp, null, 2)} maxHeight="10rem" />
             </div>
           )}
           <div>
-            <Label>curl</Label>
+            <Label>{t("playground.curlLabel")}</Label>
             <CodeBlock lang="bash" code={curl} maxHeight="8rem" />
           </div>
         </CardContent>

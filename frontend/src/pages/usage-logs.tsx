@@ -15,10 +15,12 @@ import { LogDetailDrawer, useLogDetail } from "@/components/log-detail-drawer";
 import { TypeBadge } from "@/components/type-badge";
 import { PageHeader } from "@/components/shell";
 import { api } from "@/lib/api";
+import { useT } from "@/lib/i18n";
 import type { LogSummary } from "@/lib/types";
-import { fmtCompactMoney, fmtRelative, statusBadgeVariant } from "@/lib/utils";
+import { fmtCompactMoney, fmtRelative, reqStatusKey, statusBadgeVariant } from "@/lib/utils";
 
 export function UsageLogsPage() {
+  const t = useT();
   const [params] = useSearchParams();
   const [rows, setRows] = useState<LogSummary[]>([]);
   const [type, setType] = useState<string>(params.get("type") ?? "__all__");
@@ -43,56 +45,56 @@ export function UsageLogsPage() {
 
   return (
     <div>
-      <PageHeader title="Usage / Logs" subtitle="Every gateway request with full payloads and cost." />
+      <PageHeader title={t("usageLogs.title")} subtitle={t("usageLogs.subtitle")} />
 
       <div className="flex flex-wrap gap-2 mb-3">
         <Select value={type} onValueChange={setType}>
-          <SelectTrigger className="w-32"><SelectValue placeholder="Type" /></SelectTrigger>
+          <SelectTrigger className="w-32"><SelectValue placeholder={t("usageLogs.filterTypePlaceholder")} /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="__all__">All types</SelectItem>
-            <SelectItem value="text">Text</SelectItem>
-            <SelectItem value="image">Image</SelectItem>
-            <SelectItem value="video">Video</SelectItem>
+            <SelectItem value="__all__">{t("usageLogs.filterAllTypes")}</SelectItem>
+            <SelectItem value="text">{t("common.reqType.text")}</SelectItem>
+            <SelectItem value="image">{t("common.reqType.image")}</SelectItem>
+            <SelectItem value="video">{t("common.reqType.video")}</SelectItem>
           </SelectContent>
         </Select>
         <Select value={status} onValueChange={setStatus}>
-          <SelectTrigger className="w-36"><SelectValue placeholder="Status" /></SelectTrigger>
+          <SelectTrigger className="w-36"><SelectValue placeholder={t("usageLogs.filterStatusPlaceholder")} /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="__all__">All statuses</SelectItem>
-            <SelectItem value="success">Success</SelectItem>
-            <SelectItem value="failed">Failed</SelectItem>
-            <SelectItem value="running">Running</SelectItem>
-            <SelectItem value="queued">Queued</SelectItem>
+            <SelectItem value="__all__">{t("usageLogs.filterAllStatuses")}</SelectItem>
+            <SelectItem value="success">{t("usageLogs.statusSuccess")}</SelectItem>
+            <SelectItem value="failed">{t("usageLogs.statusFailed")}</SelectItem>
+            <SelectItem value="running">{t("usageLogs.statusRunning")}</SelectItem>
+            <SelectItem value="queued">{t("usageLogs.statusQueued")}</SelectItem>
           </SelectContent>
         </Select>
         <Input
-          placeholder="Filter by model name…"
+          placeholder={t("usageLogs.filterModelPlaceholder")}
           className="w-56"
           value={model}
           onChange={(e) => setModel(e.target.value)}
         />
-        <Button variant="outline" onClick={() => refresh()}>Refresh</Button>
+        <Button variant="outline" onClick={() => refresh()}>{t("usageLogs.refreshBtn")}</Button>
       </div>
 
       <div className="rounded-md border border-border">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Type</TableHead>
-              <TableHead>Model</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Tokens / Assets</TableHead>
-              <TableHead>Cost</TableHead>
-              <TableHead>Latency</TableHead>
-              <TableHead>Key</TableHead>
-              <TableHead>When</TableHead>
+              <TableHead>{t("usageLogs.colType")}</TableHead>
+              <TableHead>{t("usageLogs.colModel")}</TableHead>
+              <TableHead>{t("usageLogs.colStatus")}</TableHead>
+              <TableHead>{t("usageLogs.colTokensAssets")}</TableHead>
+              <TableHead>{t("usageLogs.colCost")}</TableHead>
+              <TableHead>{t("usageLogs.colLatency")}</TableHead>
+              <TableHead>{t("usageLogs.colKey")}</TableHead>
+              <TableHead>{t("usageLogs.colWhen")}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {rows.length === 0 && (
               <TableRow>
                 <TableCell colSpan={8} className="text-center text-sm text-muted-foreground py-8">
-                  No logs match these filters.
+                  {t("usageLogs.empty")}
                 </TableCell>
               </TableRow>
             )}
@@ -105,21 +107,21 @@ export function UsageLogsPage() {
                 <TableCell><TypeBadge type={r.request_type} /></TableCell>
                 <TableCell className="mono text-xs">{r.model_name || r.upstream_model}</TableCell>
                 <TableCell>
-                  <Badge variant={statusBadgeVariant(r.status)}>{r.status}</Badge>{" "}
-                  {r.task_status && (
-                    <Badge variant="outline" className="ml-1">{r.task_status}</Badge>
+                  <Badge variant={statusBadgeVariant(r.status)}>{t(reqStatusKey(r.status))}</Badge>{" "}
+                  {r.task_status && r.task_status !== r.status && (
+                    <Badge variant="outline" className="ml-1">{t(reqStatusKey(r.task_status))}</Badge>
                   )}
                 </TableCell>
                 <TableCell className="text-xs text-muted-foreground">
-                  {r.total_tokens && `${r.total_tokens}t`}
-                  {r.image_count && `${r.image_count} img`}
-                  {r.video_duration && `${r.video_duration}s`}
+                  {r.total_tokens && `${r.total_tokens}${t("usageLogs.cellTokensSuffix")}`}
+                  {r.image_count && t("usageLogs.cellImageCount", { count: r.image_count })}
+                  {r.video_duration && t("usageLogs.cellVideoDuration", { seconds: r.video_duration })}
                   {!r.total_tokens && !r.image_count && !r.video_duration && "—"}
                 </TableCell>
                 <TableCell className="mono text-xs">{fmtCompactMoney(r.cost)}</TableCell>
-                <TableCell className="text-xs text-muted-foreground">{r.latency_ms ?? "—"}ms</TableCell>
+                <TableCell className="text-xs text-muted-foreground">{r.latency_ms ?? "—"}{t("usageLogs.latencyMs")}</TableCell>
                 <TableCell className="mono text-xs">{r.api_key_prefix || "—"}</TableCell>
-                <TableCell className="text-xs text-muted-foreground">{fmtRelative(r.created_at)}</TableCell>
+                <TableCell className="text-xs text-muted-foreground">{fmtRelative(r.created_at, t)}</TableCell>
               </TableRow>
             ))}
           </TableBody>

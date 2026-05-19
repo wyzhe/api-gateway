@@ -21,9 +21,11 @@ import {
 } from "@/components/ui/select";
 import { PageHeader } from "@/components/shell";
 import { api } from "@/lib/api";
+import { useT } from "@/lib/i18n";
 import type { Provider } from "@/lib/types";
 
 export function AdminProvidersPage() {
+  const t = useT();
   const [rows, setRows] = useState<Provider[]>([]);
   const [editing, setEditing] = useState<Provider | null>(null);
   const [editName, setEditName] = useState("");
@@ -46,7 +48,7 @@ export function AdminProvidersPage() {
   const save = async () => {
     if (!editing) return;
     if (editStatus === "disabled" && rows.filter((p) => p.status === "active").length === 1 && editing.status === "active") {
-      if (!confirm("This is the last active provider — disabling it will stop ALL gateway requests. Continue?")) return;
+      if (!confirm(t("admin.providers.confirmLastActive"))) return;
     }
     await api(`/api/admin/providers/${editing.id}`, {
       method: "PATCH",
@@ -56,14 +58,14 @@ export function AdminProvidersPage() {
         status: editStatus,
       },
     });
-    toast.success("Provider updated");
+    toast.success(t("admin.providers.toastUpdated"));
     setEditing(null);
     refresh();
   };
 
   return (
     <div>
-      <PageHeader title="Providers" subtitle="Upstream LLM providers." />
+      <PageHeader title={t("admin.providers.title")} subtitle={t("admin.providers.subtitle")} />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         {rows.map((p) => (
@@ -74,19 +76,24 @@ export function AdminProvidersPage() {
                 <div className="text-xs text-muted-foreground mt-1 mono">{p.name}</div>
               </div>
               <div className="flex items-center gap-2">
-                <Badge variant={p.status === "active" ? "success" : "warn"}>{p.status}</Badge>
-                <Button variant="ghost" size="icon" onClick={() => startEdit(p)} title="Edit">
+                <Badge variant={p.status === "active" ? "success" : "warn"}>
+                  {p.status === "active"
+                    ? t("common.status.active")
+                    : t("common.status.disabled")}
+                </Badge>
+                <Button variant="ghost" size="icon" onClick={() => startEdit(p)} title={t("admin.providers.editTitle")}>
                   <Pencil className="h-3.5 w-3.5" />
                 </Button>
               </div>
             </CardHeader>
             <CardContent className="flex flex-col gap-2">
-              <div className="text-xs text-muted-foreground">Base URL</div>
+              <div className="text-xs text-muted-foreground">{t("admin.providers.baseUrlLabel")}</div>
               <div className="mono text-xs break-all">{p.base_url}</div>
-              <div className="text-xs text-muted-foreground mt-2">API key</div>
+              <div className="text-xs text-muted-foreground mt-2">{t("admin.providers.apiKeyLabel")}</div>
               <div className="mono text-xs text-muted-foreground">
-                Configured via <span className="text-foreground">APIMART_API_KEY</span> env. Not shown
-                in the UI for safety.
+                {t("admin.providers.apiKeyHintPrefix")}
+                <span className="text-foreground">{t("admin.providers.apiKeyHintEnvVar")}</span>
+                {t("admin.providers.apiKeyHintSuffix")}
               </div>
             </CardContent>
           </Card>
@@ -96,31 +103,35 @@ export function AdminProvidersPage() {
       <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Edit {editing?.name}</DialogTitle>
+            <DialogTitle>{t("admin.providers.editDialog.title", { name: editing?.name ?? "" })}</DialogTitle>
           </DialogHeader>
           <div className="flex flex-col gap-3">
-            <FormField label="Display name">
+            <FormField label={t("admin.providers.editDialog.displayNameLabel")}>
               <Input value={editName} onChange={(e) => setEditName(e.target.value)} />
             </FormField>
-            <FormField label="Base URL">
+            <FormField label={t("admin.providers.editDialog.baseUrlLabel")}>
               <Input className="mono text-xs" value={editBase} onChange={(e) => setEditBase(e.target.value)} />
             </FormField>
-            <FormField label="Status">
+            <FormField label={t("admin.providers.editDialog.statusLabel")}>
               <Select value={editStatus} onValueChange={(v) => setEditStatus(v as "active" | "disabled")}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="active">active</SelectItem>
-                  <SelectItem value="disabled">disabled — blocks all upstream calls</SelectItem>
+                  <SelectItem value="active">{t("common.status.active")}</SelectItem>
+                  <SelectItem value="disabled">{t("admin.providers.editDialog.disabledLongHint")}</SelectItem>
                 </SelectContent>
               </Select>
             </FormField>
             <p className="text-xs text-muted-foreground">
-              The API key for this provider is set via the <span className="mono">APIMART_API_KEY</span> environment variable; rotate it in <span className="mono">.env</span> and restart the backend.
+              {t("admin.providers.editDialog.rotateHintPrefix")}
+              <span className="mono">{t("admin.providers.editDialog.rotateHintEnvVar")}</span>
+              {t("admin.providers.editDialog.rotateHintMiddle")}
+              <span className="mono">{t("admin.providers.editDialog.rotateHintEnvFile")}</span>
+              {t("admin.providers.editDialog.rotateHintSuffix")}
             </p>
           </div>
           <div className="flex justify-end gap-2 mt-3">
-            <Button variant="outline" onClick={() => setEditing(null)}>Cancel</Button>
-            <Button onClick={save}>Save</Button>
+            <Button variant="outline" onClick={() => setEditing(null)}>{t("admin.providers.editDialog.cancel")}</Button>
+            <Button onClick={save}>{t("admin.providers.editDialog.save")}</Button>
           </div>
         </DialogContent>
       </Dialog>

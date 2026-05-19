@@ -6,10 +6,12 @@ import { LogDetailDrawer, useLogDetail } from "@/components/log-detail-drawer";
 import { PageHeader } from "@/components/shell";
 import { TypeBadge } from "@/components/type-badge";
 import { api } from "@/lib/api";
+import { useT } from "@/lib/i18n";
 import type { LogSummary as Log } from "@/lib/types";
-import { fmtCompactMoney, fmtRelative } from "@/lib/utils";
+import { fmtCompactMoney, fmtRelative, reqStatusKey } from "@/lib/utils";
 
 export function GenerationsPage() {
+  const t = useT();
   const [items, setItems] = useState<Log[]>([]);
   const detail = useLogDetail();
 
@@ -37,15 +39,15 @@ export function GenerationsPage() {
   return (
     <div>
       <PageHeader
-        title="Generations"
-        subtitle="Image and video outputs from your gateway calls."
-        actions={<Button variant="outline" onClick={refresh}>Refresh</Button>}
+        title={t("generations.title")}
+        subtitle={t("generations.subtitle")}
+        actions={<Button variant="outline" onClick={refresh}>{t("generations.refreshBtn")}</Button>}
       />
 
       {withAsset.length === 0 && withoutAsset.length === 0 && (
         <Card>
           <CardContent className="text-center text-sm text-muted-foreground py-10">
-            No generations yet. Try the Playground.
+            {t("generations.emptyPrefix")}{t("generations.emptyLink")}{t("generations.emptySuffix")}
           </CardContent>
         </Card>
       )}
@@ -78,7 +80,7 @@ export function GenerationsPage() {
                 </div>
                 <div className="flex items-center justify-between text-[10px] text-muted-foreground">
                   <span>{fmtCompactMoney(it.cost)}</span>
-                  <span>{fmtRelative(it.created_at)}</span>
+                  <span>{fmtRelative(it.created_at, t)}</span>
                 </div>
               </CardContent>
             </Card>
@@ -88,7 +90,7 @@ export function GenerationsPage() {
 
       {withoutAsset.length > 0 && (
         <Card>
-          <CardHeader><CardTitle>Pending / failed</CardTitle></CardHeader>
+          <CardHeader><CardTitle>{t("generations.pendingFailedTitle")}</CardTitle></CardHeader>
           <CardContent className="p-0">
             <ul className="divide-y divide-border">
               {withoutAsset.map((it) => (
@@ -100,9 +102,9 @@ export function GenerationsPage() {
                   <TypeBadge type={it.request_type} />
                   <span className="mono">{it.model_name || it.upstream_model}</span>
                   <Badge variant={it.status === "failed" ? "danger" : "info"}>
-                    {it.task_status || it.status}
+                    {t(reqStatusKey(it.task_status || it.status))}
                   </Badge>
-                  <span className="text-muted-foreground ml-auto">{fmtRelative(it.created_at)}</span>
+                  <span className="text-muted-foreground ml-auto">{fmtRelative(it.created_at, t)}</span>
                 </li>
               ))}
             </ul>
