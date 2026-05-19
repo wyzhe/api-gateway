@@ -6,7 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { PageHeader } from "@/components/shell";
 import { api } from "@/lib/api";
 import { useT } from "@/lib/i18n";
-import { fmtCompactMoney, fmtDate, txnBadgeVariant, txnTypeKey } from "@/lib/utils";
+import { fmtBalance, fmtCompactMoney, fmtDate, txnBadgeVariant, txnTypeKey } from "@/lib/utils";
 
 type Summary = {
   balance: string;
@@ -42,7 +42,7 @@ export function BillingPage() {
       <PageHeader title={t("billing.title")} />
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-        <KpiTile label={t("billing.kpiBalance")} value={fmtCompactMoney(summary?.balance)} />
+        <KpiTile label={t("billing.kpiBalance")} value={fmtBalance(summary?.balance)} />
         <KpiTile
           label={t("billing.kpiTodaySpend")}
           value={fmtCompactMoney(summary?.today_spend)}
@@ -102,7 +102,7 @@ export function BillingPage() {
                     {tx.type === "debit" ? "−" : "+"}
                     {fmtCompactMoney(Math.abs(Number(tx.amount)))}
                   </TableCell>
-                  <TableCell className="mono text-xs">{fmtCompactMoney(tx.balance_after)}</TableCell>
+                  <TableCell className="mono text-xs">{fmtBalance(tx.balance_after)}</TableCell>
                   <TableCell className="text-xs text-muted-foreground">{tx.note || "—"}</TableCell>
                   <TableCell className="text-xs text-muted-foreground">{fmtDate(tx.created_at)}</TableCell>
                 </TableRow>

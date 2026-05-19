@@ -8,7 +8,7 @@ import { TypeBadge } from "@/components/type-badge";
 import { PageHeader } from "@/components/shell";
 import { api } from "@/lib/api";
 import type { LogSummary } from "@/lib/types";
-import { fmtCompactMoney, fmtRelative, reqStatusKey, statusBadgeVariant } from "@/lib/utils";
+import { fmtBalance, fmtCompactMoney, fmtRelative, reqStatusKey, statusBadgeVariant } from "@/lib/utils";
 import { useT } from "@/lib/i18n";
 
 type DashboardOut = {
@@ -41,7 +41,7 @@ export function DashboardPage() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
         <KpiTile
           label={t("dashboard.kpiBalance")}
-          value={fmtCompactMoney(data?.balance)}
+          value={fmtBalance(data?.balance)}
           hint={<Link to="/billing" className="text-primary hover:underline">{t("dashboard.kpiBillingLink")}</Link>}
         />
         <KpiTile

@@ -28,12 +28,14 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { PageHeader } from "@/components/shell";
 import { adminMarkEmailVerified, api } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import { useT } from "@/lib/i18n";
 import type { AdminUser, Transaction } from "@/lib/types";
-import { fmtCompactMoney, fmtDate, txnBadgeVariant, txnTypeKey } from "@/lib/utils";
+import { fmtBalance, fmtCompactMoney, fmtDate, txnBadgeVariant, txnTypeKey } from "@/lib/utils";
 
 export function AdminUsersPage() {
   const t = useT();
+  const { user: me } = useAuth();
   const [rows, setRows] = useState<AdminUser[]>([]);
   const [openCreate, setOpenCreate] = useState(false);
   const [openRecharge, setOpenRecharge] = useState<AdminUser | null>(null);
@@ -150,6 +152,8 @@ export function AdminUsersPage() {
     }
   };
 
+  const isEditingSelf = !!openEdit && openEdit.id === me?.id;
+
   return (
     <div>
       <PageHeader
@@ -188,7 +192,7 @@ export function AdminUsersPage() {
                       : t("common.status.disabled")}
                   </Badge>
                 </TableCell>
-                <TableCell className="mono text-xs">{fmtCompactMoney(u.balance)}</TableCell>
+                <TableCell className="mono text-xs">{fmtBalance(u.balance)}</TableCell>
                 <TableCell className="text-xs text-muted-foreground">{fmtDate(u.created_at)}</TableCell>
                 <TableCell className="text-right">
                   <div className="inline-flex gap-1">
@@ -211,7 +215,13 @@ export function AdminUsersPage() {
                     <Button variant="outline" size="sm" onClick={() => setOpenRecharge(u)}>
                       {t("admin.users.actionRecharge")}
                     </Button>
-                    <Button variant="outline" size="sm" onClick={() => toggle(u)}>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => toggle(u)}
+                      disabled={u.id === me?.id}
+                      title={u.id === me?.id ? t("admin.users.selfActionBlocked") : undefined}
+                    >
                       {u.status === "active"
                         ? t("admin.users.actionDisable")
                         : t("admin.users.actionEnable")}
@@ -264,13 +274,22 @@ export function AdminUsersPage() {
               <Input value={editName} onChange={(e) => setEditName(e.target.value)} />
             </FormField>
             <FormField label={t("admin.users.editDialog.roleLabel")}>
-              <Select value={editRole} onValueChange={(v) => setEditRole(v as "user" | "admin")}>
+              <Select
+                value={editRole}
+                onValueChange={(v) => setEditRole(v as "user" | "admin")}
+                disabled={isEditingSelf}
+              >
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="user">{t("admin.users.editDialog.roleUser")}</SelectItem>
                   <SelectItem value="admin">{t("admin.users.editDialog.roleAdmin")}</SelectItem>
                 </SelectContent>
               </Select>
+              {isEditingSelf && (
+                <div className="text-xs text-muted-foreground mt-1">
+                  {t("admin.users.selfRoleLocked")}
+                </div>
+              )}
             </FormField>
             <FormField label={t("admin.users.editDialog.resetPasswordLabel")}>
               <Input
@@ -331,7 +350,7 @@ export function AdminUsersPage() {
                 <SheetTitle>{openTxns.email}</SheetTitle>
                 <SheetDescription>
                   {t("admin.users.txnsDrawer.currentBalance")}{" "}
-                  <span className="mono text-foreground">{fmtCompactMoney(openTxns.balance)}</span>
+                  <span className="mono text-foreground">{fmtBalance(openTxns.balance)}</span>
                   {" · "}
                   {t("admin.users.txnsDrawer.txnsCount", { count: txns.length })}
                 </SheetDescription>
@@ -365,7 +384,7 @@ export function AdminUsersPage() {
                             {tx.type === "debit" ? "−" : "+"}
                             {fmtCompactMoney(tx.amount)}
                           </TableCell>
-                          <TableCell className="mono text-xs">{fmtCompactMoney(tx.balance_after)}</TableCell>
+                          <TableCell className="mono text-xs">{fmtBalance(tx.balance_after)}</TableCell>
                           <TableCell className="text-xs text-muted-foreground">{tx.note || "—"}</TableCell>
                           <TableCell className="text-xs text-muted-foreground">{fmtDate(tx.created_at)}</TableCell>
                         </TableRow>
