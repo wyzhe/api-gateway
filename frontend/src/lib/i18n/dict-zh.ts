@@ -76,6 +76,8 @@ export const zh: EnDict = {
     toWorkspace: "工作区",
     toLanding: "返回首页",
     signOut: "退出登录",
+    settingsConnections: "关联账号",
+    settingsSecurity: "安全",
   },
   login: {
     title: "登录",
@@ -84,6 +86,56 @@ export const zh: EnDict = {
     submit: "登录",
     submitting: "登录中…",
     failedFallback: "登录失败",
+    orDivider: "或",
+    withGoogle: "用 Google 登录",
+    withGitHub: "用 GitHub 登录",
+    error: {
+      email_unverified: "你的邮箱在 provider 那边尚未验证,请完成验证后再试。",
+      email_already_registered:
+        "该邮箱已被本地账号占用。请用密码登录后在「设置 → 关联账号」绑定。如果忘记密码,请联系管理员重置。",
+      account_disabled: "该账号已被禁用,请联系管理员。",
+      upstream_failure: "与登录服务通信失败,请稍后重试。",
+      state_expired: "登录会话已过期(超过 5 分钟),请重新发起。",
+      signup_rate_limited: "新账号注册过于频繁,请稍后再试。",
+      generic: "登录失败,请重试。",
+    },
+  },
+  oauth: {
+    completing: "正在完成登录…",
+    failedTitle: "登录失败",
+    failedMsg: "请回到登录页重试。",
+    backToLogin: "返回登录",
+  },
+  settings: {
+    connections: {
+      title: "关联账号",
+      empty: "暂无关联,绑定 Google / GitHub 后可以多端登录。",
+      bindGoogle: "绑定 Google",
+      bindGitHub: "绑定 GitHub",
+      detach: "解绑",
+      detachConfirm: "确认解绑此 {provider} 关联?",
+      cannotDetachLast:
+        "至少要保留一种登录方式。请先设置密码或绑定另一个 provider。",
+    },
+    security: {
+      title: "安全设置",
+      setPassword: "设置密码",
+      changePassword: "修改密码",
+      current: "当前密码",
+      new: "新密码",
+      confirm: "确认新密码",
+      submit: "保存",
+      tip: "密码至少 12 位。不必包含特殊字符,但不能是已被泄露的常见密码。",
+      success: "密码已更新。其它设备需重新登录。",
+      err: {
+        too_short: "密码至少要 12 个字符。",
+        too_long: "密码不能超过 128 个字符。",
+        breached: "这个密码出现在公开泄露列表里,请换一个。",
+        contains_email: "密码不能包含你的邮箱用户名。",
+        mismatch: "两次输入的新密码不一致。",
+        wrongCurrent: "当前密码不正确。",
+      },
+    },
   },
   dashboard: {
     title: "控制台",
@@ -551,6 +603,11 @@ export const zh: EnDict = {
       drawerLatencyUnit: "ms",
       sectionRequest: "请求",
       sectionResponse: "响应",
+    },
+    markEmailVerified: {
+      label: "标记邮箱已验证",
+      confirm: "确认?该操作记录到审计日志,允许此用户后续被 OAuth 自动合并。",
+      ok: "已标记验证。",
     },
   },
   landing: {

@@ -74,6 +74,8 @@ export const en = {
     toWorkspace: "Workspace",
     toLanding: "Home",
     signOut: "Sign out",
+    settingsConnections: "Connections",
+    settingsSecurity: "Security",
   },
   login: {
     title: "Sign in",
@@ -82,6 +84,63 @@ export const en = {
     submit: "Sign in",
     submitting: "Signing in…",
     failedFallback: "Login failed",
+    orDivider: "or",
+    withGoogle: "Continue with Google",
+    withGitHub: "Continue with GitHub",
+    error: {
+      email_unverified:
+        "Your email isn't verified at the provider. Verify it and try again.",
+      email_already_registered:
+        "This email is already in use by a local account. Sign in with your password, then link this provider in Settings → Connections. If you forgot your password, contact your admin.",
+      account_disabled:
+        "This account is disabled. Please contact your administrator.",
+      upstream_failure:
+        "Could not reach the OAuth provider. Please try again.",
+      state_expired:
+        "Your sign-in session expired (5 min limit). Please start again.",
+      signup_rate_limited:
+        "Too many new sign-ups from your network. Please try again later.",
+      generic: "Sign-in failed. Please try again.",
+    },
+  },
+  oauth: {
+    completing: "Completing sign-in…",
+    failedTitle: "Sign-in failed",
+    failedMsg: "Please go back and try again.",
+    backToLogin: "Back to sign-in",
+  },
+  settings: {
+    connections: {
+      title: "Connected accounts",
+      empty:
+        "No connections yet. Link Google / GitHub to sign in from multiple devices.",
+      bindGoogle: "Link Google",
+      bindGitHub: "Link GitHub",
+      detach: "Unlink",
+      detachConfirm: "Unlink this {provider} connection?",
+      cannotDetachLast:
+        "You must keep at least one login method. Set a password first, or link another provider.",
+    },
+    security: {
+      title: "Security",
+      setPassword: "Set password",
+      changePassword: "Change password",
+      current: "Current password",
+      new: "New password",
+      confirm: "Confirm new password",
+      submit: "Save",
+      tip: "Password must be at least 12 characters. Special characters are not required, but breached passwords are not allowed.",
+      success: "Password updated. Other devices will need to sign in again.",
+      err: {
+        too_short: "Password must be at least 12 characters.",
+        too_long: "Password must be at most 128 characters.",
+        breached:
+          "This password appears in public breach lists. Please choose another.",
+        contains_email: "Password must not contain your email username.",
+        mismatch: "The new passwords don't match.",
+        wrongCurrent: "Current password is incorrect.",
+      },
+    },
   },
   dashboard: {
     title: "Dashboard",
@@ -552,6 +611,12 @@ export const en = {
       drawerLatencyUnit: "ms",
       sectionRequest: "Request",
       sectionResponse: "Response",
+    },
+    markEmailVerified: {
+      label: "Mark email verified",
+      confirm:
+        "Mark this user's email as verified? This is audit-logged and allows OAuth auto-merge.",
+      ok: "Email marked verified.",
     },
   },
   landing: {
