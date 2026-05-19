@@ -1,7 +1,7 @@
 import { Download, ExternalLink } from "lucide-react";
 import { useState } from "react";
-import { Badge } from "@/components/ui/badge";
 import { CodeBlock } from "@/components/ui/code-block";
+import { DotStatus } from "@/components/dot-status";
 import { LabeledValue } from "@/components/ui/form-field";
 import {
   Sheet,
@@ -14,7 +14,7 @@ import { TypeBadge } from "@/components/type-badge";
 import { api } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import type { LogDetail } from "@/lib/types";
-import { fmtCompactMoney, fmtDate, reqStatusKey, statusBadgeVariant } from "@/lib/utils";
+import { fmtCompactMoney, fmtDate, reqStatusKey } from "@/lib/utils";
 
 export function useLogDetail() {
   const [selected, setSelected] = useState<LogDetail | null>(null);
@@ -45,7 +45,7 @@ export function LogDetailDrawer({
               <SheetTitle className="flex items-center gap-2">
                 <TypeBadge type={log.request_type} />
                 {log.model_name || log.upstream_model}
-                <Badge variant={statusBadgeVariant(log.status)}>{t(reqStatusKey(log.status))}</Badge>
+                <DotStatus status={log.status} label={t(reqStatusKey(log.status))} />
               </SheetTitle>
               <SheetDescription className="mono">{log.request_id}</SheetDescription>
             </SheetHeader>
@@ -92,7 +92,7 @@ export function LogDetailDrawer({
 
             {log.asset_url && (
               <div className="mt-4">
-                <div className="flex items-center justify-between text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">
+                <div className="flex items-center justify-between text-[11px] text-muted-foreground mb-1.5">
                   <span>{t("logDrawer.sectionAsset")}</span>
                   <div className="flex gap-2">
                     <a
@@ -121,7 +121,7 @@ export function LogDetailDrawer({
             )}
 
             <div className="mt-4">
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">
+              <div className="text-[11px] text-muted-foreground mb-1.5">
                 {t("logDrawer.sectionRequest")}
               </div>
               <CodeBlock
@@ -131,7 +131,7 @@ export function LogDetailDrawer({
               />
             </div>
             <div className="mt-3">
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">
+              <div className="text-[11px] text-muted-foreground mb-1.5">
                 {t("logDrawer.sectionResponse")}
               </div>
               <CodeBlock

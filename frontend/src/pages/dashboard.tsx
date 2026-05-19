@@ -2,13 +2,13 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { KpiTile } from "@/components/kpi-tile";
-import { Badge } from "@/components/ui/badge";
+import { DotStatus } from "@/components/dot-status";
 import { LogDetailDrawer, useLogDetail } from "@/components/log-detail-drawer";
 import { TypeBadge } from "@/components/type-badge";
 import { PageHeader } from "@/components/shell";
 import { api } from "@/lib/api";
 import type { LogSummary } from "@/lib/types";
-import { fmtBalance, fmtCompactMoney, fmtRelative, reqStatusKey, statusBadgeVariant } from "@/lib/utils";
+import { fmtBalance, fmtCompactMoney, fmtRelative, reqStatusKey } from "@/lib/utils";
 import { useT } from "@/lib/i18n";
 
 type DashboardOut = {
@@ -94,7 +94,7 @@ export function DashboardPage() {
                   >
                     <TypeBadge type={r.request_type} />
                     <span className="mono text-foreground">{r.model_name || r.upstream_model}</span>
-                    <Badge variant={statusBadgeVariant(r.status)}>{t(reqStatusKey(r.status))}</Badge>
+                    <DotStatus status={r.status} label={t(reqStatusKey(r.status))} />
                     <span className="text-muted-foreground ml-auto">{fmtCompactMoney(r.cost)}</span>
                     <span className="text-muted-foreground w-20 text-right">{fmtRelative(r.created_at, t)}</span>
                   </li>
@@ -104,26 +104,30 @@ export function DashboardPage() {
           </CardContent>
         </Card>
 
-        <div className="flex flex-col gap-4">
-          <StatList
-            title={t("dashboard.topModels")}
-            empty={t("dashboard.noDataYet")}
-            items={data?.top_models_by_cost ?? []}
-            getKey={(m) => m.model_id ?? -1}
-            getLabel={(m) => m.model_name || "—"}
-            getValue={(m) => t("dashboard.statValueCostRequests", { cost: fmtCompactMoney(m.cost), requests: m.requests })}
-            onClick={(m) => m.model_name && nav(`/logs?model=${encodeURIComponent(m.model_name)}`)}
-          />
-          <StatList
-            title={t("dashboard.topApiKeys")}
-            empty={t("dashboard.noDataYet")}
-            items={data?.top_api_keys_by_usage ?? []}
-            getKey={(k) => k.api_key_id ?? -1}
-            getLabel={(k) => k.api_key_prefix ? `${k.api_key_prefix}…` : t("dashboard.deletedKey")}
-            getValue={(k) => t("dashboard.statValueRequestsCost", { requests: k.requests, cost: fmtCompactMoney(k.cost) })}
-            onClick={(k) => k.api_key_id && nav(`/logs?api_key_id=${k.api_key_id}`)}
-          />
-        </div>
+        <Card>
+          <CardHeader><CardTitle>{t("dashboard.topModels")}</CardTitle></CardHeader>
+          <CardContent className="p-0">
+            <StatRows
+              empty={t("dashboard.noDataYet")}
+              items={data?.top_models_by_cost ?? []}
+              getKey={(m) => m.model_id ?? -1}
+              getLabel={(m) => m.model_name || "—"}
+              getValue={(m) => t("dashboard.statValueCostRequests", { cost: fmtCompactMoney(m.cost), requests: m.requests })}
+              onClick={(m) => m.model_name && nav(`/logs?model=${encodeURIComponent(m.model_name)}`)}
+            />
+          </CardContent>
+          <CardHeader className="border-t border-border"><CardTitle>{t("dashboard.topApiKeys")}</CardTitle></CardHeader>
+          <CardContent className="p-0">
+            <StatRows
+              empty={t("dashboard.noDataYet")}
+              items={data?.top_api_keys_by_usage ?? []}
+              getKey={(k) => k.api_key_id ?? -1}
+              getLabel={(k) => k.api_key_prefix ? `${k.api_key_prefix}…` : t("dashboard.deletedKey")}
+              getValue={(k) => t("dashboard.statValueRequestsCost", { requests: k.requests, cost: fmtCompactMoney(k.cost) })}
+              onClick={(k) => k.api_key_id && nav(`/logs?api_key_id=${k.api_key_id}`)}
+            />
+          </CardContent>
+        </Card>
       </div>
 
       <LogDetailDrawer log={detail.selected} onClose={detail.close} />
@@ -131,10 +135,9 @@ export function DashboardPage() {
   );
 }
 
-function StatList<T>({
-  title, empty, items, getKey, getLabel, getValue, onClick,
+function StatRows<T>({
+  empty, items, getKey, getLabel, getValue, onClick,
 }: {
-  title: string;
   empty: string;
   items: T[];
   getKey: (it: T) => number | string;
@@ -142,27 +145,21 @@ function StatList<T>({
   getValue: (it: T) => string;
   onClick: (it: T) => void;
 }) {
+  if (items.length === 0) {
+    return <div className="p-3 text-xs text-muted-foreground">{empty}</div>;
+  }
   return (
-    <Card>
-      <CardHeader><CardTitle>{title}</CardTitle></CardHeader>
-      <CardContent className="p-0">
-        {items.length === 0 ? (
-          <div className="p-4 text-xs text-muted-foreground">{empty}</div>
-        ) : (
-          <ul className="divide-y divide-border">
-            {items.map((it) => (
-              <li
-                key={getKey(it)}
-                onClick={() => onClick(it)}
-                className="px-4 py-2 flex items-center justify-between text-xs cursor-pointer hover:bg-surface-2"
-              >
-                <span className="mono">{getLabel(it)}</span>
-                <span className="text-muted-foreground">{getValue(it)}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </CardContent>
-    </Card>
+    <ul className="divide-y divide-border">
+      {items.map((it) => (
+        <li
+          key={getKey(it)}
+          onClick={() => onClick(it)}
+          className="px-3.5 py-1.5 flex items-center justify-between text-xs cursor-pointer hover:bg-surface-2"
+        >
+          <span className="mono">{getLabel(it)}</span>
+          <span className="text-muted-foreground">{getValue(it)}</span>
+        </li>
+      ))}
+    </ul>
   );
 }

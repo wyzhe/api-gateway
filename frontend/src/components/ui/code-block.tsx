@@ -34,7 +34,7 @@ export function CodeBlock({
     <div className={cn("relative rounded-md border border-border bg-surface-2", className)}>
       {(lang || copyable) && (
         <div className="flex items-center justify-between px-3 py-1.5 border-b border-border">
-          <span className="text-[10px] uppercase tracking-wider text-muted-foreground mono">
+          <span className="text-[11px] text-muted-foreground mono">
             {lang || ""}
           </span>
           {copyable && (

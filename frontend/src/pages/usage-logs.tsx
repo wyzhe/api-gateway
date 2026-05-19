@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -12,12 +11,13 @@ import {
 } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { LogDetailDrawer, useLogDetail } from "@/components/log-detail-drawer";
+import { DotStatus } from "@/components/dot-status";
 import { TypeBadge } from "@/components/type-badge";
 import { PageHeader } from "@/components/shell";
 import { api } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import type { LogSummary } from "@/lib/types";
-import { fmtCompactMoney, fmtRelative, reqStatusKey, statusBadgeVariant } from "@/lib/utils";
+import { fmtCompactMoney, fmtRelative, reqStatusKey } from "@/lib/utils";
 
 export function UsageLogsPage() {
   const t = useT();
@@ -73,7 +73,7 @@ export function UsageLogsPage() {
           value={model}
           onChange={(e) => setModel(e.target.value)}
         />
-        <Button variant="outline" onClick={() => refresh()}>{t("usageLogs.refreshBtn")}</Button>
+        <Button variant="outline" size="sm" onClick={() => refresh()}>{t("usageLogs.refreshBtn")}</Button>
       </div>
 
       <div className="rounded-md border border-border">
@@ -107,9 +107,13 @@ export function UsageLogsPage() {
                 <TableCell><TypeBadge type={r.request_type} /></TableCell>
                 <TableCell className="mono text-xs">{r.model_name || r.upstream_model}</TableCell>
                 <TableCell>
-                  <Badge variant={statusBadgeVariant(r.status)}>{t(reqStatusKey(r.status))}</Badge>{" "}
+                  <DotStatus status={r.status} label={t(reqStatusKey(r.status))} />
                   {r.task_status && r.task_status !== r.status && (
-                    <Badge variant="outline" className="ml-1">{t(reqStatusKey(r.task_status))}</Badge>
+                    <DotStatus
+                      status={r.task_status}
+                      label={t(reqStatusKey(r.task_status))}
+                      className="ml-2 opacity-70"
+                    />
                   )}
                 </TableCell>
                 <TableCell className="text-xs text-muted-foreground">

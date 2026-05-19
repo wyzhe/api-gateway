@@ -203,7 +203,7 @@ export function ApiKeysPage() {
               const limit = k.monthly_limit ? Number(k.monthly_limit) : null;
               const pct = limit && limit > 0 ? Math.min(100, (usage / limit) * 100) : 0;
               return (
-                <TableRow key={k.id}>
+                <TableRow key={k.id} className="group">
                   <TableCell className="font-medium">{k.name}</TableCell>
                   <TableCell className="mono text-xs">
                     <span className="inline-flex items-center gap-1.5">
@@ -247,15 +247,35 @@ export function ApiKeysPage() {
                     {k.last_used_at ? fmtDate(k.last_used_at) : t("apiKeys.never")}
                   </TableCell>
                   <TableCell className="text-right">
-                    <div className="inline-flex gap-1">
-                      <Button variant="ghost" size="icon" onClick={() => openEdit(k)} title={t("apiKeys.editTitle")}>
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button variant="outline" size="sm" onClick={() => onToggle(k)}>
+                    <div className="inline-flex gap-0.5 opacity-50 group-hover:opacity-100 transition-opacity">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 px-2 text-[11px]"
+                        onClick={() => onToggle(k)}
+                        title={k.status === "active" ? t("apiKeys.disable") : t("apiKeys.enable")}
+                      >
                         {k.status === "active" ? t("apiKeys.disable") : t("apiKeys.enable")}
                       </Button>
-                      <Button variant="ghost" size="icon" onClick={() => onDelete(k)} title={t("apiKeys.deleteTitle")}>
-                        <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6"
+                        onClick={() => openEdit(k)}
+                        title={t("apiKeys.editTitle")}
+                        aria-label={t("apiKeys.editTitle")}
+                      >
+                        <Pencil className="h-3 w-3" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6"
+                        onClick={() => onDelete(k)}
+                        title={t("apiKeys.deleteTitle")}
+                        aria-label={t("apiKeys.deleteTitle")}
+                      >
+                        <Trash2 className="h-3 w-3 text-destructive" />
                       </Button>
                     </div>
                   </TableCell>

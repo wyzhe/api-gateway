@@ -34,7 +34,7 @@ export function LabeledValue({
 }) {
   return (
     <div className={cn("flex flex-col", className)}>
-      <span className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</span>
+      <span className="text-[11px] text-muted-foreground">{label}</span>
       <span className={mono ? "mono" : ""}>{value}</span>
     </div>
   );

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { DotStatus } from "@/components/dot-status";
 import { LogDetailDrawer, useLogDetail } from "@/components/log-detail-drawer";
 import { PageHeader } from "@/components/shell";
 import { TypeBadge } from "@/components/type-badge";
@@ -100,9 +100,10 @@ export function GenerationsPage() {
                 >
                   <TypeBadge type={it.request_type} />
                   <span className="mono">{it.model_name || it.upstream_model}</span>
-                  <Badge variant={it.status === "failed" ? "danger" : "info"}>
-                    {t(reqStatusKey(it.task_status || it.status))}
-                  </Badge>
+                  <DotStatus
+                    status={it.task_status || it.status}
+                    label={t(reqStatusKey(it.task_status || it.status))}
+                  />
                   <span className="text-muted-foreground ml-auto">{fmtRelative(it.created_at, t)}</span>
                 </li>
               ))}

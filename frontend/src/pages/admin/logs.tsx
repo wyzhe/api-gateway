@@ -117,11 +117,11 @@ export function AdminLogsPage() {
                 </div>
               )}
               <div className="mt-4">
-                <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">{t("admin.logs.sectionRequest")}</div>
+                <div className="text-[11px] text-muted-foreground mb-1.5">{t("admin.logs.sectionRequest")}</div>
                 <CodeBlock lang="json" code={JSON.stringify(selected.request_payload_json, null, 2)} maxHeight="14rem" />
               </div>
               <div className="mt-3">
-                <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">{t("admin.logs.sectionResponse")}</div>
+                <div className="text-[11px] text-muted-foreground mb-1.5">{t("admin.logs.sectionResponse")}</div>
                 <CodeBlock lang="json" code={JSON.stringify(selected.response_payload_json, null, 2)} maxHeight="20rem" />
               </div>
             </>
