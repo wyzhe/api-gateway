@@ -21,8 +21,11 @@ from ..deps import get_db
 from ..logging_config import get_logger
 from ..metrics import auth_oauth_total
 from ..models import AuditLog
+from ..models import User as UserModel
+from ..schemas.auth import LoginResponse, UserOut
 from ..schemas.oauth import OAuthProvidersStatus
-from ..services import oauth_linking_service, oauth_state_service
+from ..security import create_access_token
+from ..services import auth_service, oauth_linking_service, oauth_state_service
 from ..services.oauth_providers import (
     OAUTH_PROVIDERS,
     NormalizedProfile,
@@ -253,3 +256,41 @@ async def callback(
     )
     _set_exchange_cookie(resp, exchange_code, max_age=60)
     return resp
+
+
+def _clear_exchange_cookie(resp: Response) -> None:
+    _set_exchange_cookie(resp, "", max_age=0)
+
+
+@router.post("/exchange", response_model=LoginResponse)
+async def exchange(
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+) -> LoginResponse:
+    code = request.cookies.get("oauth_exchange")
+    if not code:
+        _clear_exchange_cookie(response)
+        raise HTTPException(status_code=401)
+
+    user_id = await oauth_state_service.consume_exchange_code(code)
+    _clear_exchange_cookie(response)
+    if user_id is None:
+        raise HTTPException(status_code=401)
+
+    user = db.query(UserModel).filter_by(id=user_id).one_or_none()
+    if user is None or user.status != "active":
+        raise HTTPException(status_code=401)
+
+    access = create_access_token(str(user.id), extra={"role": user.role})
+    refresh, _ = auth_service.issue_refresh_token(
+        db, user_id=user.id,
+        user_agent=(request.headers.get("user-agent") or "")[:255] or None,
+        ip=request.client.host if request.client else None,
+    )
+    return LoginResponse(
+        access_token=access,
+        refresh_token=refresh,
+        access_expires_in=settings.jwt_access_ttl_minutes * 60,
+        user=UserOut.model_validate(user),
+    )

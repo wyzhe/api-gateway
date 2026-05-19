@@ -207,3 +207,91 @@ def test_callback_signup_sets_exchange_cookie_and_redirects_to_frontend(monkeypa
         db.commit()
     finally:
         db.close()
+
+
+def test_exchange_401_when_no_cookie():
+    r = client.post("/api/auth/oauth/exchange")
+    assert r.status_code == 401
+
+
+def test_exchange_returns_tokens_and_clears_cookie(monkeypatch):
+    import asyncio
+    from app.services import oauth_state_service
+    from app import redis_client
+    from app.database import SessionLocal
+    from app.models import User
+    from decimal import Decimal
+    from datetime import datetime, timezone
+
+    db = SessionLocal()
+    email = "exchange-target@example.com"
+    try:
+        db.query(User).filter(User.email == email).delete()
+        u = User(email=email, password_hash="x", role="user", status="active",
+                 balance=Decimal("0"),
+                 email_verified_at=datetime.now(timezone.utc))
+        db.add(u); db.commit(); db.refresh(u)
+        uid = u.id
+
+        async def _put():
+            code = await oauth_state_service.put_exchange_code(uid)
+            await redis_client.close_redis()
+            return code
+
+        code = asyncio.get_event_loop().run_until_complete(_put())
+
+        r = client.post(
+            "/api/auth/oauth/exchange",
+            cookies={"oauth_exchange": code},
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert body["access_token"]
+        assert body["refresh_token"]
+        assert body["user"]["email"] == email
+
+        cookies = r.headers.get_list("set-cookie")
+        cleared = [c for c in cookies if c.startswith("oauth_exchange=")]
+        assert cleared and "Max-Age=0" in cleared[0]
+    finally:
+        db.query(User).filter(User.email == email).delete()
+        db.commit()
+        db.close()
+
+
+def test_exchange_401_when_code_already_used(monkeypatch):
+    import asyncio
+    from app.services import oauth_state_service
+    from app import redis_client
+    from app.database import SessionLocal
+    from app.models import User
+    from decimal import Decimal
+    from datetime import datetime, timezone
+
+    db = SessionLocal()
+    email = "exchange-reuse@example.com"
+    try:
+        db.query(User).filter(User.email == email).delete()
+        u = User(email=email, password_hash="x", role="user", status="active",
+                 balance=Decimal("0"),
+                 email_verified_at=datetime.now(timezone.utc))
+        db.add(u); db.commit(); db.refresh(u)
+
+        async def _put():
+            code = await oauth_state_service.put_exchange_code(u.id)
+            await redis_client.close_redis()
+            return code
+
+        code = asyncio.get_event_loop().run_until_complete(_put())
+        assert client.post("/api/auth/oauth/exchange",
+                           cookies={"oauth_exchange": code}).status_code == 200
+        # Drop the cached Redis client between requests (each TestClient call
+        # creates a fresh event loop; the cached async client would otherwise
+        # bind to a dead loop).
+        redis_client.set_redis_for_tests(None)
+        assert client.post("/api/auth/oauth/exchange",
+                           cookies={"oauth_exchange": code}).status_code == 401
+    finally:
+        db.query(User).filter(User.email == email).delete()
+        db.commit()
+        db.close()
