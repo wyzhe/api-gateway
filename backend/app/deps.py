@@ -1,6 +1,6 @@
 from collections.abc import Generator
 
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Depends, Header, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from .database import SessionLocal
@@ -14,6 +14,22 @@ def get_db() -> Generator[Session, None, None]:
         yield db
     finally:
         db.close()
+
+
+def client_ip(request: Request) -> str | None:
+    """Extract client IP, honoring ``X-Forwarded-For`` for proxied requests.
+
+    Returns the first forwarded hop trimmed to 64 chars, or the direct peer
+    address. Returns ``None`` when neither is available (e.g. ASGI test
+    contexts without a client tuple).
+    """
+    fwd = request.headers.get("X-Forwarded-For")
+    if fwd:
+        first = fwd.split(",")[0].strip()[:64]
+        return first or None
+    if request.client is None:
+        return None
+    return request.client.host
 
 
 def _unauthorized(detail: str = "Not authenticated") -> HTTPException:

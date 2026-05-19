@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from sqlalchemy import desc, func
 from sqlalchemy.orm import Session
 
+from ..deps import client_ip as _ip
 from ..deps import get_db, require_admin
 from ..enums import ModelType
 from ..models import (
@@ -32,15 +33,6 @@ from .logs import _apply_filters, _enrich_summary
 from .models import _to_out as model_to_out
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
-
-
-def _ip(request: Request) -> str | None:
-    fwd = request.headers.get("X-Forwarded-For")
-    if fwd:
-        return fwd.split(",")[0].strip()[:64]
-    if request.client is None:
-        return None
-    return request.client.host
 
 
 # ---------------- Overview ----------------

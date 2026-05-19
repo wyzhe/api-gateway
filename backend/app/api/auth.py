@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
+from ..deps import client_ip as _client_ip
 from ..deps import get_current_user, get_db
 from ..logging_config import get_logger
 from ..metrics import auth_logins_total, auth_password_changes_total
@@ -109,15 +110,6 @@ def logout(
     if payload is not None and payload.refresh_token:
         auth_service.revoke(db, payload.refresh_token)
     return {"ok": True}
-
-
-def _client_ip(request: Request) -> str | None:
-    fwd = request.headers.get("X-Forwarded-For")
-    if fwd:
-        return fwd.split(",")[0].strip()[:64]
-    if request.client is None:
-        return None
-    return request.client.host
 
 
 _password_limiter_jwt = make_limiter(5, seconds=60)

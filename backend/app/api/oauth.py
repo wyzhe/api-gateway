@@ -17,6 +17,7 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
+from ..deps import client_ip as _request_ip
 from ..deps import get_current_user, get_db
 from ..logging_config import get_logger
 from ..metrics import auth_oauth_total, auth_signup_rate_limited_total
@@ -72,10 +73,10 @@ def _safe_return_to(raw: str | None) -> str:
 
 
 def _client_ip(request: Request) -> str:
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
+    """OAuth-specific wrapper: never returns ``None``. Falls back to
+    ``"unknown"`` so the signup-rate-limit Redis key remains a stable string.
+    """
+    return _request_ip(request) or "unknown"
 
 
 def _pkce_challenge(verifier: str) -> str:
