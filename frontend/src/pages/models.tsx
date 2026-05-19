@@ -12,6 +12,19 @@ import { priceLabel, pricingModeKey } from "@/lib/utils";
 
 type CapBag = Record<string, unknown>;
 
+const CAP_FLAG_KEYS = {
+  stream: "models.cap.stream",
+  tools: "models.cap.tools",
+  vision: "models.cap.vision",
+} as const satisfies Record<string, TKey>;
+
+const CAP_LIST_KEYS = {
+  sizes: "models.cap.sizes",
+  resolutions: "models.cap.resolutions",
+  aspect_ratios: "models.cap.aspect_ratios",
+  durations: "models.cap.durations",
+} as const satisfies Record<string, TKey>;
+
 function fmtCtx(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n % 1_000_000 === 0 ? 0 : 1)}M`;
   if (n >= 1_000) return `${Math.round(n / 1_000)}K`;
@@ -22,21 +35,19 @@ function CapabilityChips({ caps }: { caps: CapBag }) {
   const t = useT();
   const chips: Array<{ key: string; label: string }> = [];
 
-  for (const flag of ["stream", "tools", "vision"] as const) {
-    if (caps[flag] === true) {
-      chips.push({ key: flag, label: t(`models.cap.${flag}` as TKey) });
-    }
+  for (const flag of Object.keys(CAP_FLAG_KEYS) as Array<keyof typeof CAP_FLAG_KEYS>) {
+    if (caps[flag] === true) chips.push({ key: flag, label: t(CAP_FLAG_KEYS[flag]) });
   }
   if (typeof caps.ctx === "number") {
-    chips.push({ key: "ctx", label: t("models.cap.ctx" as TKey, { value: fmtCtx(caps.ctx) }) });
+    chips.push({ key: "ctx", label: t("models.cap.ctx", { value: fmtCtx(caps.ctx) }) });
   }
-  for (const list of ["sizes", "resolutions", "aspect_ratios", "durations"] as const) {
+  for (const list of Object.keys(CAP_LIST_KEYS) as Array<keyof typeof CAP_LIST_KEYS>) {
     const v = caps[list];
     if (Array.isArray(v) && v.length > 0) {
       const value = v
         .map((x) => (list === "durations" ? `${x}s` : String(x)))
         .join(" / ");
-      chips.push({ key: list, label: t(`models.cap.${list}` as TKey, { value }) });
+      chips.push({ key: list, label: t(CAP_LIST_KEYS[list], { value }) });
     }
   }
 

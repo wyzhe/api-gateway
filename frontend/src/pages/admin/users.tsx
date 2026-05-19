@@ -141,6 +141,8 @@ export function AdminUsersPage() {
     void refresh();
   };
 
+  const isEditingSelf = !!openEdit && openEdit.id === me?.id;
+
   return (
     <div>
       <PageHeader
@@ -254,7 +256,7 @@ export function AdminUsersPage() {
               <Select
                 value={editRole}
                 onValueChange={(v) => setEditRole(v as "user" | "admin")}
-                disabled={openEdit?.id === me?.id}
+                disabled={isEditingSelf}
               >
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -262,7 +264,7 @@ export function AdminUsersPage() {
                   <SelectItem value="admin">{t("admin.users.editDialog.roleAdmin")}</SelectItem>
                 </SelectContent>
               </Select>
-              {openEdit?.id === me?.id && (
+              {isEditingSelf && (
                 <div className="text-xs text-muted-foreground mt-1">
                   {t("admin.users.selfRoleLocked")}
                 </div>

@@ -43,6 +43,12 @@ def _ip(request: Request) -> str | None:
     return request.client.host
 
 
+def _forbid_self(admin: User, target_user_id: int, action: str) -> None:
+    """Prevent an admin from locking themselves out via {action} their own account."""
+    if target_user_id == admin.id:
+        raise HTTPException(status_code=400, detail=f"Cannot {action} your own admin account")
+
+
 # ---------------- Overview ----------------
 
 
@@ -177,8 +183,8 @@ def update_user(
     if not u:
         raise HTTPException(status_code=404, detail="User not found")
     data = payload.model_dump(exclude_unset=True)
-    if user_id == admin.id and data.get("role") not in (None, "admin"):
-        raise HTTPException(status_code=400, detail="Cannot demote your own admin account")
+    if data.get("role") not in (None, "admin"):
+        _forbid_self(admin, user_id, "demote")
     before = {k: getattr(u, k) for k in data.keys() if k != "password"}
     if "password" in data:
         u.password_hash = hash_password(data.pop("password"))
@@ -202,8 +208,7 @@ def disable_user(
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
 ) -> AdminUserOut:
-    if user_id == admin.id:
-        raise HTTPException(status_code=400, detail="Cannot disable your own admin account")
+    _forbid_self(admin, user_id, "disable")
     u = db.get(User, user_id)
     if not u:
         raise HTTPException(status_code=404, detail="User not found")

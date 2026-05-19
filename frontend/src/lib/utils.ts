@@ -19,10 +19,15 @@ export async function copyToClipboard(text: string): Promise<boolean> {
   }
 }
 
-export function fmtCompactMoney(value: number | string | null | undefined): string {
-  if (value === null || value === undefined) return "—";
+function toFiniteNumber(value: number | string | null | undefined): number | null {
+  if (value === null || value === undefined) return null;
   const n = typeof value === "string" ? Number(value) : value;
-  if (Number.isNaN(n)) return "—";
+  return Number.isNaN(n) ? null : n;
+}
+
+export function fmtCompactMoney(value: number | string | null | undefined): string {
+  const n = toFiniteNumber(value);
+  if (n === null) return "—";
   if (n === 0) return "$0";
   if (n < 0.01) return `$${n.toFixed(6)}`;
   if (n < 1) return `$${n.toFixed(4)}`;
@@ -35,16 +40,17 @@ export function fmtCompactMoney(value: number | string | null | undefined): stri
  * "balance after" fields where a debit must remain visible.
  */
 export function fmtBalance(value: number | string | null | undefined): string {
-  if (value === null || value === undefined) return "—";
-  const n = typeof value === "string" ? Number(value) : value;
-  if (Number.isNaN(n)) return "—";
+  const n = toFiniteNumber(value);
+  if (n === null) return "—";
   if (n === 0) return "$0";
   const sign = n < 0 ? "-" : "";
-  const abs = Math.abs(n);
-  const fixed = abs.toFixed(6).replace(/0+$/, "").replace(/\.$/, "");
-  const [intPart, decPart = ""] = fixed.split(".");
-  const padded = decPart.length < 2 ? decPart.padEnd(2, "0") : decPart;
-  return `${sign}$${intPart}.${padded}`;
+  const fixed = Math.abs(n).toFixed(6);
+  // Trim trailing zeros but keep at least 2 decimals (so $5 always renders as $5.00).
+  let end = fixed.length - 1;
+  const dot = fixed.indexOf(".");
+  const minEnd = dot + 2;
+  while (end > minEnd && fixed[end] === "0") end--;
+  return `${sign}$${fixed.slice(0, end + 1)}`;
 }
 
 export function fmtDate(value: string | Date | null | undefined): string {
