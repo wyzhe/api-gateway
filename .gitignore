@@ -32,6 +32,8 @@ references/
 
 # Local agent tooling + design exploration (not committed)
 .claude/
+/.superpowers/
 /mockups/
 /ref-*.png
+/linear-*.png
 /.playwright-mcp/
