@@ -32,6 +32,8 @@ const WS_NAV: { to: string; key: TKey; Icon: typeof Gauge }[] = [
   { to: "/billing", key: "nav.billing", Icon: CircleDollarSign },
   { to: "/models", key: "nav.models", Icon: CpuIcon },
   { to: "/docs", key: "nav.docs", Icon: BookOpen },
+  { to: "/settings/connections", key: "nav.settingsConnections", Icon: Shield },
+  { to: "/settings/security", key: "nav.settingsSecurity", Icon: Settings },
 ];
 
 const ADMIN_NAV: { to: string; key: TKey; Icon: typeof Gauge }[] = [
