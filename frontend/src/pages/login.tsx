@@ -1,8 +1,9 @@
-import { useEffect, useState, type FormEvent, type SVGProps } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Navigate, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { BrandMark } from "@/components/brand-mark";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { GitHubIcon } from "@/components/ui/github-icon";
 import { GoogleIcon } from "@/components/ui/google-icon";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,15 +12,6 @@ import { getOAuthProviders, startOAuthLogin } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useT, type TKey } from "@/lib/i18n";
 import type { OAuthProvidersStatus } from "@/lib/types";
-
-/** GitHub mark — inlined because lucide-react v1 dropped brand icons. */
-function GitHubIcon(props: SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" {...props}>
-      <path d="M12 .5C5.65.5.5 5.66.5 12.02c0 5.09 3.29 9.4 7.86 10.93.58.1.79-.25.79-.56 0-.28-.01-1.02-.02-2-3.2.7-3.87-1.54-3.87-1.54-.52-1.33-1.27-1.69-1.27-1.69-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.18 1.76 1.18 1.03 1.76 2.7 1.25 3.36.95.1-.74.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.18-3.1-.12-.3-.51-1.47.11-3.07 0 0 .96-.31 3.15 1.18a10.95 10.95 0 0 1 5.74 0c2.19-1.49 3.15-1.18 3.15-1.18.62 1.6.23 2.77.11 3.07.73.81 1.18 1.84 1.18 3.1 0 4.42-2.7 5.39-5.27 5.68.41.35.78 1.05.78 2.12 0 1.53-.01 2.76-.01 3.13 0 .31.21.67.8.56C20.21 21.42 23.5 17.1 23.5 12.02 23.5 5.66 18.35.5 12 .5Z" />
-    </svg>
-  );
-}
 
 export function LoginPage() {
   const { login, user } = useAuth();
