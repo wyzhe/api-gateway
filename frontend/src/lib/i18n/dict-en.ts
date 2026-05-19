@@ -76,6 +76,8 @@ export const en = {
     signOut: "Sign out",
     settingsConnections: "Connections",
     settingsSecurity: "Security",
+    userMenu: "User menu",
+    language: "Language",
   },
   login: {
     title: "Log in to Relay",

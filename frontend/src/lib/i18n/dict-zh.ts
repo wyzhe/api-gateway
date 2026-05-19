@@ -78,6 +78,8 @@ export const zh: EnDict = {
     signOut: "退出登录",
     settingsConnections: "关联账号",
     settingsSecurity: "安全",
+    userMenu: "用户菜单",
+    language: "语言",
   },
   login: {
     title: "登录 Relay",

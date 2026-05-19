@@ -13,9 +13,9 @@ export function KpiTile({
   className?: string;
 }) {
   return (
-    <div className={cn("rounded-md border border-border bg-card p-4 flex flex-col gap-1.5", className)}>
-      <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">{label}</div>
-      <div className="text-2xl font-semibold mono">{value}</div>
+    <div className={cn("rounded-md border border-border bg-card p-3 flex flex-col gap-1", className)}>
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="text-lg font-semibold mono leading-tight">{value}</div>
       {hint && <div className="text-xs text-muted-foreground">{hint}</div>}
     </div>
   );
