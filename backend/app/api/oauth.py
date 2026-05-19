@@ -20,7 +20,7 @@ from ..config import get_settings
 from ..deps import get_current_user, get_db
 from ..logging_config import get_logger
 from ..metrics import auth_oauth_total, auth_signup_rate_limited_total
-from ..models import AuditLog, OAuthIdentity
+from ..models import OAuthIdentity
 from ..models import User as UserModel
 from ..schemas.auth import LoginResponse, UserOut
 from ..schemas.oauth import (
@@ -31,6 +31,7 @@ from ..schemas.oauth import (
 from ..security import create_access_token
 from ..services import (
     abuse_mitigation_service,
+    audit_service,
     auth_service,
     oauth_linking_service,
     oauth_state_service,
@@ -85,22 +86,6 @@ def _pkce_challenge(verifier: str) -> str:
 def _frontend_url(path: str) -> str:
     base = (settings.oauth_frontend_base_url or "http://localhost:5173").rstrip("/")
     return f"{base}{path}"
-
-
-def _audit(
-    db: Session,
-    action: str,
-    *,
-    target_id: int | None = None,
-    actor_user_id: int | None = None,
-) -> None:
-    """Insert AuditLog row. Caller commits."""
-    db.add(AuditLog(
-        actor_user_id=actor_user_id,
-        action=action,
-        target_type="user" if target_id is not None else "system",
-        target_id=str(target_id) if target_id is not None else None,
-    ))
 
 
 async def _handle_callback_fetch(p, code: str, code_verifier: str) -> NormalizedProfile:
@@ -185,7 +170,10 @@ async def callback(
 
     state_data = await oauth_state_service.consume_state(state)
     if not state_data or state_data.get("provider") != provider:
-        _audit(db, "oauth_state_mismatch")
+        audit_service.record(
+            db, actor_user_id=None, action="oauth_state_mismatch",
+            target_type="system", target_id=None, ip=_client_ip(request),
+        )
         db.commit()
         auth_oauth_total.labels(provider=provider, outcome="error_state").inc()
         return RedirectResponse(_frontend_url("/login?error=state_expired"), status_code=302)
@@ -202,7 +190,10 @@ async def callback(
         return RedirectResponse(_frontend_url("/login?error=upstream_failure"), status_code=302)
 
     if not profile.email_verified:
-        _audit(db, "oauth_unverified_email")
+        audit_service.record(
+            db, actor_user_id=None, action="oauth_unverified_email",
+            target_type="system", target_id=None, ip=_client_ip(request),
+        )
         db.commit()
         auth_oauth_total.labels(provider=provider, outcome="error_email").inc()
         return RedirectResponse(_frontend_url("/login?error=email_unverified"), status_code=302)
@@ -221,7 +212,12 @@ async def callback(
                     db, user_id=linker_id, provider=provider,
                     subject=profile.sub, email=profile.email,
                 )
-            _audit(db, "oauth_link", target_id=linker_id, actor_user_id=linker_id)
+            audit_service.record(
+                db, actor_user_id=linker_id, action="oauth_link",
+                target_type="user", target_id=linker_id,
+                after={"provider": provider},
+                ip=_client_ip(request),
+            )
             db.commit()
             auth_oauth_total.labels(provider=provider, outcome="link").inc()
             return RedirectResponse(
@@ -229,7 +225,12 @@ async def callback(
                 status_code=302,
             )
         except oauth_linking_service.OAuthProviderInUse:
-            _audit(db, "oauth_provider_in_use", target_id=linker_id, actor_user_id=linker_id)
+            audit_service.record(
+                db, actor_user_id=linker_id, action="oauth_provider_in_use",
+                target_type="user", target_id=linker_id,
+                after={"provider": provider},
+                ip=_client_ip(request),
+            )
             db.commit()
             auth_oauth_total.labels(provider=provider, outcome="error_in_use").inc()
             return RedirectResponse(
@@ -256,7 +257,10 @@ async def callback(
     if will_signup:
         allowed, _count = await abuse_mitigation_service.check_and_incr_signup_ip(client_ip)
         if not allowed:
-            _audit(db, "oauth_signup_rate_limited")
+            audit_service.record(
+                db, actor_user_id=None, action="oauth_signup_rate_limited",
+                target_type="system", target_id=None, ip=client_ip,
+            )
             db.commit()
             auth_signup_rate_limited_total.inc()
             return RedirectResponse(
@@ -275,10 +279,20 @@ async def callback(
                 email=profile.email, name=profile.name,
             )
         action = {"signup": "oauth_signup", "login": "oauth_login", "link": "oauth_link"}[outcome]
-        _audit(db, action, target_id=user.id, actor_user_id=user.id)
+        audit_service.record(
+            db, actor_user_id=user.id, action=action,
+            target_type="user", target_id=user.id,
+            after={"provider": provider},
+            ip=client_ip,
+        )
         db.commit()
     except oauth_linking_service.OAuthEmailConflict:
-        _audit(db, "oauth_email_conflict")
+        audit_service.record(
+            db, actor_user_id=None, action="oauth_email_conflict",
+            target_type="system", target_id=None,
+            after={"provider": provider, "email": profile.email},
+            ip=client_ip,
+        )
         db.commit()
         auth_oauth_total.labels(provider=provider, outcome="error_conflict").inc()
         return RedirectResponse(

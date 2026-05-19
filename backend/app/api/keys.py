@@ -5,10 +5,10 @@ from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from ..deps import get_current_user, get_db
-from ..models import ApiKey, AuditLog, User
+from ..models import ApiKey, User
 from ..schemas.api_key import ApiKeyCreate, ApiKeyCreatedOut, ApiKeyOut, ApiKeyUpdate
 from ..security import generate_api_key
-from ..services import abuse_mitigation_service
+from ..services import abuse_mitigation_service, audit_service
 from ..services.gateway_service import mtd_cost_for_api_key, mtd_cost_for_api_keys
 
 router = APIRouter(prefix="/api/keys", tags=["keys"])
@@ -48,12 +48,13 @@ async def create_key(
 ) -> ApiKeyCreatedOut:
     allowed, _ = await abuse_mitigation_service.check_and_incr_api_key_quota(user.id)
     if not allowed:
-        db.add(AuditLog(
+        audit_service.record(
+            db,
             actor_user_id=user.id,
             action="api_key_quota_exceeded",
             target_type="user",
-            target_id=str(user.id),
-        ))
+            target_id=user.id,
+        )
         db.commit()
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
