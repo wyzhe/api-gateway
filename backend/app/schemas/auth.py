@@ -1,5 +1,6 @@
 from datetime import datetime
 from decimal import Decimal
+from typing import Any
 
 from pydantic import BaseModel, EmailStr, Field
 
@@ -35,9 +36,28 @@ class UserOut(BaseModel):
     role: str
     status: str
     balance: Decimal
+    has_password: bool
+    email_verified_at: datetime | None
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+    @classmethod
+    def model_validate(cls, obj: Any, *args, **kwargs):
+        if hasattr(obj, "password_hash"):
+            data = {
+                "id": obj.id,
+                "email": obj.email,
+                "display_name": obj.display_name,
+                "role": obj.role,
+                "status": obj.status,
+                "balance": obj.balance,
+                "has_password": obj.password_hash is not None,
+                "email_verified_at": obj.email_verified_at,
+                "created_at": obj.created_at,
+            }
+            return super().model_validate(data, *args, **kwargs)
+        return super().model_validate(obj, *args, **kwargs)
 
 
 LoginResponse.model_rebuild()
