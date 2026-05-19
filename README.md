@@ -148,6 +148,18 @@ RATE_LIMIT_LOGIN_PER_15M=10
 RATE_LIMIT_REFRESH_PER_HOUR=60
 RATE_LIMIT_GATEWAY_RPM=60
 WORKER_TASK_SCAN_INTERVAL_SECONDS=30
+
+# OAuth (optional; configure to enable Google/GitHub login)
+GOOGLE_OAUTH_CLIENT_ID=
+GOOGLE_OAUTH_CLIENT_SECRET=
+GITHUB_OAUTH_CLIENT_ID=
+GITHUB_OAUTH_CLIENT_SECRET=
+OAUTH_BACKEND_BASE_URL=http://localhost:8000
+OAUTH_FRONTEND_BASE_URL=http://localhost:5173
+
+# Anti-abuse defaults (override only if needed)
+SIGNUP_PER_IP_PER_DAY=10
+API_KEY_PER_USER_PER_DAY=5
 ```
 
 In `ENV=production`, weak `JWT_SECRET` values (length < 32, or known placeholders like "change-me") cause the app to refuse to start.
@@ -266,3 +278,26 @@ Coverage: cost calculation, APIMart task_id parsing, password hashing + JWT roun
 Public registration, online payments, multi-tenant workspaces, auto-fallback, intelligent routing, multiple real upstream providers, invoices, webhooks, K8s, message queues.
 
 See `CLAUDE.md` for the agent-onboarding notes that explain the design tradeoffs.
+
+---
+
+## OAuth (optional)
+
+To enable Google / GitHub login:
+
+### Google
+
+1. Go to https://console.cloud.google.com/apis/credentials
+2. Create OAuth 2.0 Client ID → Web application
+3. Authorized redirect URIs:
+   - dev: `http://localhost:8000/api/auth/oauth/google/callback`
+   - prod: `https://api.YOUR-DOMAIN/api/auth/oauth/google/callback`
+4. Copy Client ID / Secret to env
+
+### GitHub
+
+1. Settings → Developer settings → OAuth Apps → New OAuth App
+2. Authorization callback URL: same as above (GitHub version)
+3. Copy Client ID / generate Client Secret to env
+
+Frontend and backend **must be same site** (share registrable domain, e.g. `app.example.com` and `api.example.com`). Cross-site deployment requires SameSite=None + CSRF token (not implemented).
