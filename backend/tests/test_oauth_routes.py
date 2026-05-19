@@ -295,3 +295,50 @@ def test_exchange_401_when_code_already_used(monkeypatch):
         db.query(User).filter(User.email == email).delete()
         db.commit()
         db.close()
+
+
+def test_link_start_requires_jwt(monkeypatch):
+    _set_google_configured(monkeypatch)
+    r = client.post("/api/auth/oauth/google/link/start", json={"return_to": "/settings/connections"})
+    assert r.status_code == 401
+
+
+def test_link_start_returns_redirect_url_with_link_mode(monkeypatch, jwt):
+    _set_google_configured(monkeypatch)
+    r = client.post(
+        "/api/auth/oauth/google/link/start",
+        headers={"Authorization": f"Bearer {jwt}"},
+        json={"return_to": "/settings/connections"},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["redirect_url"].startswith("https://accounts.google.com/")
+    qs = parse_qs(urlparse(body["redirect_url"]).query)
+    assert qs["code_challenge_method"] == ["S256"]
+
+
+def test_link_callback_attaches_identity_to_current_user(monkeypatch, jwt, test_user):
+    import asyncio
+    _set_google_configured(monkeypatch)
+    _stub_profile(monkeypatch, "google", NormalizedProfile(
+        sub="link-cb-1", email="alt-email@example.com",
+        email_verified=True, name="Linker",
+    ))
+    state = asyncio.get_event_loop().run_until_complete(
+        _seed_state(provider="google", mode="link", linker_user_id=test_user.id)
+    )
+    r = client.get(f"/api/auth/oauth/google/callback?code=x&state={state}",
+                   follow_redirects=False)
+    assert r.status_code in (302, 307)
+    assert "/settings/connections?linked=google" in r.headers["location"]
+    cookies = r.headers.get_list("set-cookie")
+    assert not any(c.startswith("oauth_exchange=") and "Max-Age=60" in c for c in cookies)
+
+    from app.database import SessionLocal
+    from app.models import OAuthIdentity
+    db = SessionLocal()
+    try:
+        db.query(OAuthIdentity).filter(OAuthIdentity.provider_subject == "link-cb-1").delete()
+        db.commit()
+    finally:
+        db.close()

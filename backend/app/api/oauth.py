@@ -17,13 +17,17 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
-from ..deps import get_db
+from ..deps import get_current_user, get_db
 from ..logging_config import get_logger
 from ..metrics import auth_oauth_total
 from ..models import AuditLog
 from ..models import User as UserModel
 from ..schemas.auth import LoginResponse, UserOut
-from ..schemas.oauth import OAuthProvidersStatus
+from ..schemas.oauth import (
+    OAuthLinkStartRequest,
+    OAuthLinkStartResponse,
+    OAuthProvidersStatus,
+)
 from ..security import create_access_token
 from ..services import auth_service, oauth_linking_service, oauth_state_service
 from ..services.oauth_providers import (
@@ -294,3 +298,39 @@ async def exchange(
         access_expires_in=settings.jwt_access_ttl_minutes * 60,
         user=UserOut.model_validate(user),
     )
+
+
+@router.post("/{provider}/link/start", response_model=OAuthLinkStartResponse)
+async def link_start(
+    provider: str,
+    payload: OAuthLinkStartRequest,
+    user: UserModel = Depends(get_current_user),
+) -> OAuthLinkStartResponse:
+    p = OAUTH_PROVIDERS.get(provider)
+    if p is None or not p.configured:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+
+    return_to = _safe_return_to(payload.return_to)
+    state = oauth_state_service.new_token()
+    verifier = oauth_state_service.new_token(64)
+    challenge = _pkce_challenge(verifier)
+
+    await oauth_state_service.put_state(
+        state,
+        provider=provider,
+        return_to=return_to,
+        code_verifier=verifier,
+        mode="link",
+        linker_user_id=user.id,
+    )
+
+    qs = urlencode({
+        "response_type": "code",
+        "client_id": p.client_id,
+        "scope": p.scope,
+        "redirect_uri": p.redirect_uri(),
+        "state": state,
+        "code_challenge": challenge,
+        "code_challenge_method": "S256",
+    })
+    return OAuthLinkStartResponse(redirect_url=f"{p.authorize_url}?{qs}")
