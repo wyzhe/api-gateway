@@ -29,3 +29,9 @@ dist/
 
 # references
 references/
+
+# Local agent tooling + design exploration (not committed)
+.claude/
+/mockups/
+/ref-*.png
+/.playwright-mcp/
