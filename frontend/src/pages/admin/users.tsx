@@ -1,4 +1,4 @@
-import { History, Pencil, Plus } from "lucide-react";
+import { CheckCircle2, History, Pencil, Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/sheet";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { PageHeader } from "@/components/shell";
-import { api } from "@/lib/api";
+import { adminMarkEmailVerified, api } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import type { AdminUser, Transaction } from "@/lib/types";
 import { fmtCompactMoney, fmtDate, txnBadgeVariant, txnTypeKey } from "@/lib/utils";
@@ -139,6 +139,17 @@ export function AdminUsersPage() {
     void refresh();
   };
 
+  const markVerified = async (u: AdminUser) => {
+    if (!confirm(t("admin.markEmailVerified.confirm"))) return;
+    try {
+      await adminMarkEmailVerified(u.id);
+      toast.success(t("admin.markEmailVerified.ok"));
+      void refresh();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "failed");
+    }
+  };
+
   return (
     <div>
       <PageHeader
@@ -187,6 +198,16 @@ export function AdminUsersPage() {
                     <Button variant="ghost" size="icon" onClick={() => setOpenTxns(u)} title={t("admin.users.actionTransactions")}>
                       <History className="h-3.5 w-3.5" />
                     </Button>
+                    {!u.email_verified_at && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => markVerified(u)}
+                        title={t("admin.markEmailVerified.label")}
+                      >
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
                     <Button variant="outline" size="sm" onClick={() => setOpenRecharge(u)}>
                       {t("admin.users.actionRecharge")}
                     </Button>

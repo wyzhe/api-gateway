@@ -59,6 +59,7 @@ export type AdminUser = {
   role: "user" | "admin";
   status: "active" | "disabled";
   balance: string;
+  email_verified_at: string | null;
   created_at: string;
 };
 

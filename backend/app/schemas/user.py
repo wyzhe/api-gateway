@@ -25,6 +25,7 @@ class AdminUserOut(BaseModel):
     role: str
     status: str
     balance: Decimal
+    email_verified_at: datetime | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
