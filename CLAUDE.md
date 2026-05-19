@@ -7,7 +7,7 @@ You're working on a self-hosted OpenAI-compatible API gateway in active producti
 ## What this is, what it isn't
 
 - **Is**: an OpenAI-compatible gateway in front of upstream LLM providers (currently APIMart) that adds (a) per-user API keys, (b) `Decimal`-precise balance-based billing with monthly caps, (c) full request logs, (d) async task lifecycle (image/video), (e) a React dashboard + admin console, (f) Redis-backed rate limiting, (g) an arq worker for async task finalization.
-- **Isn't**: a chat product, a managed offering, a multi-tenant SaaS, or a hosted public service. There's no signup, no online payments, no per-org workspaces. Users are provisioned by an admin.
+- **Isn't**: a chat product, a managed offering, a multi-tenant SaaS, or a hosted public service. No online payments, no per-org workspaces. Self-serve sign-up via Google / GitHub OAuth is now supported (open registration, default balance 0); admin manual provisioning still works as before.
 
 ## Stack and where to look first
 
@@ -50,6 +50,10 @@ When you need to change anything that talks to APIMart, **the only file that sho
 11. **Structured logs carry `request_id`.** A middleware assigns one per inbound request (or honors `X-Request-ID`) and puts it on a contextvar that structlog reads. Don't log via `print` or `logging.info(...)` without going through the configured logger.
 
 12. **No secret values in logs.** API keys, full JWTs, bcrypt hashes, raw `Authorization` headers must never appear in request/response payloads written to `request_logs.request_payload_json`. The gateway scrubs these on ingress. Adding a new field that might carry one means adding it to the scrub list.
+
+13. **OAuth 自动账号合并要求 verified email**:在 `OAuthLinkingService` 路径里,合并到已存在 User 必须满足 `User.email_verified_at IS NOT NULL`,否则抛 `OAuthEmailConflict`。这是对 [Account Pre-hijacking](https://www.usenix.org/conference/usenixsecurity22/presentation/sudhodanan) 攻击的核心防护,不要绕过。
+
+14. **OAuth signup IP 限流不能绕**:`/api/auth/oauth/*/callback` 的 signup 分支必须先过 `signup_ip_count` 计数器(默认 10/IP/day)。`/api/keys` 必须先过 `api_key_quota` 计数器(默认 5/user/day)。这是开放注册的反滥用基线,绕过会让 DB / Redis 在被扫的时候撑爆。
 
 ## How APIMart actually behaves (this informed the schema)
 
@@ -142,6 +146,7 @@ A failed worker job is retried with exponential backoff. Worker job exceptions a
 - `RequireAuth` / `RequireAdmin` wrap routes that need login or admin role.
 - **Playground**: the user's API key for the playground is held in **`sessionStorage`** (NOT `localStorage`), and the server emits a strict `Content-Security-Policy` that blocks third-party scripts/inline scripts. This is still imperfect (a same-origin XSS would defeat it) — if Playground users complain about the key clearing on tab close, fix the underlying XSS surface, don't move back to `localStorage`.
 - TS strictness: `strict: true`, `noImplicitAny: true`. New code must not introduce `any`. Use `unknown` and narrow.
+- **OAuth 一次性 exchange cookie 是唯一被允许的 HttpOnly cookie**。callback 后到 exchange 之间用 `oauth_exchange` cookie 传一次性 code,60s TTL,`Path=/api/auth/oauth/exchange`,`SameSite=Strict`。除此之外项目其它 token 仍走「JSON 返回 + 前端持有」模式,不要不假思索地把别的会话状态也搬到 cookie。
 
 ## Where the seams are if you need to extend
 
@@ -155,6 +160,8 @@ A failed worker job is retried with exponential backoff. Worker job exceptions a
 | Add a UI page | New file in `frontend/src/pages/`, register in `frontend/src/App.tsx`, add sidebar entry in `frontend/src/components/shell.tsx`. |
 | Add a background job | New function in `app/worker.py`; register in `WorkerSettings.functions` or `cron_jobs` |
 | Add an audit-logged admin action | Wrap the mutation in `audit_log.record(db, actor=admin, action=..., target_type=..., target_id=..., before=..., after=...)` inside the same transaction. |
+| Add a new OAuth provider | New entry in `OAUTH_PROVIDERS` dict in `oauth_providers.py` + env vars + Authlib registration |
+| Change abuse-mitigation thresholds | `SIGNUP_PER_IP_PER_DAY` / `API_KEY_PER_USER_PER_DAY` env vars; default values are deliberately strict |
 
 ## Running things
 
@@ -170,6 +177,7 @@ A failed worker job is retried with exponential backoff. Worker job exceptions a
 - `JWT_SECRET` has no default in non-test environments. The Settings model rejects missing/short/weak values at startup. Same for `ADMIN_PASSWORD`. If you see "JWT_SECRET must be at least 32 chars and not a known weak value" — set a real one, don't paper over it.
 - `REDIS_URL` is required. The app fails to start if Redis is unreachable at startup.
 - `CORS_ORIGINS` is a strict allowlist. Wildcards are not honored in production mode (`ENV=production`).
+- OAuth 端配置:`GOOGLE_OAUTH_CLIENT_ID/_SECRET`、`GITHUB_OAUTH_CLIENT_ID/_SECRET`、`OAUTH_BACKEND_BASE_URL`、`OAUTH_FRONTEND_BASE_URL`。生产环境校验:配了 `*_client_id` 必须有 `*_client_secret`;url 必须 https;backend / frontend url 必须同站(eTLD+1 相同),否则 `SameSite=Strict` cookie 会失效。`SIGNUP_PER_IP_PER_DAY`(默认 10)和 `API_KEY_PER_USER_PER_DAY`(默认 5)必须 >= 1。
 
 ## Known gaps / deferred items (not "won't fix" — "next")
 
@@ -187,5 +195,6 @@ A failed worker job is retried with exponential backoff. Worker job exceptions a
 - **Hiding async image/video behind a long-poll sync API** — ties up workers, breaks under load. Clients poll `/v1/tasks/{id}` or wait for the worker to finalize.
 - **`localStorage` for the playground API key** — `sessionStorage` + CSP is the floor. Moving back invites credential theft via XSS.
 - **`float` anywhere in the money path.**
+- **Auto-link OAuth identity to any existing User by email alone** — 必须用 `email_verified_at IS NOT NULL` 做 gate。详见 `docs/superpowers/specs/2026-05-19-oauth-login-design.md` § 6.1 Case 2 和 Account Pre-hijacking 引用。
 
 If you're confused about why something is the way it is, check the commit history before assuming it's a bug. Most quirks here are deliberate constraints for "small, simple, correct, production-ready" — emphasis added.
