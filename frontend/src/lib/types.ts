@@ -72,6 +72,22 @@ export type Provider = {
   created_at: string;
 };
 
+/**
+ * Union of every request/task lifecycle status the frontend renders. Superset
+ * of the per-row `LogSummary.status` and `LogSummary.task_status` because
+ * different code paths emit different members (e.g. `submitting` from the
+ * playground, `pending`/`cancelled` from async task transitions).
+ */
+export type LogLifecycleStatus =
+  | "success"
+  | "succeeded"
+  | "failed"
+  | "queued"
+  | "running"
+  | "pending"
+  | "cancelled"
+  | "submitting";
+
 export type LogSummary = {
   id: number;
   user_id: number;

@@ -1,12 +1,15 @@
+import type { LogLifecycleStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-const STATUS_COLOR: Record<string, string> = {
+const STATUS_COLOR: Record<LogLifecycleStatus, string> = {
   success: "bg-success",
+  succeeded: "bg-success",
   failed: "bg-destructive",
   queued: "bg-info",
   running: "bg-warn",
   pending: "bg-info",
   cancelled: "bg-dim",
+  submitting: "bg-info",
 };
 
 const STATUS_FALLBACK = "bg-muted-foreground";
@@ -16,14 +19,12 @@ export function DotStatus({
   label,
   className,
 }: {
-  /** The raw status key from request/task; lowercase form. */
-  status: string | null | undefined;
-  /** The localized label (already translated by caller). */
+  status: LogLifecycleStatus | null | undefined;
+  /** The localized label — DotStatus does not call `t()`; the caller does. */
   label: string;
   className?: string;
 }) {
-  const key = (status || "").toLowerCase();
-  const color = STATUS_COLOR[key] || STATUS_FALLBACK;
+  const color = (status && STATUS_COLOR[status]) || STATUS_FALLBACK;
   return (
     <span
       className={cn(

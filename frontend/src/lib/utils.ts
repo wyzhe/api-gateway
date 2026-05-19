@@ -100,15 +100,6 @@ export function pricingModeKey(mode: string): TKey {
   ) as TKey;
 }
 
-export function statusBadgeVariant(
-  status: string | null | undefined,
-): "success" | "danger" | "info" | "warn" | "default" {
-  if (status === "success" || status === "succeeded" || status === "active") return "success";
-  if (status === "failed" || status === "disabled") return "danger";
-  if (status === "running" || status === "queued") return "info";
-  return "default";
-}
-
 /**
  * Translation key for a backend request/task status badge label.
  * Falls back to "failed" if the value isn't one of the known enum members

@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CodeBlock } from "@/components/ui/code-block";
 import { Input } from "@/components/ui/input";
@@ -12,12 +11,13 @@ import {
 } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { DotStatus } from "@/components/dot-status";
 import { TypeBadge } from "@/components/type-badge";
 import { PageHeader } from "@/components/shell";
 import { api } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import type { LogDetail as Detail, LogSummary as Log } from "@/lib/types";
-import { fmtCompactMoney, fmtDate, fmtRelative, reqStatusKey, statusBadgeVariant } from "@/lib/utils";
+import { fmtCompactMoney, fmtDate, fmtRelative, reqStatusKey } from "@/lib/utils";
 
 export function AdminLogsPage() {
   const t = useT();
@@ -86,7 +86,7 @@ export function AdminLogsPage() {
                 <TableCell className="text-xs">#{r.user_id}</TableCell>
                 <TableCell className="mono text-xs">{r.model_name || r.upstream_model}</TableCell>
                 <TableCell>
-                  <Badge variant={statusBadgeVariant(r.status)}>{t(reqStatusKey(r.status))}</Badge>
+                  <DotStatus status={r.status} label={t(reqStatusKey(r.status))} />
                 </TableCell>
                 <TableCell className="mono text-xs">{fmtCompactMoney(r.cost)}</TableCell>
                 <TableCell className="text-xs text-muted-foreground">{r.latency_ms ?? "—"}{t("admin.logs.latencyMs")}</TableCell>
