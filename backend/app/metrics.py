@@ -57,6 +57,25 @@ users_with_low_balance = Gauge(
     "Number of users whose balance is <= the warning threshold.",
 )
 
+# --- OAuth ---
+auth_oauth_total = Counter(
+    "auth_oauth_total",
+    "OAuth flow outcomes",
+    labelnames=("provider", "outcome"),
+)
+
+auth_oauth_latency_ms = Histogram(
+    "auth_oauth_latency_ms",
+    "OAuth callback total latency in ms",
+    labelnames=("provider",),
+    buckets=(50, 100, 200, 500, 1000, 2000, 5000),
+)
+
+auth_signup_rate_limited_total = Counter(
+    "auth_signup_rate_limited_total",
+    "Signup attempts blocked by IP rate limit",
+)
+
 
 def render_metrics() -> tuple[bytes, str]:
     return generate_latest(), CONTENT_TYPE_LATEST

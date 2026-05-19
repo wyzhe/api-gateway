@@ -115,3 +115,95 @@ def test_start_validates_return_to_against_open_redirect(monkeypatch):
     r = client.get("/api/auth/oauth/google/start?return_to=http://evil.com/x",
                    follow_redirects=False)
     assert r.status_code in (302, 307)
+
+
+from app.services.oauth_providers import NormalizedProfile
+
+
+def _stub_profile(monkeypatch, provider: str, profile: NormalizedProfile):
+    async def fake_handle_callback(p, code, code_verifier):
+        return profile
+    monkeypatch.setattr(
+        "app.api.oauth._handle_callback_fetch",
+        fake_handle_callback,
+    )
+
+
+async def _seed_state(provider: str = "google", mode: str = "login",
+                      linker_user_id: int | None = None) -> str:
+    from app.services import oauth_state_service
+    from app import redis_client
+    state = oauth_state_service.new_token()
+    await oauth_state_service.put_state(
+        state, provider=provider, return_to="/", code_verifier="v",
+        mode=mode, linker_user_id=linker_user_id,
+    )
+    # Close + drop cached client so the TestClient request handler creates a
+    # fresh one bound to its own event loop.
+    await redis_client.close_redis()
+    return state
+
+
+def test_callback_rejects_unknown_state(monkeypatch):
+    _set_google_configured(monkeypatch)
+    r = client.get("/api/auth/oauth/google/callback?code=x&state=does-not-exist",
+                   follow_redirects=False)
+    assert r.status_code in (302, 307)
+    loc = r.headers["location"]
+    assert "/login?error=state_expired" in loc
+
+
+def test_callback_rejects_mismatched_provider_in_state(monkeypatch):
+    import asyncio
+    _set_google_configured(monkeypatch)
+    state = asyncio.get_event_loop().run_until_complete(_seed_state(provider="github"))
+    r = client.get(f"/api/auth/oauth/google/callback?code=x&state={state}",
+                   follow_redirects=False)
+    assert r.status_code in (302, 307)
+    assert "error=state_expired" in r.headers["location"]
+
+
+def test_callback_rejects_unverified_email(monkeypatch):
+    import asyncio
+    _set_google_configured(monkeypatch)
+    _stub_profile(monkeypatch, "google", NormalizedProfile(
+        sub="u-1", email="x@example.com", email_verified=False, name="X",
+    ))
+    state = asyncio.get_event_loop().run_until_complete(_seed_state())
+    r = client.get(f"/api/auth/oauth/google/callback?code=x&state={state}",
+                   follow_redirects=False)
+    assert "error=email_unverified" in r.headers["location"]
+
+
+def test_callback_signup_sets_exchange_cookie_and_redirects_to_frontend(monkeypatch):
+    import asyncio
+    _set_google_configured(monkeypatch)
+    _stub_profile(monkeypatch, "google", NormalizedProfile(
+        sub="signup-1", email="signup-1@example.com", email_verified=True, name="Sign",
+    ))
+    state = asyncio.get_event_loop().run_until_complete(_seed_state())
+    r = client.get(f"/api/auth/oauth/google/callback?code=x&state={state}",
+                   follow_redirects=False)
+    assert r.status_code in (302, 307)
+    loc = r.headers["location"]
+    assert loc.startswith("http://testserver/auth/oauth/complete")
+    assert "code=" not in loc  # exchange code 不进 URL
+    cookies = r.headers.get_list("set-cookie")
+    assert any(c.startswith("oauth_exchange=") for c in cookies)
+    cookie_line = [c for c in cookies if c.startswith("oauth_exchange=")][0]
+    assert "HttpOnly" in cookie_line
+    assert "SameSite=Strict" in cookie_line.replace("samesite", "SameSite")
+    assert "Path=/api/auth/oauth/exchange" in cookie_line
+    assert "Max-Age=60" in cookie_line
+
+    from app.database import SessionLocal
+    from app.models import OAuthIdentity, User
+    db = SessionLocal()
+    try:
+        db.query(OAuthIdentity).filter(
+            OAuthIdentity.provider_subject == "signup-1"
+        ).delete()
+        db.query(User).filter(User.email == "signup-1@example.com").delete()
+        db.commit()
+    finally:
+        db.close()
