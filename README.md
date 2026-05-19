@@ -79,6 +79,57 @@ Open `http://localhost:5173`. Default login: `admin@example.com` / `admin123` (o
 
 ---
 
+## Cheat sheet — start / stop everything
+
+One-time install:
+
+```bash
+brew install postgresql@15 redis        # if not already installed
+createdb llm_gateway                    # once, after postgres is running
+cd backend && python3 -m venv .venv && .venv/bin/pip install -e .
+cd frontend && npm install
+```
+
+Start (run each long-running process in its own terminal):
+
+```bash
+# 1. infra
+brew services start postgresql@15
+brew services start redis
+
+# 2. apply migrations (run after model changes; safe to re-run)
+cd backend && .venv/bin/alembic upgrade head
+
+# 3. backend API           → http://localhost:8000
+cd backend && .venv/bin/uvicorn app.main:app --reload --port 8000
+
+# 4. arq worker            (separate terminal)
+cd backend && .venv/bin/arq app.worker.WorkerSettings
+
+# 5. frontend dev server   → http://localhost:5173   (separate terminal)
+cd frontend && npm run dev
+```
+
+Health check:
+
+```bash
+curl http://localhost:8000/healthz                   # liveness
+curl http://localhost:8000/readyz                    # checks db + redis
+redis-cli ping                                       # → PONG
+```
+
+Stop:
+
+```bash
+# foreground processes (uvicorn / arq / vite): Ctrl-C in each terminal
+
+# infra
+brew services stop redis
+brew services stop postgresql@15
+```
+
+---
+
 ## Configuration (`.env`)
 
 ```env

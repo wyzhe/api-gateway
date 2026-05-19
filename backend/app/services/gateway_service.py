@@ -259,6 +259,8 @@ def persist_success(
     video_duration: Decimal | None = None,
     asset_url: str | None = None,
     task_status: str | None = None,
+    prompt_cached_tokens: int | None = None,
+    prompt_cache_creation_tokens: int | None = None,
 ) -> RequestLog:
     """Single transaction: insert request_log (with price snapshot) + debit +
     update api_key.last_used_at.
@@ -284,6 +286,8 @@ def persist_success(
         prompt_tokens=prompt_tokens,
         completion_tokens=completion_tokens,
         total_tokens=total_tokens,
+        prompt_cached_tokens=prompt_cached_tokens,
+        prompt_cache_creation_tokens=prompt_cache_creation_tokens,
         image_count=image_count,
         video_duration=video_duration,
         cost=cost,

@@ -30,6 +30,8 @@ class RequestLog(Base):
     # queued | running | succeeded | failed
 
     prompt_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    prompt_cached_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    prompt_cache_creation_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     completion_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     total_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     image_count: Mapped[int | None] = mapped_column(Integer, nullable=True)

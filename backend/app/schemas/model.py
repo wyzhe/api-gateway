@@ -20,9 +20,12 @@ class ModelOut(BaseModel):
     status: str
     visible: bool
     capabilities: dict[str, Any] | None
+    max_input_tokens: int | None = None
     pricing_mode: str
     input_price: Decimal | None
     output_price: Decimal | None
+    cache_write_price: Decimal | None = None
+    cache_read_price: Decimal | None = None
     image_price: Decimal | None
     video_second_price: Decimal | None
     generation_price: Decimal | None
@@ -41,10 +44,13 @@ class ModelCreate(BaseModel):
     status: str = Field(default="active", pattern="^(active|disabled)$")
     visible: bool = True
     capabilities: dict[str, Any] | None = None
+    max_input_tokens: int | None = Field(default=None, ge=1)
     display_provider: str | None = None
     pricing_mode: str = Field(pattern="^(per_token|per_image|per_second|per_generation)$")
     input_price: Decimal | None = None
     output_price: Decimal | None = None
+    cache_write_price: Decimal | None = Field(default=None, ge=Decimal("0"))
+    cache_read_price: Decimal | None = Field(default=None, ge=Decimal("0"))
     image_price: Decimal | None = None
     video_second_price: Decimal | None = None
     generation_price: Decimal | None = None
@@ -62,10 +68,13 @@ class ModelUpdate(BaseModel):
     status: str | None = Field(default=None, pattern="^(active|disabled)$")
     visible: bool | None = None
     capabilities: dict[str, Any] | None = None
+    max_input_tokens: int | None = Field(default=None, ge=1)
     display_provider: str | None = None
     pricing_mode: str | None = Field(default=None, pattern="^(per_token|per_image|per_second|per_generation)$")
     input_price: Decimal | None = None
     output_price: Decimal | None = None
+    cache_write_price: Decimal | None = Field(default=None, ge=Decimal("0"))
+    cache_read_price: Decimal | None = Field(default=None, ge=Decimal("0"))
     image_price: Decimal | None = None
     video_second_price: Decimal | None = None
     generation_price: Decimal | None = None

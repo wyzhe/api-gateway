@@ -13,9 +13,12 @@ export type Model = {
   status: "active" | "disabled";
   visible: boolean;
   capabilities: Record<string, unknown> | null;
+  max_input_tokens: number | null;
   pricing_mode: "per_token" | "per_image" | "per_second" | "per_generation";
   input_price: string | null;
   output_price: string | null;
+  cache_write_price: string | null;
+  cache_read_price: string | null;
   image_price: string | null;
   video_second_price: string | null;
   generation_price: string | null;
@@ -28,6 +31,9 @@ export type ApiKey = {
   key_prefix: string;
   status: "active" | "disabled";
   monthly_limit: string | null;
+  rate_limit_rpm: number | null;
+  rate_limit_tpm: number | null;
+  max_concurrent_requests: number | null;
   mtd_cost: string;
   last_used_at: string | null;
   created_at: string;

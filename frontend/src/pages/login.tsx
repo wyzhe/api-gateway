@@ -45,9 +45,6 @@ export function LoginPage() {
             </span>
           </div>
           <span className="font-semibold">Relay</span>
-          <span className="text-[10px] text-muted-foreground border border-border px-1.5 py-0.5 rounded mono">
-            MVP
-          </span>
         </div>
 
         <Card>

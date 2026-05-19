@@ -40,9 +40,12 @@ type ModelFormState = {
   pricing_mode: "per_token" | "per_image" | "per_second" | "per_generation";
   input_price: string;
   output_price: string;
+  cache_write_price: string;
+  cache_read_price: string;
   image_price: string;
   video_second_price: string;
   generation_price: string;
+  max_input_tokens: string;
   capabilitiesJson: string;
   visible: boolean;
   status: "active" | "disabled";
@@ -60,9 +63,12 @@ function emptyForm(providerId: number | ""): ModelFormState {
     pricing_mode: "per_token",
     input_price: "",
     output_price: "",
+    cache_write_price: "",
+    cache_read_price: "",
     image_price: "",
     video_second_price: "",
     generation_price: "",
+    max_input_tokens: "",
     capabilitiesJson: "{}",
     visible: true,
     status: "active",
@@ -82,9 +88,12 @@ function modelToForm(m: Model): ModelFormState {
     pricing_mode: m.pricing_mode,
     input_price: m.input_price ?? "",
     output_price: m.output_price ?? "",
+    cache_write_price: m.cache_write_price ?? "",
+    cache_read_price: m.cache_read_price ?? "",
     image_price: m.image_price ?? "",
     video_second_price: m.video_second_price ?? "",
     generation_price: m.generation_price ?? "",
+    max_input_tokens: m.max_input_tokens?.toString() ?? "",
     capabilitiesJson: m.capabilities ? JSON.stringify(m.capabilities) : "{}",
     visible: m.visible,
     status: m.status,
@@ -102,6 +111,14 @@ function formToPayload(f: ModelFormState): Validated<Record<string, unknown>> {
   }
   if (!f.public_name.trim()) return { ok: false, error: "public_name required" };
   if (!f.provider_id) return { ok: false, error: "provider required" };
+  let maxInputTokens: number | null = null;
+  if (f.max_input_tokens.trim()) {
+    const n = Number(f.max_input_tokens.trim());
+    if (!Number.isFinite(n) || !Number.isInteger(n) || n < 1) {
+      return { ok: false, error: "max_input_tokens must be a positive integer" };
+    }
+    maxInputTokens = n;
+  }
   return {
     ok: true,
     value: {
@@ -115,9 +132,12 @@ function formToPayload(f: ModelFormState): Validated<Record<string, unknown>> {
       pricing_mode: f.pricing_mode,
       input_price: f.input_price.trim() || null,
       output_price: f.output_price.trim() || null,
+      cache_write_price: f.cache_write_price.trim() || null,
+      cache_read_price: f.cache_read_price.trim() || null,
       image_price: f.image_price.trim() || null,
       video_second_price: f.video_second_price.trim() || null,
       generation_price: f.generation_price.trim() || null,
+      max_input_tokens: maxInputTokens,
       capabilities: caps,
       visible: f.visible,
       status: f.status,
@@ -317,6 +337,20 @@ function ModelFormBody({
             <FormField label="Output price (USD / 1M tokens)">
               <Input value={form.output_price} onChange={(e) => set("output_price", e.target.value)} />
             </FormField>
+            <FormField label="Cache write price (USD / 1M, blank = use input price)">
+              <Input
+                value={form.cache_write_price}
+                onChange={(e) => set("cache_write_price", e.target.value)}
+                placeholder="e.g. 3.75 (Claude Sonnet)"
+              />
+            </FormField>
+            <FormField label="Cache read price (USD / 1M, blank = use input price)">
+              <Input
+                value={form.cache_read_price}
+                onChange={(e) => set("cache_read_price", e.target.value)}
+                placeholder="e.g. 0.30 (Claude Sonnet)"
+              />
+            </FormField>
           </>
         );
       case "per_image":
@@ -421,14 +455,23 @@ function ModelFormBody({
         <div className="grid grid-cols-1 gap-3">{pricingFields()}</div>
       </div>
 
-      <FormField label="Capabilities (JSON)">
-        <Input
-          className="mono text-xs"
-          value={form.capabilitiesJson}
-          onChange={(e) => set("capabilitiesJson", e.target.value)}
-          placeholder='{"stream": true}'
-        />
-      </FormField>
+      <div className="grid grid-cols-2 gap-3">
+        <FormField label="Max input tokens (gateway rejects at 95% of this)">
+          <Input
+            value={form.max_input_tokens}
+            onChange={(e) => set("max_input_tokens", e.target.value)}
+            placeholder="e.g. 200000 (must match capabilities.ctx)"
+          />
+        </FormField>
+        <FormField label="Capabilities (JSON)">
+          <Input
+            className="mono text-xs"
+            value={form.capabilitiesJson}
+            onChange={(e) => set("capabilitiesJson", e.target.value)}
+            placeholder='{"stream": true, "ctx": 200000}'
+          />
+        </FormField>
+      </div>
 
       <div className="grid grid-cols-2 gap-3">
         <FormField label="Status">

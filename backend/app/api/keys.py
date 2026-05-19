@@ -52,6 +52,9 @@ def create_key(
         key_prefix=prefix,
         key_hash=hashed,
         monthly_limit=payload.monthly_limit,
+        rate_limit_rpm=payload.rate_limit_rpm,
+        rate_limit_tpm=payload.rate_limit_tpm,
+        max_concurrent_requests=payload.max_concurrent_requests,
         status="active",
     )
     db.add(row)

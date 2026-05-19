@@ -38,7 +38,10 @@ DEFAULT_MODELS: list[dict] = [
         "pricing_mode": "per_token",
         "input_price": Decimal("5.0"),
         "output_price": Decimal("15.0"),
-        "capabilities": {"stream": True, "tools": True, "vision": True, "ctx": 256000},
+        "capabilities": {"stream": True, "tools": True, "vision": True, "ctx": 256_000},
+        "max_input_tokens": 256_000,
+        "cache_write_price": None,
+        "cache_read_price": None,
     },
     {
         "public_name": "gpt-4o",
@@ -50,7 +53,10 @@ DEFAULT_MODELS: list[dict] = [
         "pricing_mode": "per_token",
         "input_price": Decimal("2.5"),
         "output_price": Decimal("10.0"),
-        "capabilities": {"stream": True, "tools": True, "vision": True, "ctx": 128000},
+        "capabilities": {"stream": True, "tools": True, "vision": True, "ctx": 128_000},
+        "max_input_tokens": 128_000,
+        "cache_write_price": None,
+        "cache_read_price": None,
     },
     {
         "public_name": "claude-sonnet-4.6",
@@ -62,7 +68,12 @@ DEFAULT_MODELS: list[dict] = [
         "pricing_mode": "per_token",
         "input_price": Decimal("3.0"),
         "output_price": Decimal("15.0"),
-        "capabilities": {"stream": True, "tools": True, "vision": True, "ctx": 200000},
+        "capabilities": {"stream": True, "tools": True, "vision": True, "ctx": 200_000},
+        "max_input_tokens": 200_000,
+        # Cache pricing per 1M input tokens, matching input_price / output_price denomination:
+        # write = $3.75/1M; read = $0.30/1M
+        "cache_write_price": Decimal("3.75"),
+        "cache_read_price": Decimal("0.30"),
     },
     {
         "public_name": "gemini-2.0-flash",
@@ -74,8 +85,12 @@ DEFAULT_MODELS: list[dict] = [
         "pricing_mode": "per_token",
         "input_price": Decimal("0.3"),
         "output_price": Decimal("2.5"),
-        "capabilities": {"stream": True, "tools": True, "vision": True, "ctx": 1000000},
+        "capabilities": {"stream": True, "tools": True, "vision": True, "ctx": 1_000_000},
+        "max_input_tokens": 1_000_000,
+        "cache_write_price": None,
+        "cache_read_price": None,
     },
+    # Non-text models do not consume input tokens — max_input_tokens and cache prices are not applicable below.
     # ------------ Image ------------
     {
         "public_name": "gpt-image-2",

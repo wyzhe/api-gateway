@@ -32,6 +32,73 @@ def calc_text_cost(model: ModelRow, prompt_tokens: int, completion_tokens: int) 
     return cost, False
 
 
+def _compute_cache_cost(
+    *,
+    input_p: Decimal | None,
+    output_p: Decimal | None,
+    cw: Decimal | None,
+    cr: Decimal | None,
+    prompt_tokens: int,
+    completion_tokens: int,
+    cached_tokens: int,
+    cache_creation_tokens: int,
+) -> Decimal:
+    """Three-bucket per-1M billing kernel shared by the live-model and
+    snapshot-replay paths. NULL cache_write/read price falls back to input_p
+    so cached tokens are never billed at zero by accident."""
+    cache_read = max(0, int(cached_tokens or 0))
+    cache_write = max(0, int(cache_creation_tokens or 0))
+    regular = max(0, int(prompt_tokens or 0) - cache_read - cache_write)
+
+    cost = Decimal("0")
+    if input_p is not None:
+        if regular:
+            cost += Decimal(regular) / MILLION * Decimal(input_p)
+        if cache_read and cr is None:
+            cost += Decimal(cache_read) / MILLION * Decimal(input_p)
+        if cache_write and cw is None:
+            cost += Decimal(cache_write) / MILLION * Decimal(input_p)
+    if cr is not None and cache_read:
+        cost += Decimal(cache_read) / MILLION * Decimal(cr)
+    if cw is not None and cache_write:
+        cost += Decimal(cache_write) / MILLION * Decimal(cw)
+    if output_p is not None and completion_tokens:
+        cost += Decimal(completion_tokens) / MILLION * Decimal(output_p)
+    return cost
+
+
+def calc_text_cost_with_cache(
+    model: ModelRow,
+    prompt_tokens: int,
+    completion_tokens: int,
+    *,
+    cached_tokens: int,
+    cache_creation_tokens: int,
+) -> tuple[Decimal, bool]:
+    """Cost for text completion when usage reports cache hits/writes.
+
+    `prompt_tokens` is the **total** input tokens (already includes the
+    cached + cache_creation portions, per Anthropic + OpenAI conventions).
+    All prices are per 1M tokens.
+    """
+    input_p = model.input_price
+    output_p = model.output_price
+    if input_p is None and output_p is None:
+        return Decimal("0"), True
+
+    cost = _compute_cache_cost(
+        input_p=input_p,
+        output_p=output_p,
+        cw=model.cache_write_price,
+        cr=model.cache_read_price,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        cached_tokens=cached_tokens,
+        cache_creation_tokens=cache_creation_tokens,
+    )
+    return cost, False
+
+
 def calc_image_cost(model: ModelRow, image_count: int) -> tuple[Decimal, bool]:
     per = model.image_price if model.image_price is not None else model.generation_price
     if per is None:
@@ -108,6 +175,8 @@ def price_snapshot(model: ModelRow) -> dict[str, Any]:
         "pricing_mode": model.pricing_mode,
         "input_price": s(model.input_price),
         "output_price": s(model.output_price),
+        "cache_write_price": s(model.cache_write_price),
+        "cache_read_price": s(model.cache_read_price),
         "image_price": s(model.image_price),
         "video_second_price": s(model.video_second_price),
         "generation_price": s(model.generation_price),
@@ -118,14 +187,27 @@ def price_snapshot(model: ModelRow) -> dict[str, Any]:
 
 
 def recompute_text_cost_from_snapshot(
-    snapshot: dict[str, Any], prompt_tokens: int, completion_tokens: int
+    snapshot: dict[str, Any],
+    prompt_tokens: int,
+    completion_tokens: int,
+    *,
+    cached_tokens: int = 0,
+    cache_creation_tokens: int = 0,
 ) -> Decimal:
-    """Used by the worker when reconciling stream-usage clawback after the fact.
-
-    Reads pricing from the snapshot — NOT the live model row — so historical
-    correctness is preserved.
-    """
+    """Recompute text cost from a stored price snapshot. Used by the arq
+    worker's stream-usage clawback path. Old callers that pass no cache
+    kwargs see identical behavior to the cache-unaware legacy formula."""
     ip = Decimal(snapshot.get("input_price") or "0")
     op = Decimal(snapshot.get("output_price") or "0")
-    cost = Decimal(prompt_tokens) / MILLION * ip + Decimal(completion_tokens) / MILLION * op
-    return cost
+    cw = snapshot.get("cache_write_price")
+    cr = snapshot.get("cache_read_price")
+    return _compute_cache_cost(
+        input_p=ip,
+        output_p=op,
+        cw=Decimal(cw) if cw is not None else None,
+        cr=Decimal(cr) if cr is not None else None,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        cached_tokens=cached_tokens,
+        cache_creation_tokens=cache_creation_tokens,
+    )
