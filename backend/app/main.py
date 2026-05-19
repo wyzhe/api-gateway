@@ -19,6 +19,7 @@ from .api import keys as keys_api
 from .api import logs as logs_api
 from .api import models as models_api
 from .api import oauth as oauth_api
+from .api import settings_connections as settings_connections_api
 from .config import get_settings
 from .database import SessionLocal, engine
 from .logging_config import configure_logging, get_logger
@@ -196,4 +197,5 @@ app.include_router(billing_api.router)
 app.include_router(logs_api.router)
 app.include_router(dashboard_api.router)
 app.include_router(admin_api.router)
+app.include_router(settings_connections_api.router)
 app.include_router(gateway_api.router)
