@@ -2,7 +2,7 @@
 
 Responsibilities:
 - Resolve a `public_name` from the user payload to a (ModelRow, Provider) pair.
-- Build the APIMartProvider instance for the current request.
+- Build the upstream provider adapter for the current request.
 - Pre-authorize spend against the monthly cap via reservation_service (Redis).
 - Persist request_logs atomically with debit (single transaction, FOR UPDATE).
 """
