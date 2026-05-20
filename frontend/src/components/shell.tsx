@@ -42,8 +42,6 @@ const WS_GROUPS: NavGroup[] = [
     labelKey: "nav.groupAccount",
     items: [
       { to: "/billing", key: "nav.billing", Icon: CircleDollarSign },
-      { to: "/settings/connections", key: "nav.settingsConnections", Icon: Shield },
-      { to: "/settings/security", key: "nav.settingsSecurity", Icon: Settings },
     ],
   },
   {
@@ -124,6 +122,12 @@ export function Shell({ children }: { children: ReactNode }) {
                 </div>
               </Tooltip>
               <div className="h-px bg-border my-1" />
+              <Link
+                to="/account"
+                className="flex items-center gap-2 px-2 py-1.5 rounded-md text-[13px] text-foreground hover:bg-surface-2"
+              >
+                <Settings className="h-3.5 w-3.5" /> {t("nav.accountSettings")}
+              </Link>
               {user?.role === "admin" && !isAdminArea && (
                 <Link
                   to="/admin"

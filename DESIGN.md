@@ -489,6 +489,19 @@ to remain discoverable while scanning, just quieter than the data. Don't
 introduce a `MoreHorizontal` overflow menu unless the row genuinely has 5+
 actions; three icon buttons read fine inline.
 
+## In-progress feedback
+
+Long-running async actions (today: Playground chat generation) must signal
+"working, not hung". The trigger `Button`, while busy, swaps its leading icon
+for a spinning `<Loader2 className="animate-spin">` and its label for an
+elapsed-seconds counter (`t("playground.generatingElapsed", { seconds })`).
+The **ticking number is the load-bearing signal** — a static "Generating…"
+can still look frozen. Until the first streamed token lands, the result panel
+shows the same spinner + counter in place of its idle placeholder.
+
+`animate-spin` on a `lucide-react` icon is the only spinner pattern; don't add
+a bespoke CSS keyframe or a separate `<Spinner>` primitive.
+
 ## Do's and Don'ts
 
 | ✅ Do | ❌ Don't |
@@ -505,6 +518,7 @@ actions; three icon buttons read fine inline.
 | Use `<EmptyState title={…} action={…} />` inside `<TableCell colSpan={N}>` or as a panel for "no data yet". | Hand-rolled `<div className="text-center text-muted-foreground py-8">…</div>` — inconsistent spacing across pages. |
 | Use `<TypeBadge type="image" />` for any "what modality" rendering. | A custom colored badge per page that duplicates the type→icon mapping. |
 | Use `<DotStatus status={...} label={t(...)} />` for request / task status in tables and feeds. | Use `<Badge>` for ephemeral request state — that's `DotStatus`'s job. Badge is for durable state. |
+| Signal a busy async action with a spinning `Loader2` + elapsed-seconds counter on the trigger (see §In-progress feedback). | Leave a long-running action with no moving indicator — the user can't tell "working" from "hung". |
 | Render row-action icon groups at `opacity-50` resting / `opacity-100` on `group-hover` (see §Hover-revealed row actions). | Hide row actions entirely behind hover (`opacity-0` → `opacity-100`) — discoverability suffers. |
 | Open the user / language / sign-out controls from the sidebar avatar via `<Popover>`. | Stacking three rows of UI in the sidebar footer "because we have the space" — we don't, and the popover keeps it discoverable. |
 | Add an i18n key under `landing.*`, `playground.*`, `apiKeys.*` and call `t("...")`. | Hardcoded English strings in JSX. Both `dict-en.ts` and `dict-zh.ts` must stay in lockstep. |

@@ -76,8 +76,7 @@ export const en = {
     toWorkspace: "Workspace",
     toLanding: "Home",
     signOut: "Sign out",
-    settingsConnections: "Connections",
-    settingsSecurity: "Security",
+    accountSettings: "Account settings",
     userMenu: "User menu",
     language: "Language",
   },
@@ -96,7 +95,7 @@ export const en = {
       email_unverified:
         "Your email isn't verified at the provider. Verify it and try again.",
       email_already_registered:
-        "This email is already in use by a local account. Sign in with your password, then link this provider in Settings → Connections. If you forgot your password, contact your admin.",
+        "This email is already in use by a local account. Sign in with your password, then link this provider in Account settings → Connected accounts. If you forgot your password, contact your admin.",
       account_disabled:
         "This account is disabled. Please contact your administrator.",
       upstream_failure:
@@ -124,16 +123,14 @@ export const en = {
       detach: "Unlink",
       detachConfirm: "Unlink this {provider} connection?",
       cannotDetachLast:
-        "You must keep at least one login method. Set a password first, or link another provider.",
+        "You must keep at least one login method. Link another provider first.",
     },
     security: {
-      title: "Security",
-      setPassword: "Set password",
+      title: "Password",
       changePassword: "Change password",
       current: "Current password",
       new: "New password",
       confirm: "Confirm new password",
-      submit: "Save",
       tip: "Password must be at least 12 characters. Special characters are not required, but breached passwords are not allowed.",
       success: "Password updated. Other devices will need to sign in again.",
       err: {
@@ -196,17 +193,9 @@ export const en = {
     disable: "Disable",
     createDialog: {
       title: "Create API Key",
-      description: "The full key value is shown on the next screen.",
+      description: "New keys use default rate limits and no spend cap — edit the key afterward to change them. The full key is shown on the next screen.",
       nameLabel: "Name",
       namePlaceholder: "e.g. local-dev",
-      limitLabel: "Monthly spend limit (USD, optional)",
-      limitPlaceholder: "leave blank for no cap",
-      rpmLabel: "RPM (req/min, blank = default 60)",
-      rpmPlaceholder: "e.g. 120",
-      tpmLabel: "TPM (tokens/min, blank = unlimited)",
-      tpmPlaceholder: "e.g. 100000",
-      concurrencyLabel: "Concurrency (blank = default 10)",
-      concurrencyPlaceholder: "e.g. 20",
       submit: "Create",
       submitting: "Creating…",
     },
@@ -322,6 +311,7 @@ export const en = {
     videoEmpty: "— video appears here —",
     waitingUpstream: "Waiting for upstream…",
     generating: "Generating…",
+    generatingElapsed: "Generating… {seconds}s",
     usageTokens: "Tokens: {tokens}",
     usageCost: "Cost: {cost}",
     usageLatency: "Latency: {ms}ms",

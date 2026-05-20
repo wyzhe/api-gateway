@@ -147,6 +147,11 @@ class BodySizeLimitMiddleware:
             if not sent:
                 sent = True
                 return {"type": "http.request", "body": joined, "more_body": False}
-            return {"type": "http.disconnect"}
+            # Body already replayed. Delegate to the real `receive` instead of
+            # fabricating `http.disconnect`: a StreamingResponse downstream runs
+            # `listen_for_disconnect(receive)` concurrently with its body, and a
+            # fake disconnect there cancels the stream before its first chunk.
+            # The real `receive` blocks until the client genuinely disconnects.
+            return await receive()
 
         await self.app(scope, replay_receive, send)

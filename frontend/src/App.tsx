@@ -20,8 +20,7 @@ const AdminModelsPage = lazy(() => import("@/pages/admin/models").then((m) => ({
 const AdminProvidersPage = lazy(() => import("@/pages/admin/providers").then((m) => ({ default: m.AdminProvidersPage })));
 const AdminLogsPage = lazy(() => import("@/pages/admin/logs").then((m) => ({ default: m.AdminLogsPage })));
 const OAuthCompletePage = lazy(() => import("@/pages/oauth-complete").then((m) => ({ default: m.OAuthCompletePage })));
-const SettingsConnectionsPage = lazy(() => import("@/pages/settings-connections").then((m) => ({ default: m.SettingsConnectionsPage })));
-const SettingsSecurityPage = lazy(() => import("@/pages/settings-security").then((m) => ({ default: m.SettingsSecurityPage })));
+const AccountPage = lazy(() => import("@/pages/account").then((m) => ({ default: m.AccountPage })));
 
 function Workspace({ children }: { children: React.ReactNode }) {
   return (
@@ -53,8 +52,7 @@ export default function App() {
           <Route path="/auth/oauth/complete" element={<OAuthCompletePage />} />
 
           <Route path="/dashboard" element={<Workspace><DashboardPage /></Workspace>} />
-          <Route path="/settings/connections" element={<Workspace><SettingsConnectionsPage /></Workspace>} />
-          <Route path="/settings/security" element={<Workspace><SettingsSecurityPage /></Workspace>} />
+          <Route path="/account" element={<Workspace><AccountPage /></Workspace>} />
           <Route path="/keys" element={<Workspace><ApiKeysPage /></Workspace>} />
           <Route path="/logs" element={<Workspace><UsageLogsPage /></Workspace>} />
           <Route path="/playground" element={<Workspace><PlaygroundPage /></Workspace>} />

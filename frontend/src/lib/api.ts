@@ -253,7 +253,7 @@ export function startOAuthLogin(
 
 export async function startOAuthLink(
   provider: "google" | "github",
-  returnTo: string = "/settings/connections",
+  returnTo: string = "/account",
 ): Promise<void> {
   const resp = await api<{ redirect_url: string }>(
     `/api/auth/oauth/${provider}/link/start`,

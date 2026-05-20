@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Image as ImageIcon, Play, Square, Type as TypeIcon, Video as VideoIcon } from "lucide-react";
+import { Image as ImageIcon, Loader2, Play, Square, Type as TypeIcon, Video as VideoIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -139,10 +139,22 @@ function ChatTab({ models, apiKey }: { models: Model[]; apiKey: string }) {
   const [rawReq, setRawReq] = useState<any>(null);
   const [rawResp, setRawResp] = useState<any>(null);
   const [busy, setBusy] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
   useUnmountCleanup(() => abortRef.current?.abort());
 
   useDefaultModel(models, model, setModel, "gpt-4o");
+
+  // Tick an elapsed-seconds counter while a request is in flight — a moving
+  // number is the clearest "still working, not hung" signal during the gap
+  // before the first streamed token (or the whole wait for a non-stream call).
+  useEffect(() => {
+    if (!busy) return;
+    setElapsed(0);
+    const startedAt = Date.now();
+    const id = setInterval(() => setElapsed(Math.floor((Date.now() - startedAt) / 1000)), 1000);
+    return () => clearInterval(id);
+  }, [busy]);
 
   const buildPayload = () => ({
     model,
@@ -206,6 +218,15 @@ function ChatTab({ models, apiKey }: { models: Model[]; apiKey: string }) {
   -H "Content-Type: application/json" \\
   -d '${JSON.stringify(buildPayload())}'`;
 
+  // Spinner + elapsed-seconds counter — rendered on the Generate button and in
+  // the result panel while a request is in flight.
+  const generatingIndicator = (
+    <>
+      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+      {t("playground.generatingElapsed", { seconds: elapsed })}
+    </>
+  );
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
       <Card>
@@ -250,7 +271,9 @@ function ChatTab({ models, apiKey }: { models: Model[]; apiKey: string }) {
             </div>
           </div>
           <div className="flex gap-2">
-            <Button onClick={run} disabled={busy} className="flex-1"><Play className="h-3.5 w-3.5" /> {t("playground.generateBtn")}</Button>
+            <Button onClick={run} disabled={busy} className="flex-1">
+              {busy ? generatingIndicator : <><Play className="h-3.5 w-3.5" /> {t("playground.generateBtn")}</>}
+            </Button>
             {busy && (
               <Button variant="outline" onClick={() => abortRef.current?.abort()}>
                 <Square className="h-3.5 w-3.5" /> {t("playground.stopBtn")}
@@ -264,7 +287,13 @@ function ChatTab({ models, apiKey }: { models: Model[]; apiKey: string }) {
         <CardHeader><CardTitle>{t("playground.cardResponse")}</CardTitle></CardHeader>
         <CardContent className="flex flex-col gap-3">
           <div className="rounded-md border border-border bg-surface-2 min-h-32 p-3 text-sm whitespace-pre-wrap mono">
-            {output || <span className="text-muted-foreground">{t("playground.outputEmpty")}</span>}
+            {output ? (
+              output
+            ) : busy ? (
+              <span className="text-muted-foreground inline-flex items-center gap-2">{generatingIndicator}</span>
+            ) : (
+              <span className="text-muted-foreground">{t("playground.outputEmpty")}</span>
+            )}
           </div>
           {rawResp?.usage && (
             <div className="text-xs text-muted-foreground flex gap-3">

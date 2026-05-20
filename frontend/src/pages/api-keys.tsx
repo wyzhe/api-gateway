@@ -39,10 +39,6 @@ export function ApiKeysPage() {
   const [keys, setKeys] = useState<ApiKey[]>([]);
   const [openCreate, setOpenCreate] = useState(false);
   const [newName, setNewName] = useState("");
-  const [newLimit, setNewLimit] = useState("");
-  const [newRpm, setNewRpm] = useState("");
-  const [newTpm, setNewTpm] = useState("");
-  const [newConc, setNewConc] = useState("");
   const [busy, setBusy] = useState(false);
   const [createdKey, setCreatedKey] = useState<CreatedKey | null>(null);
   const [editing, setEditing] = useState<ApiKey | null>(null);
@@ -84,36 +80,20 @@ export function ApiKeysPage() {
 
   const onCreate = async () => {
     if (!newName.trim()) return;
-    const limit = parseLimit(newLimit);
-    if (!limit.ok) {
-      toast.error(t("apiKeys.toastInvalidLimit"));
-      return;
-    }
-    const rpm = parsePositiveInt(newRpm);
-    const tpm = parsePositiveInt(newTpm);
-    const conc = parsePositiveInt(newConc);
-    if (!rpm.ok || !tpm.ok || !conc.ok) {
-      toast.error("Limits must be positive integers (blank = use default)");
-      return;
-    }
     setBusy(true);
     try {
       const k = await api<CreatedKey>("/api/keys", {
         method: "POST",
         body: {
           name: newName.trim(),
-          monthly_limit: limit.value,
-          rate_limit_rpm: rpm.value,
-          rate_limit_tpm: tpm.value,
-          max_concurrent_requests: conc.value,
+          monthly_limit: null,
+          rate_limit_rpm: null,
+          rate_limit_tpm: null,
+          max_concurrent_requests: null,
         },
       });
       setOpenCreate(false);
       setNewName("");
-      setNewLimit("");
-      setNewRpm("");
-      setNewTpm("");
-      setNewConc("");
       setCreatedKey(k);
       void refresh();
     } finally {
@@ -328,24 +308,6 @@ export function ApiKeysPage() {
                 onKeyDown={(e) => e.key === "Enter" && onCreate()}
               />
             </FormField>
-            <FormField label={t("apiKeys.createDialog.limitLabel")}>
-              <Input
-                placeholder={t("apiKeys.createDialog.limitPlaceholder")}
-                value={newLimit}
-                onChange={(e) => setNewLimit(e.target.value)}
-              />
-            </FormField>
-            <div className="grid grid-cols-3 gap-2">
-              <FormField label={t("apiKeys.createDialog.rpmLabel")}>
-                <Input placeholder={t("apiKeys.createDialog.rpmPlaceholder")} value={newRpm} onChange={(e) => setNewRpm(e.target.value)} />
-              </FormField>
-              <FormField label={t("apiKeys.createDialog.tpmLabel")}>
-                <Input placeholder={t("apiKeys.createDialog.tpmPlaceholder")} value={newTpm} onChange={(e) => setNewTpm(e.target.value)} />
-              </FormField>
-              <FormField label={t("apiKeys.createDialog.concurrencyLabel")}>
-                <Input placeholder={t("apiKeys.createDialog.concurrencyPlaceholder")} value={newConc} onChange={(e) => setNewConc(e.target.value)} />
-              </FormField>
-            </div>
           </div>
           <div className="flex justify-end gap-2 mt-2">
             <Button variant="outline" onClick={() => setOpenCreate(false)}>{t("common.cancel")}</Button>
