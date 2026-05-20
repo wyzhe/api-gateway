@@ -3,7 +3,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from sqlalchemy import desc, func
+from sqlalchemy import Date, cast, desc, func
 from sqlalchemy.orm import Session
 
 from ..deps import get_current_user, get_db
@@ -52,6 +52,7 @@ class DashboardOut(BaseModel):
     recent_logs: list[RequestLogSummary]
     top_models_by_cost: list[TopModelEntry]
     top_api_keys_by_usage: list[TopApiKeyEntry]
+    daily_usage: list[DailyUsageEntry]
 
 
 def build_daily_usage(
@@ -165,6 +166,25 @@ def dashboard(
         .all()
     )
 
+    # Last 30 UTC days of per-type cost/count, for the usage-trend charts.
+    usage_start = today - timedelta(days=29)
+    day_col = cast(func.timezone("UTC", RequestLog.created_at), Date).label("d")
+    usage_rows = (
+        db.query(
+            day_col,
+            RequestLog.request_type,
+            func.coalesce(func.sum(RequestLog.cost), 0).label("cost"),
+            func.count(RequestLog.id).label("n"),
+        )
+        .filter(RequestLog.user_id == user.id, RequestLog.created_at >= usage_start)
+        .group_by(day_col, RequestLog.request_type)
+        .all()
+    )
+    daily_usage = build_daily_usage(
+        [(r.d, r.request_type, Decimal(str(r.cost)), int(r.n)) for r in usage_rows],
+        usage_start.date(),
+    )
+
     keys_by_id = {k.id: k for k in db.query(ApiKey).filter(ApiKey.user_id == user.id).all()}
     models_by_id = {m.id: m for m in db.query(ModelRow).all()}
 
@@ -195,4 +215,5 @@ def dashboard(
             )
             for (k_id, n, c) in top_keys
         ],
+        daily_usage=daily_usage,
     )
