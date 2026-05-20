@@ -11,7 +11,17 @@ def test_empty_input_yields_30_zero_buckets():
     assert all(isinstance(e, DailyUsageEntry) for e in out)
     assert out[0].date == date(2026, 4, 21)
     assert out[29].date == date(2026, 5, 20)
-    assert all(e.text_cost == Decimal("0") and e.text_requests == 0 for e in out)
+    assert all(
+        e.text_cost == e.image_cost == e.video_cost == Decimal("0")
+        and e.text_requests == e.image_requests == e.video_requests == 0
+        for e in out
+    )
+
+
+def test_custom_num_days():
+    out = build_daily_usage([], date(2026, 4, 21), num_days=7)
+    assert len(out) == 7
+    assert out[-1].date == date(2026, 4, 27)
 
 
 def test_dates_are_consecutive_ascending():

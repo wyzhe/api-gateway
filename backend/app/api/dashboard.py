@@ -62,7 +62,11 @@ def build_daily_usage(
     """Pivot grouped (day, request_type, cost, count) rows into `num_days`
     consecutive daily buckets starting at `start`. Missing days are zero-filled.
     Only request_type in {text, image, video} is counted; others are ignored.
-    cost is always wrapped as Decimal(str(...)) — never raw float."""
+    cost is always wrapped as Decimal(str(...)) — never raw float.
+
+    Precondition: at most one row per (day, request_type); a duplicate pair
+    silently overwrites. The caller's SQL GROUP BY day+request_type guarantees
+    this."""
     by_day: dict[date, dict[str, tuple[Decimal, int]]] = {}
     for day, rtype, cost, count in rows:
         by_day.setdefault(day, {})[rtype] = (Decimal(str(cost)), int(count))
