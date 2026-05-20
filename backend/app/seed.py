@@ -29,6 +29,10 @@ log = get_logger(__name__)
 
 DEFAULT_MODELS: list[dict] = [
     # ------------ Text ------------
+    # NOTE: `upstream_model` is APIMart's EXACT model id (per GET /v1/models),
+    # which often differs from `public_name` — APIMart hyphenates Anthropic
+    # version numbers (claude-opus-4-7) and suffixes Gemini 3.1 Pro with
+    # -preview. Do not "normalise" upstream_model back to match public_name.
     {
         "public_name": "gpt-5.5",
         "upstream_model": "gpt-5.5",
@@ -47,7 +51,7 @@ DEFAULT_MODELS: list[dict] = [
     },
     {
         "public_name": "claude-opus-4.7",
-        "upstream_model": "claude-opus-4.7",
+        "upstream_model": "claude-opus-4-7",
         "type": "text",
         "display_name": "Claude Opus 4.7",
         "display_provider": "anthropic",
@@ -63,7 +67,7 @@ DEFAULT_MODELS: list[dict] = [
     },
     {
         "public_name": "claude-sonnet-4.6",
-        "upstream_model": "claude-sonnet-4.6",
+        "upstream_model": "claude-sonnet-4-6",
         "type": "text",
         "display_name": "Claude Sonnet 4.6",
         "display_provider": "anthropic",
@@ -79,7 +83,7 @@ DEFAULT_MODELS: list[dict] = [
     },
     {
         "public_name": "gemini-3.1-pro",
-        "upstream_model": "gemini-3.1-pro",
+        "upstream_model": "gemini-3.1-pro-preview",
         "type": "text",
         "display_name": "Gemini 3.1 Pro",
         "display_provider": "gemini",
@@ -122,8 +126,10 @@ DEFAULT_MODELS: list[dict] = [
         "capabilities": {"sizes": ["1:1", "16:9", "9:16"], "resolutions": ["1k", "2k", "4k"]},
     },
     {
+        # Exposed as "nano-banana"; APIMart has no such id — routes to the
+        # underlying Gemini image model (APIMart id: gemini-2.5-flash-image-preview).
         "public_name": "nano-banana",
-        "upstream_model": "nano-banana",
+        "upstream_model": "gemini-2.5-flash-image-preview",
         "type": "image",
         "display_name": "Nano Banana",
         "display_provider": "gemini",
@@ -133,8 +139,10 @@ DEFAULT_MODELS: list[dict] = [
         "capabilities": {"sizes": ["1:1", "16:9", "9:16"]},
     },
     {
+        # Exposed as "nano-banana-pro"; routes to APIMart's Gemini 3 Pro image
+        # model (APIMart id: gemini-3-pro-image-preview).
         "public_name": "nano-banana-pro",
-        "upstream_model": "nano-banana-pro",
+        "upstream_model": "gemini-3-pro-image-preview",
         "type": "image",
         "display_name": "Nano Banana Pro",
         "display_provider": "gemini",
@@ -144,13 +152,13 @@ DEFAULT_MODELS: list[dict] = [
         "capabilities": {"sizes": ["1:1", "16:9", "9:16"]},
     },
     {
-        # APIMart docs do not currently list grok image generation — seed disabled.
+        # APIMart id: grok-imagine-1.0-apimart. Seeded disabled — an admin can enable it.
         "public_name": "grok-imagine",
-        "upstream_model": "grok-imagine",
+        "upstream_model": "grok-imagine-1.0-apimart",
         "type": "image",
         "display_name": "Grok Imagine",
         "display_provider": "xai",
-        "description": "xAI image model. Not yet confirmed on APIMart — admin must enable.",
+        "description": "xAI image model. Seeded disabled — an admin can enable it.",
         "pricing_mode": "per_image",
         "image_price": Decimal("0.05"),
         "capabilities": {},
@@ -305,6 +313,18 @@ RENAME_ON_BOOT: dict[str, str] = {
     "claude-sonnet-4.5": "claude-sonnet-4.6",
 }
 
+# Retarget map: public_name -> correct upstream_model. Fixes already-seeded
+# production rows whose upstream_model used the wrong APIMart id (APIMart
+# hyphenates Anthropic versions; we originally seeded the dotted form, which
+# APIMart rejects with model_not_found). Applied on boot, idempotent — no
+# migration needed. Fresh DBs get the right value straight from DEFAULT_MODELS.
+RETARGET_ON_BOOT: dict[str, str] = {
+    "claude-sonnet-4.6": "claude-sonnet-4-6",
+    "nano-banana": "gemini-2.5-flash-image-preview",
+    "nano-banana-pro": "gemini-3-pro-image-preview",
+    "grok-imagine": "grok-imagine-1.0-apimart",
+}
+
 # Names we want to keep in the DB (for log FK integrity) but mark disabled.
 # Retired models: soft-disabled on existing DBs so request_logs FKs / price
 # snapshots stay intact. New DBs simply never seed them (absent from DEFAULT_MODELS).
@@ -325,6 +345,13 @@ def ensure_default_models(db: Session, provider: Provider) -> None:
         if row and not db.query(ModelRow).filter(ModelRow.public_name == new).one_or_none():
             row.public_name = new
             row.upstream_model = new
+
+    # Correct upstream_model on existing rows whose APIMart id was wrong.
+    # Runs after RENAME_ON_BOOT so a just-renamed row gets the right id too.
+    for public_name, correct_upstream in RETARGET_ON_BOOT.items():
+        row = db.query(ModelRow).filter(ModelRow.public_name == public_name).one_or_none()
+        if row and row.upstream_model != correct_upstream:
+            row.upstream_model = correct_upstream
 
     # Soft-disable models we no longer want exposed.
     for name in DISABLE_ON_BOOT:
