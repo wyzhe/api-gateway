@@ -43,3 +43,46 @@ def test_image_generation_not_implemented():
         raise AssertionError("expected NotImplementedError")
     except NotImplementedError:
         pass
+
+
+def test_build_provider_dispatches_deepseek(monkeypatch):
+    from types import SimpleNamespace
+
+    from app.providers import DeepSeekProvider
+    from app.services import gateway_service
+
+    monkeypatch.setattr(gateway_service.settings, "deepseek_api_key", "fake-key")
+    prov = SimpleNamespace(name="deepseek", base_url="https://api.deepseek.com")
+    built = gateway_service.build_provider(prov)
+    assert isinstance(built, DeepSeekProvider)
+
+
+def test_build_provider_deepseek_missing_key_raises_500(monkeypatch):
+    from types import SimpleNamespace
+
+    from fastapi import HTTPException
+
+    from app.services import gateway_service
+
+    monkeypatch.setattr(gateway_service.settings, "deepseek_api_key", "")
+    prov = SimpleNamespace(name="deepseek", base_url="https://api.deepseek.com")
+    try:
+        gateway_service.build_provider(prov)
+        raise AssertionError("expected HTTPException")
+    except HTTPException as e:
+        assert e.status_code == 500
+
+
+def test_build_provider_unknown_raises_501():
+    from types import SimpleNamespace
+
+    from fastapi import HTTPException
+
+    from app.services import gateway_service
+
+    prov = SimpleNamespace(name="nope", base_url="x")
+    try:
+        gateway_service.build_provider(prov)
+        raise AssertionError("expected HTTPException")
+    except HTTPException as e:
+        assert e.status_code == 501
