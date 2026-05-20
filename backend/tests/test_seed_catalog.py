@@ -71,6 +71,10 @@ def test_new_chat_models_use_official_prices():
         Decimal("1.5"),
         Decimal("9.0"),
     )
+    assert (m["claude-sonnet-4.6"]["input_price"], m["claude-sonnet-4.6"]["output_price"]) == (
+        Decimal("3.0"),
+        Decimal("15.0"),
+    )
 
 
 def test_new_chat_models_cache_prices():
@@ -78,7 +82,9 @@ def test_new_chat_models_cache_prices():
     # OpenAI / Gemini: no separate cache-write fee, only a cache-read price.
     assert m["gpt-5.5"]["cache_write_price"] is None
     assert m["gpt-5.5"]["cache_read_price"] == Decimal("0.50")
+    assert m["gemini-3.1-pro"]["cache_write_price"] is None
     assert m["gemini-3.1-pro"]["cache_read_price"] == Decimal("0.20")
+    assert m["gemini-3.5-flash"]["cache_write_price"] is None
     assert m["gemini-3.5-flash"]["cache_read_price"] == Decimal("0.15")
     # Anthropic: write = 1.25x input, read = 0.1x input.
     assert m["claude-opus-4.7"]["cache_write_price"] == Decimal("6.25")
@@ -108,3 +114,22 @@ def test_video_display_and_upstream_names_match_spec():
         m["grok-imagine-1.0-video-apimart"]["upstream_model"]
         == "grok-imagine-1.0-video-apimart"
     )
+
+
+def test_all_price_fields_are_decimal():
+    """CLAUDE.md invariant #1: money is always Decimal, never float/int.
+    Decimal("5") == 5 is True in Python, so value assertions alone would not
+    catch a bare int/float slipping into a price field — this pins the type."""
+    money_keys = {
+        "input_price",
+        "output_price",
+        "cache_write_price",
+        "cache_read_price",
+        "image_price",
+        "video_second_price",
+        "generation_price",
+    }
+    for s in DEFAULT_MODELS:
+        for k in money_keys & s.keys():
+            if s[k] is not None:
+                assert isinstance(s[k], Decimal), f"{s['public_name']}.{k} is {type(s[k])}"
