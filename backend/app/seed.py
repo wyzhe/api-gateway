@@ -290,7 +290,7 @@ def ensure_deepseek_models(db: Session, provider: Provider) -> None:
                 provider_id=provider.id,
                 visible=True,
                 status=default_status,
-                **spec,
+                **{k: v for k, v in spec.items() if k != "status"},
             )
         )
 
