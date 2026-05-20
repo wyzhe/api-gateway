@@ -168,12 +168,14 @@ def _extract_cache_tokens(usage: dict | None) -> tuple[int, int]:
 
     OpenAI shape: usage.prompt_tokens_details.cached_tokens (and 0 for cache_creation)
     Anthropic shape: usage.cache_read_input_tokens / cache_creation_input_tokens
+    DeepSeek shape: usage.prompt_cache_hit_tokens (top-level, no cache_creation)
     Returns (0, 0) if usage is missing or malformed."""
     if not usage:
         return 0, 0
     cached = (
         (usage.get("prompt_tokens_details") or {}).get("cached_tokens")
         or usage.get("cache_read_input_tokens")
+        or usage.get("prompt_cache_hit_tokens")
         or 0
     )
     creation = usage.get("cache_creation_input_tokens") or 0

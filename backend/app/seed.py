@@ -23,40 +23,43 @@ log = get_logger(__name__)
 # `display_provider` is a UI-only tag so the React app keeps multi-color provider chips
 # (every model still routes through APIMart at runtime).
 #
-# Status / visible default to active+visible unless we know APIMart doesn't list it yet
-# (e.g. grok-imagine — flagged disabled, admin can enable later).
+# Status / visible default to active+visible. The grok-imagine *image* row is
+# the exception — seeded disabled (APIMart image support unconfirmed); an admin
+# can enable it later. The grok video row (grok-imagine-1.0-video-apimart) is active.
 
 DEFAULT_MODELS: list[dict] = [
     # ------------ Text ------------
     {
-        "public_name": "gpt-5",
-        "upstream_model": "gpt-5",
+        "public_name": "gpt-5.5",
+        "upstream_model": "gpt-5.5",
         "type": "text",
-        "display_name": "GPT-5",
+        "display_name": "GPT-5.5",
         "display_provider": "openai",
         "description": "OpenAI flagship general reasoning model.",
         "pricing_mode": "per_token",
         "input_price": Decimal("5.0"),
-        "output_price": Decimal("15.0"),
-        "capabilities": {"stream": True, "tools": True, "vision": True, "ctx": 256_000},
-        "max_input_tokens": 256_000,
+        "output_price": Decimal("30.0"),
+        "capabilities": {"stream": True, "tools": True, "vision": True, "ctx": 400_000},
+        "max_input_tokens": 400_000,
+        # OpenAI bills cached input cheaply but has no separate cache-write fee.
         "cache_write_price": None,
-        "cache_read_price": None,
+        "cache_read_price": Decimal("0.50"),
     },
     {
-        "public_name": "gpt-4o",
-        "upstream_model": "gpt-4o",
+        "public_name": "claude-opus-4.7",
+        "upstream_model": "claude-opus-4.7",
         "type": "text",
-        "display_name": "GPT-4o",
-        "display_provider": "openai",
-        "description": "OpenAI multimodal flagship.",
+        "display_name": "Claude Opus 4.7",
+        "display_provider": "anthropic",
+        "description": "Anthropic flagship reasoning model.",
         "pricing_mode": "per_token",
-        "input_price": Decimal("2.5"),
-        "output_price": Decimal("10.0"),
-        "capabilities": {"stream": True, "tools": True, "vision": True, "ctx": 128_000},
-        "max_input_tokens": 128_000,
-        "cache_write_price": None,
-        "cache_read_price": None,
+        "input_price": Decimal("5.0"),
+        "output_price": Decimal("25.0"),
+        "capabilities": {"stream": True, "tools": True, "vision": True, "ctx": 1_000_000},
+        "max_input_tokens": 1_000_000,
+        # Cache pricing per 1M input tokens: write = 1.25x input; read = 0.1x input.
+        "cache_write_price": Decimal("6.25"),
+        "cache_read_price": Decimal("0.50"),
     },
     {
         "public_name": "claude-sonnet-4.6",
@@ -70,25 +73,40 @@ DEFAULT_MODELS: list[dict] = [
         "output_price": Decimal("15.0"),
         "capabilities": {"stream": True, "tools": True, "vision": True, "ctx": 200_000},
         "max_input_tokens": 200_000,
-        # Cache pricing per 1M input tokens, matching input_price / output_price denomination:
-        # write = $3.75/1M; read = $0.30/1M
+        # Cache pricing per 1M input tokens: write = $3.75/1M; read = $0.30/1M.
         "cache_write_price": Decimal("3.75"),
         "cache_read_price": Decimal("0.30"),
     },
     {
-        "public_name": "gemini-2.0-flash",
-        "upstream_model": "gemini-2.0-flash",
+        "public_name": "gemini-3.1-pro",
+        "upstream_model": "gemini-3.1-pro",
         "type": "text",
-        "display_name": "Gemini 2.0 Flash",
+        "display_name": "Gemini 3.1 Pro",
         "display_provider": "gemini",
-        "description": "Google fast multimodal text model.",
+        "description": "Google flagship multimodal reasoning model.",
         "pricing_mode": "per_token",
-        "input_price": Decimal("0.3"),
-        "output_price": Decimal("2.5"),
+        "input_price": Decimal("2.0"),
+        "output_price": Decimal("12.0"),
+        "capabilities": {"stream": True, "tools": True, "vision": True, "ctx": 1_000_000},
+        "max_input_tokens": 1_000_000,
+        # Standard-context (<=200K) list price; cached input billed at cache_read_price.
+        "cache_write_price": None,
+        "cache_read_price": Decimal("0.20"),
+    },
+    {
+        "public_name": "gemini-3.5-flash",
+        "upstream_model": "gemini-3.5-flash",
+        "type": "text",
+        "display_name": "Gemini 3.5 Flash",
+        "display_provider": "gemini",
+        "description": "Google fast multimodal model.",
+        "pricing_mode": "per_token",
+        "input_price": Decimal("1.5"),
+        "output_price": Decimal("9.0"),
         "capabilities": {"stream": True, "tools": True, "vision": True, "ctx": 1_000_000},
         "max_input_tokens": 1_000_000,
         "cache_write_price": None,
-        "cache_read_price": None,
+        "cache_read_price": Decimal("0.15"),
     },
     # Non-text models do not consume input tokens — max_input_tokens and cache prices are not applicable below.
     # ------------ Image ------------
@@ -139,43 +157,65 @@ DEFAULT_MODELS: list[dict] = [
         "status": "disabled",
     },
     # ------------ Video ------------
+    # Note: sora2 is not seeded — observed upstream queue times >30 min, not
+    # suitable for an interactive playground. It is kept disabled via
+    # DISABLE_ON_BOOT for existing DBs; admins can re-add via POST /api/admin/models.
     {
-        "public_name": "veo3",
-        "upstream_model": "veo-3",
+        "public_name": "veo3.1-fast",
+        "upstream_model": "veo3.1-fast",
         "type": "video",
-        "display_name": "Veo 3",
+        "display_name": "veo3.1",
         "display_provider": "veo",
-        "description": "Google Veo 3 video model (async).",
+        "description": "Google Veo 3.1 Fast video model (async).",
         "pricing_mode": "per_second",
-        "video_second_price": Decimal("0.40"),
+        "video_second_price": Decimal("0.15"),
         "capabilities": {"durations": [4, 8], "aspect_ratios": ["16:9", "9:16"]},
     },
     {
-        "public_name": "veo3.1",
-        "upstream_model": "veo-3.1",
+        "public_name": "grok-imagine-1.0-video-apimart",
+        "upstream_model": "grok-imagine-1.0-video-apimart",
         "type": "video",
-        "display_name": "Veo 3.1",
-        "display_provider": "veo",
-        "description": "Google Veo 3.1 video model (async).",
-        "pricing_mode": "per_second",
-        "video_second_price": Decimal("0.45"),
-        "capabilities": {"durations": [4, 8], "aspect_ratios": ["16:9", "9:16"]},
-    },
-    # Note: sora2 dropped from seed — observed upstream queue times >30 min,
-    # not suitable for an interactive playground. Re-add as `disabled` if you
-    # want it visible later; admins can also POST /api/admin/models to add.
-    {
-        # APIMart docs do not currently list grok video — seed disabled.
-        "public_name": "grok-imagine-video",
-        "upstream_model": "grok-imagine-video",
-        "type": "video",
-        "display_name": "Grok Imagine Video",
+        "display_name": "grok-imagine",
         "display_provider": "xai",
-        "description": "xAI video model. Not yet confirmed on APIMart — admin must enable.",
-        "pricing_mode": "per_generation",
-        "generation_price": Decimal("0.20"),
+        "description": "xAI Grok Imagine video model (async).",
+        "pricing_mode": "per_second",
+        "video_second_price": Decimal("0.05"),
         "capabilities": {},
-        "status": "disabled",
+    },
+]
+
+# DeepSeek 模型走独立的 deepseek provider。定价为官方列表价按 ¥7.2/$ 换算的
+# USD 值（不含临时折扣，不加价）；DeepSeek 缓存无写入费 → cache_write_price=None。
+DEEPSEEK_MODELS: list[dict] = [
+    {
+        "public_name": "deepseek-v4-flash",
+        "upstream_model": "deepseek-v4-flash",
+        "type": "text",
+        "display_name": "DeepSeek V4 Flash",
+        "display_provider": "deepseek",
+        "description": "DeepSeek V4 fast-inference model.",
+        "pricing_mode": "per_token",
+        "input_price": Decimal("0.14"),
+        "output_price": Decimal("0.28"),
+        "capabilities": {"stream": True, "tools": True, "vision": False, "ctx": 128_000},
+        "max_input_tokens": 128_000,
+        "cache_write_price": None,
+        "cache_read_price": Decimal("0.003"),
+    },
+    {
+        "public_name": "deepseek-v4-pro",
+        "upstream_model": "deepseek-v4-pro",
+        "type": "text",
+        "display_name": "DeepSeek V4 Pro",
+        "display_provider": "deepseek",
+        "description": "DeepSeek V4 advanced-reasoning model.",
+        "pricing_mode": "per_token",
+        "input_price": Decimal("0.42"),
+        "output_price": Decimal("0.83"),
+        "capabilities": {"stream": True, "tools": True, "vision": False, "ctx": 128_000},
+        "max_input_tokens": 128_000,
+        "cache_write_price": None,
+        "cache_read_price": Decimal("0.0035"),
     },
 ]
 
@@ -226,13 +266,56 @@ def ensure_apimart_provider(db: Session) -> Provider:
     return p
 
 
+def ensure_deepseek_provider(db: Session) -> Provider:
+    p = db.query(Provider).filter(Provider.name == "deepseek").one_or_none()
+    if p:
+        return p
+    p = Provider(
+        name="deepseek",
+        display_name="DeepSeek",
+        base_url=settings.deepseek_base_url,
+        status="active",
+    )
+    db.add(p)
+    db.flush()
+    return p
+
+
+def ensure_deepseek_models(db: Session, provider: Provider) -> None:
+    # If no API key is configured at boot, seed the models disabled so they
+    # don't surface as broken — an admin can enable them later (same posture
+    # as the grok placeholder rows).
+    default_status = "active" if settings.deepseek_api_key else "disabled"
+    existing = {m.public_name for m in db.query(ModelRow.public_name).all()}
+    for spec in DEEPSEEK_MODELS:
+        if spec["public_name"] in existing:
+            continue
+        db.add(
+            ModelRow(
+                provider_id=provider.id,
+                visible=True,
+                status=default_status,
+                **{k: v for k, v in spec.items() if k != "status"},
+            )
+        )
+
+
 # Rename map: old public_name -> new public_name. Existing FK rows keep working.
 RENAME_ON_BOOT: dict[str, str] = {
     "claude-sonnet-4.5": "claude-sonnet-4.6",
 }
 
 # Names we want to keep in the DB (for log FK integrity) but mark disabled.
-DISABLE_ON_BOOT: set[str] = {"sora2"}
+# Retired models: soft-disabled on existing DBs so request_logs FKs / price
+# snapshots stay intact. New DBs simply never seed them (absent from DEFAULT_MODELS).
+DISABLE_ON_BOOT: set[str] = {
+    "sora2",
+    "gpt-5",
+    "gpt-4o",
+    "gemini-2.0-flash",
+    "veo3",
+    "veo3.1",
+}
 
 
 def ensure_default_models(db: Session, provider: Provider) -> None:
@@ -270,4 +353,6 @@ def run_seed(db: Session) -> None:
     ensure_admin(db)
     provider = ensure_apimart_provider(db)
     ensure_default_models(db, provider)
+    deepseek = ensure_deepseek_provider(db)
+    ensure_deepseek_models(db, deepseek)
     db.commit()

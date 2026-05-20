@@ -23,7 +23,7 @@ from .database import SessionLocal
 from .logging_config import configure_logging, get_logger
 from .metrics import users_with_low_balance
 from .models import User
-from .providers import close_client as close_httpx_client
+from .providers import close_all_clients
 from .services import task_service
 
 settings = get_settings()
@@ -36,7 +36,7 @@ async def startup(ctx):
 
 
 async def shutdown(ctx):
-    await close_httpx_client()
+    await close_all_clients()
 
 
 async def finalize_task(ctx, task_id: int) -> dict:

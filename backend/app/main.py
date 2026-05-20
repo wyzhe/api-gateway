@@ -25,7 +25,7 @@ from .database import SessionLocal, engine
 from .logging_config import configure_logging, get_logger
 from .metrics import render_metrics
 from .middleware import AccessLogMiddleware, BodySizeLimitMiddleware, RequestIdMiddleware
-from .providers import close_client as close_httpx_client
+from .providers import close_all_clients
 from .redis_client import close_redis, get_redis, ping as redis_ping
 from .seed import run_seed
 
@@ -65,7 +65,7 @@ async def lifespan(app: FastAPI):
         await FastAPILimiter.close()
     except Exception:
         pass
-    await close_httpx_client()
+    await close_all_clients()
     await close_redis()
 
 
