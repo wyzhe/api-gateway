@@ -31,6 +31,7 @@ colors:
   xai: "#b8b8b8"
   veo: "#c084fc"
   apimart: "#7be38b"
+  deepseek: "#4d6bfe"
 typography:
   page-title:
     fontFamily: Geist
@@ -243,7 +244,7 @@ without one stealing the eye.
   borders (`/40`), and full color for text. The pattern is identical
   across the four — pick by meaning, not by color.
 - **Provider brand colors** (`openai`, `anthropic`, `gemini`, `xai`, `veo`,
-  `apimart`): used **only** in the `ProviderTag` component and the
+  `apimart`, `deepseek`): used **only** in the `ProviderTag` component and the
   `TypeBadge` for the `multimodal` modality. They are not for general use —
   reaching for them outside those two components is a smell.
 
@@ -421,7 +422,7 @@ hand-written set. **Don't run `shadcn` CLI** — see CLAUDE.md.
 | `KpiStrip` | `components/kpi-strip.tsx` | Edge-to-edge 4-up KPI strip on dashboard / billing / admin overview. `<KpiStrip items={[{ label, value, hint?, onClick?, title? }, …]} />`. Value rendered via `.kpi-strip-value` (22px mono). Use it; do not hand-roll a card-bounded KPI grid. |
 | `EmptyState` | `components/empty-state.tsx` | Any "no data yet" surface — table row (`colSpan` cell), list, or panel. `<EmptyState icon? title hint? action? />`. Replaces hand-rolled `text-center text-muted-foreground py-8` blocks. |
 | `TypeBadge` | `components/type-badge.tsx` | The `TXT / IMG / VID / MUL` modality pill. **Stays uppercase** (these are 3-letter abbreviations) — the one explicit exception to the lowercase-label rule. `text-[9px] leading-4`, `h-2.5 w-2.5` icon. |
-| `ProviderTag` | `components/provider-tag.tsx` | OpenAI / Anthropic / Gemini / xAI / Veo / APIMart attribution. 8px colored dot + muted label. Reuse for any provider display. |
+| `ProviderTag` | `components/provider-tag.tsx` | OpenAI / Anthropic / Gemini / xAI / Veo / APIMart / DeepSeek attribution. 8px colored dot + muted label. Reuse for any provider display. |
 | `DotStatus` | `components/dot-status.tsx` | Request / task lifecycle status (`success`, `failed`, `queued`, `running`, `pending`, `cancelled`). 6px colored dot + lowercase label. Replaces `Badge` for ephemeral state in tables and feeds. |
 | `LogDetailDrawer` | `components/log-detail-drawer.tsx` | Shared drawer used by both user-side `usage-logs` and admin `logs`. Don't fork. |
 

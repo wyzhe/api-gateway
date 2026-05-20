@@ -28,7 +28,7 @@ import { useT } from "@/lib/i18n";
 import type { HealthCheckResult, Model, Provider } from "@/lib/types";
 import { priceLabel } from "@/lib/utils";
 
-const DISPLAY_PROVIDERS = ["apimart", "openai", "anthropic", "gemini", "xai", "veo"] as const;
+const DISPLAY_PROVIDERS = ["apimart", "deepseek", "openai", "anthropic", "gemini", "xai", "veo"] as const;
 type DisplayProvider = (typeof DISPLAY_PROVIDERS)[number];
 
 type ModelFormState = {

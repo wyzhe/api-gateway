@@ -7,6 +7,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   xai: "xAI · Grok",
   veo: "Google Veo",
   apimart: "APIMart",
+  deepseek: "DeepSeek",
 };
 
 const PROVIDER_COLOR_VAR: Record<string, string> = {
@@ -16,6 +17,7 @@ const PROVIDER_COLOR_VAR: Record<string, string> = {
   xai: "var(--xai)",
   veo: "var(--veo)",
   apimart: "var(--apimart)",
+  deepseek: "var(--deepseek)",
 };
 
 export function ProviderTag({
