@@ -86,3 +86,19 @@ def test_build_provider_unknown_raises_501():
         raise AssertionError("expected HTTPException")
     except HTTPException as e:
         assert e.status_code == 501
+
+
+def test_extract_cache_tokens_reads_deepseek_field():
+    from app.api.gateway import _extract_cache_tokens
+
+    cached, creation = _extract_cache_tokens({"prompt_cache_hit_tokens": 320})
+    assert cached == 320
+    assert creation == 0
+
+
+def test_extract_cache_tokens_openai_shape_still_works():
+    from app.api.gateway import _extract_cache_tokens
+
+    cached, creation = _extract_cache_tokens({"prompt_tokens_details": {"cached_tokens": 11}})
+    assert cached == 11
+    assert creation == 0
