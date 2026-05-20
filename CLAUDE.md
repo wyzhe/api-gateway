@@ -84,13 +84,13 @@ When choosing a model name in `/v1/messages`, you still send our public_name (e.
 
 ## Multi-provider session stickiness (hook)
 
-`services/provider_selector.py` is the seam where future per-session provider selection lives. Today there are two upstreams (APIMart, DeepSeek), so `pick_provider(model)` just returns the model's `provider_id`. The `session_key` argument is wired through `resolve_for_request()` from the API key id (`session_key_for_request(api_key) → "k{id}"`).
+`services/provider_selector.py` is the seam where future per-session provider selection lives. There are now two upstreams (APIMart, DeepSeek), but each model still maps to exactly one provider via `provider_id`, so `pick_provider(model)` still just returns `model.provider_id`. The `session_key` argument is wired through `resolve_for_request()` from the API key id (`session_key_for_request(api_key) → "k{id}"`).
 
-When a second provider lands:
-1. Implement its `BaseProvider` subclass.
-2. Switch in `gateway_service.build_provider()`.
-3. Decide whether multiple `models` rows with the same `public_name` should be allowed (probably no — one public name per provider).
-4. The sticky map in Redis (`sticky:{session_key}:{model_id} → provider_id`) is already being read and written; just point it at meaningful provider choices.
+The per-session sticky map (`sticky:{session_key}:{model_id} → provider_id`) remains a hook for the future case where one `public_name` is served by multiple providers. The steps followed to add DeepSeek — and that apply to any further provider — are:
+1. Implement its `BaseProvider` subclass (e.g. `backend/app/providers/deepseek.py`).
+2. Dispatch on `provider.name` in `gateway_service.build_provider()`.
+3. Decide whether multiple `models` rows with the same `public_name` should be allowed (currently no — one public name maps to exactly one provider).
+4. When a model genuinely needs to be served by multiple providers, point the sticky map at meaningful provider choices.
 
 Do NOT add cross-provider fallback. If upstream is down, surface the error.
 
@@ -152,7 +152,7 @@ A failed worker job is retried with exponential backoff. Worker job exceptions a
 
 | Want to | Touch |
 |---|---|
-| Add a second upstream provider | New subclass of `BaseProvider` in `app/providers/`; switch in `gateway_service.build_provider()`; add `Provider` row via Admin → Providers. DeepSeek 已按此接入(`backend/app/providers/deepseek.py`; `build_provider` 按 `provider.name` 分发)。 |
+| Add a second upstream provider | New subclass of `BaseProvider` in `app/providers/`; switch in `gateway_service.build_provider()`; add `Provider` row via Admin → Providers. DeepSeek is already wired up this way (`backend/app/providers/deepseek.py`; `build_provider` dispatches on `provider.name`). |
 | Add a new endpoint (e.g. `/v1/embeddings`) | Add method on `BaseProvider` + `APIMartProvider`; add route in `app/api/gateway.py`; add cost rule in `cost_service.py`; pre-reserve in `preauthorize_spend()` if it costs more than chat |
 | Add a new chat protocol (e.g. Google Gen AI) | New methods on `BaseProvider`, mirror the `/v1/messages` plumbing in `app/api/gateway.py`, share the same model rows and pricing. Don't translate between protocols at the gateway layer. |
 | Change billing rules | `app/services/cost_service.py`. Don't touch billing inside endpoints. |
