@@ -23,8 +23,9 @@ log = get_logger(__name__)
 # `display_provider` is a UI-only tag so the React app keeps multi-color provider chips
 # (every model still routes through APIMart at runtime).
 #
-# Status / visible default to active+visible unless we know APIMart doesn't list it yet
-# (e.g. grok-imagine — flagged disabled, admin can enable later).
+# Status / visible default to active+visible. The grok-imagine *image* row is
+# the exception — seeded disabled (APIMart image support unconfirmed); an admin
+# can enable it later. The grok video row (grok-imagine-1.0-video-apimart) is active.
 
 DEFAULT_MODELS: list[dict] = [
     # ------------ Text ------------

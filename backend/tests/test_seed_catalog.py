@@ -133,3 +133,15 @@ def test_all_price_fields_are_decimal():
         for k in money_keys & s.keys():
             if s[k] is not None:
                 assert isinstance(s[k], Decimal), f"{s['public_name']}.{k} is {type(s[k])}"
+
+
+def test_model_statuses_match_spec():
+    """Only the grok-imagine *image* row is seeded disabled. Every other
+    catalogue model omits the `status` key, defaulting to active — this guards
+    against a regression that flips grok-imagine active or seeds a new model
+    disabled by accident."""
+    m = _by_name(DEFAULT_MODELS)
+    assert m["grok-imagine"].get("status") == "disabled"
+    for name, spec in m.items():
+        if name != "grok-imagine":
+            assert "status" not in spec, f"{name} unexpectedly sets a status key"
