@@ -535,6 +535,7 @@ export const zh: EnDict = {
         cacheWritePricePlaceholder: "例如：3.75（Claude Sonnet）",
         cacheReadPriceLabel: "缓存读取单价（USD / 1M，留空则沿用输入单价）",
         cacheReadPricePlaceholder: "例如：0.30（Claude Sonnet）",
+        markupLabel: "价格倍率（实际计费 = 单价 × 倍率，1 = 不加价）",
         imagePriceLabel: "图像单价（USD / 张）",
         videoSecondPriceLabel: "视频单价（USD / 秒）",
         generationPriceLabel: "单次生成单价（USD）",

@@ -22,6 +22,7 @@ export type Model = {
   image_price: string | null;
   video_second_price: string | null;
   generation_price: string | null;
+  price_markup: string;
   created_at: string;
 };
 

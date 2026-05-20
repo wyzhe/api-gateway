@@ -47,6 +47,7 @@ type ModelFormState = {
   image_price: string;
   video_second_price: string;
   generation_price: string;
+  price_markup: string;
   max_input_tokens: string;
   capabilitiesJson: string;
   visible: boolean;
@@ -70,6 +71,7 @@ function emptyForm(providerId: number | ""): ModelFormState {
     image_price: "",
     video_second_price: "",
     generation_price: "",
+    price_markup: "1",
     max_input_tokens: "",
     capabilitiesJson: "{}",
     visible: true,
@@ -95,6 +97,7 @@ function modelToForm(m: Model): ModelFormState {
     image_price: m.image_price ?? "",
     video_second_price: m.video_second_price ?? "",
     generation_price: m.generation_price ?? "",
+    price_markup: m.price_markup ?? "1",
     max_input_tokens: m.max_input_tokens?.toString() ?? "",
     capabilitiesJson: m.capabilities ? JSON.stringify(m.capabilities) : "{}",
     visible: m.visible,
@@ -144,6 +147,7 @@ function formToPayload(f: ModelFormState): Validated<Record<string, unknown>> {
       image_price: f.image_price.trim() || null,
       video_second_price: f.video_second_price.trim() || null,
       generation_price: f.generation_price.trim() || null,
+      price_markup: f.price_markup.trim() || "1",
       max_input_tokens: maxInputTokens,
       capabilities: caps,
       visible: f.visible,
@@ -381,51 +385,61 @@ function ModelFormBody({
     setForm({ ...form, [k]: v });
 
   const pricingFields = () => {
-    switch (form.pricing_mode) {
-      case "per_token":
-        return (
-          <>
-            <FormField label={t("admin.models.dialog.inputPriceLabel")}>
-              <Input value={form.input_price} onChange={(e) => set("input_price", e.target.value)} />
+    const modeFields = () => {
+      switch (form.pricing_mode) {
+        case "per_token":
+          return (
+            <>
+              <FormField label={t("admin.models.dialog.inputPriceLabel")}>
+                <Input value={form.input_price} onChange={(e) => set("input_price", e.target.value)} />
+              </FormField>
+              <FormField label={t("admin.models.dialog.outputPriceLabel")}>
+                <Input value={form.output_price} onChange={(e) => set("output_price", e.target.value)} />
+              </FormField>
+              <FormField label={t("admin.models.dialog.cacheWritePriceLabel")}>
+                <Input
+                  value={form.cache_write_price}
+                  onChange={(e) => set("cache_write_price", e.target.value)}
+                  placeholder={t("admin.models.dialog.cacheWritePricePlaceholder")}
+                />
+              </FormField>
+              <FormField label={t("admin.models.dialog.cacheReadPriceLabel")}>
+                <Input
+                  value={form.cache_read_price}
+                  onChange={(e) => set("cache_read_price", e.target.value)}
+                  placeholder={t("admin.models.dialog.cacheReadPricePlaceholder")}
+                />
+              </FormField>
+            </>
+          );
+        case "per_image":
+          return (
+            <FormField label={t("admin.models.dialog.imagePriceLabel")}>
+              <Input value={form.image_price} onChange={(e) => set("image_price", e.target.value)} />
             </FormField>
-            <FormField label={t("admin.models.dialog.outputPriceLabel")}>
-              <Input value={form.output_price} onChange={(e) => set("output_price", e.target.value)} />
+          );
+        case "per_second":
+          return (
+            <FormField label={t("admin.models.dialog.videoSecondPriceLabel")}>
+              <Input value={form.video_second_price} onChange={(e) => set("video_second_price", e.target.value)} />
             </FormField>
-            <FormField label={t("admin.models.dialog.cacheWritePriceLabel")}>
-              <Input
-                value={form.cache_write_price}
-                onChange={(e) => set("cache_write_price", e.target.value)}
-                placeholder={t("admin.models.dialog.cacheWritePricePlaceholder")}
-              />
+          );
+        case "per_generation":
+          return (
+            <FormField label={t("admin.models.dialog.generationPriceLabel")}>
+              <Input value={form.generation_price} onChange={(e) => set("generation_price", e.target.value)} />
             </FormField>
-            <FormField label={t("admin.models.dialog.cacheReadPriceLabel")}>
-              <Input
-                value={form.cache_read_price}
-                onChange={(e) => set("cache_read_price", e.target.value)}
-                placeholder={t("admin.models.dialog.cacheReadPricePlaceholder")}
-              />
-            </FormField>
-          </>
-        );
-      case "per_image":
-        return (
-          <FormField label={t("admin.models.dialog.imagePriceLabel")}>
-            <Input value={form.image_price} onChange={(e) => set("image_price", e.target.value)} />
-          </FormField>
-        );
-      case "per_second":
-        return (
-          <FormField label={t("admin.models.dialog.videoSecondPriceLabel")}>
-            <Input value={form.video_second_price} onChange={(e) => set("video_second_price", e.target.value)} />
-          </FormField>
-        );
-      case "per_generation":
-        return (
-          <FormField label={t("admin.models.dialog.generationPriceLabel")}>
-            <Input value={form.generation_price} onChange={(e) => set("generation_price", e.target.value)} />
-          </FormField>
-        );
-    }
+          );
+      }
+    };
+    return (
+      <>
+        <FormField label={t("admin.models.dialog.markupLabel")}>
+          <Input value={form.price_markup} onChange={(e) => set("price_markup", e.target.value)} />
+        </FormField>
+        {modeFields()}
+      </>
+    );
   };
 
   return (

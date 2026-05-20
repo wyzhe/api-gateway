@@ -543,6 +543,7 @@ export const en = {
         cacheWritePricePlaceholder: "e.g. 3.75 (Claude Sonnet)",
         cacheReadPriceLabel: "Cache read price (USD / 1M, blank = use input price)",
         cacheReadPricePlaceholder: "e.g. 0.30 (Claude Sonnet)",
+        markupLabel: "Price markup (charged = price × markup, 1 = none)",
         imagePriceLabel: "Image price (USD / image)",
         videoSecondPriceLabel: "Video price (USD / second)",
         generationPriceLabel: "Per-generation price (USD)",
