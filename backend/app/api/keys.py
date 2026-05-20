@@ -6,8 +6,14 @@ from sqlalchemy.orm import Session
 
 from ..deps import get_current_user, get_db
 from ..models import ApiKey, User
-from ..schemas.api_key import ApiKeyCreate, ApiKeyCreatedOut, ApiKeyOut, ApiKeyUpdate
-from ..security import generate_api_key
+from ..schemas.api_key import (
+    ApiKeyCreate,
+    ApiKeyCreatedOut,
+    ApiKeyOut,
+    ApiKeyRevealOut,
+    ApiKeyUpdate,
+)
+from ..security import decrypt_api_key, encrypt_api_key, generate_api_key
 from ..services import abuse_mitigation_service, audit_service
 from ..services.gateway_service import mtd_cost_for_api_key, mtd_cost_for_api_keys
 
@@ -66,6 +72,7 @@ async def create_key(
         name=payload.name,
         key_prefix=prefix,
         key_hash=hashed,
+        key_encrypted=encrypt_api_key(full),
         monthly_limit=payload.monthly_limit,
         rate_limit_rpm=payload.rate_limit_rpm,
         rate_limit_tpm=payload.rate_limit_tpm,
@@ -104,6 +111,23 @@ def delete_key(
     row = _get_owned(db, user, key_id)
     db.delete(row)
     db.commit()
+
+
+@router.post("/{key_id}/reveal", response_model=ApiKeyRevealOut)
+def reveal_key(
+    key_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> ApiKeyRevealOut:
+    row = _get_owned(db, user, key_id)
+    plain = decrypt_api_key(row.key_encrypted) if row.key_encrypted else None
+    if plain is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This key cannot be revealed (created before key storage, or "
+            "JWT_SECRET changed). Create a new key.",
+        )
+    return ApiKeyRevealOut(key=plain)
 
 
 @router.post("/{key_id}/disable", response_model=ApiKeyOut)

@@ -172,7 +172,7 @@ export const en = {
   },
   apiKeys: {
     title: "API Keys",
-    subtitle: "Used for /v1/* requests (chat, image, video). Full key is shown only once.",
+    subtitle: "Used for /v1/* requests (chat, image, video). Copy the full key anytime from the list.",
     createBtn: "Create key",
     colName: "Name",
     colPrefix: "Prefix",
@@ -196,7 +196,7 @@ export const en = {
     disable: "Disable",
     createDialog: {
       title: "Create API Key",
-      description: "The full key value is shown once on the next screen.",
+      description: "The full key value is shown on the next screen.",
       nameLabel: "Name",
       namePlaceholder: "e.g. local-dev",
       limitLabel: "Monthly spend limit (USD, optional)",
@@ -212,7 +212,7 @@ export const en = {
     },
     editDialog: {
       title: "Edit API Key",
-      description: "Rename or change the monthly spend cap. The key value cannot be revealed again.",
+      description: "Rename or change the monthly spend cap.",
       nameLabel: "Name",
       limitLabel: "Monthly spend limit (USD, blank = no cap)",
       limitPlaceholder: "e.g. 10",
@@ -226,8 +226,8 @@ export const en = {
     },
     revealDialog: {
       title: "API key created",
-      warning: "Copy it now.",
-      warningRest: "This is the only time the full value is shown.",
+      warning: "Save it somewhere safe.",
+      warningRest: "You can also copy it later from the keys list.",
       nameLabel: "Name",
       monthlyLimitLabel: "Monthly limit",
       acknowledge: "I have saved it",
@@ -238,6 +238,7 @@ export const en = {
     toastEnabled: "Key enabled",
     toastDisabled: "Key disabled",
     toastDeleted: "Deleted",
+    toastRevealUnavailable: "This key can't be revealed — create a new one.",
     confirmDelete: 'Delete key "{name}"? This cannot be undone.',
   },
   usageLogs: {

@@ -167,7 +167,7 @@ export const zh: EnDict = {
   },
   apiKeys: {
     title: "API Keys",
-    subtitle: "用于调用 /v1/* 接口（对话、图像、视频）。完整密钥仅在创建时显示一次。",
+    subtitle: "用于调用 /v1/* 接口（对话、图像、视频）。可随时从列表复制完整密钥。",
     createBtn: "创建 API Key",
     colName: "名称",
     colPrefix: "前缀",
@@ -191,7 +191,7 @@ export const zh: EnDict = {
     disable: "禁用",
     createDialog: {
       title: "创建 API Key",
-      description: "完整密钥仅在下一步显示一次，请妥善保存。",
+      description: "完整密钥将在下一步显示，请妥善保存。",
       nameLabel: "名称",
       namePlaceholder: "例如：local-dev",
       limitLabel: "每月花费上限（USD，可选）",
@@ -207,7 +207,7 @@ export const zh: EnDict = {
     },
     editDialog: {
       title: "编辑 API Key",
-      description: "可修改名称或每月花费上限；完整密钥无法再次查看。",
+      description: "可修改名称或每月花费上限。",
       nameLabel: "名称",
       limitLabel: "每月花费上限（USD，留空 = 不设上限）",
       limitPlaceholder: "例如：10",
@@ -221,8 +221,8 @@ export const zh: EnDict = {
     },
     revealDialog: {
       title: "API Key 已创建",
-      warning: "请立即复制并妥善保管。",
-      warningRest: "这是唯一一次显示完整密钥的机会，关闭后无法再次查看。",
+      warning: "请妥善保管密钥。",
+      warningRest: "之后也可以从密钥列表复制完整密钥。",
       nameLabel: "名称",
       monthlyLimitLabel: "每月上限",
       acknowledge: "我已保存",
@@ -233,6 +233,7 @@ export const zh: EnDict = {
     toastEnabled: "密钥已启用",
     toastDisabled: "密钥已禁用",
     toastDeleted: "已删除",
+    toastRevealUnavailable: "该密钥无法复制完整内容，请重新创建一个。",
     confirmDelete: "确定要删除密钥「{name}」吗？此操作无法撤销。",
   },
   usageLogs: {

@@ -1,7 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import DateTime, ForeignKey, Integer, Numeric, String, func
+from sqlalchemy import DateTime, ForeignKey, Integer, Numeric, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..database import Base
@@ -15,6 +15,9 @@ class ApiKey(Base):
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     key_prefix: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
     key_hash: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    # Fernet-encrypted full key, for dashboard re-reveal. NULL for keys created
+    # before this column existed — those cannot be revealed. Never used for auth.
+    key_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="active")  # active | disabled
     monthly_limit: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
     rate_limit_rpm: Mapped[int | None] = mapped_column(Integer, nullable=True)

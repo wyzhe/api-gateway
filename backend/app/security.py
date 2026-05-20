@@ -1,11 +1,14 @@
 """Hashing, JWT, API key generation, refresh token generation."""
 from __future__ import annotations
 
+import base64
 import hashlib
 import secrets
 from datetime import datetime, timedelta, timezone
+from functools import lru_cache
 
 import bcrypt
+from cryptography.fernet import Fernet, InvalidToken
 from jose import JWTError, jwt
 
 from .config import get_settings
@@ -92,3 +95,25 @@ def generate_api_key() -> tuple[str, str, str]:
 
 def hash_api_key(plain: str) -> str:
     return hashlib.sha256(plain.encode("utf-8")).hexdigest()
+
+
+# --- API key encryption-at-rest (for dashboard re-reveal) ---
+# Auth still goes via key_hash only; this is never read on the gateway hot path.
+# Fernet key is derived from jwt_secret — rotating jwt_secret makes stored keys unrecoverable.
+
+
+@lru_cache(maxsize=1)
+def _api_key_fernet() -> Fernet:
+    material = hashlib.sha256(f"apikey-enc-v1:{settings.jwt_secret}".encode("utf-8")).digest()
+    return Fernet(base64.urlsafe_b64encode(material))
+
+
+def encrypt_api_key(plain: str) -> str:
+    return _api_key_fernet().encrypt(plain.encode("utf-8")).decode("utf-8")
+
+
+def decrypt_api_key(token: str) -> str | None:
+    try:
+        return _api_key_fernet().decrypt(token.encode("utf-8")).decode("utf-8")
+    except (InvalidToken, ValueError):
+        return None

@@ -16,7 +16,7 @@ import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { PageHeader } from "@/components/shell";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import type { ApiKey } from "@/lib/types";
 import { copyToClipboard, fmtCompactMoney, fmtDate, limitBarColor, parseLimit } from "@/lib/utils";
@@ -57,6 +57,19 @@ export function ApiKeysPage() {
     if (ok) toast.success(t("common.toastCopied"));
     else toast.error(t("common.toastCopyFailed"));
     return ok;
+  };
+
+  const copyFullKey = async (k: ApiKey) => {
+    try {
+      const r = await api<{ key: string }>(`/api/keys/${k.id}/reveal`, { method: "POST" });
+      await copyText(r.key);
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409) {
+        toast.error(t("apiKeys.toastRevealUnavailable"));
+      } else {
+        toast.error(t("common.toastCopyFailed"));
+      }
+    }
   };
 
   const refresh = async () => {
@@ -211,7 +224,7 @@ export function ApiKeysPage() {
                       <span>{k.key_prefix}…</span>
                       <button
                         type="button"
-                        onClick={() => copyText(k.key_prefix)}
+                        onClick={() => copyFullKey(k)}
                         className="text-muted-foreground hover:text-foreground"
                         aria-label={t("apiKeys.revealDialog.copyBtn")}
                         title={t("apiKeys.revealDialog.copyBtn")}

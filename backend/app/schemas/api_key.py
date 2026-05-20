@@ -40,5 +40,10 @@ class ApiKeyOut(BaseModel):
 
 
 class ApiKeyCreatedOut(ApiKeyOut):
-    """Only returned once at creation time — includes the full plaintext key."""
+    """Returned at creation time — includes the full plaintext key."""
+    key: str
+
+
+class ApiKeyRevealOut(BaseModel):
+    """Returned by POST /api/keys/{id}/reveal — the decrypted full key."""
     key: str
