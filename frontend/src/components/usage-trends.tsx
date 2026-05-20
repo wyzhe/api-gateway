@@ -64,6 +64,7 @@ export function UsageTrends({ data }: { data: DailyUsage[] | undefined }) {
         <button
           key={r}
           type="button"
+          aria-pressed={range === r}
           onClick={() => setRange(r)}
           className={
             "px-2.5 py-1 transition-colors " +
@@ -150,10 +151,12 @@ function ChartCard({
       </div>
       <div className="kpi-strip-value mono mb-3">{bigValue}</div>
       {children}
-      <div className="mt-1.5 flex justify-between border-t border-border pt-1.5 text-[10px] text-faint">
-        <span>{firstDay}</span>
-        <span>{lastDay}</span>
-      </div>
+      {(firstDay || lastDay) && (
+        <div className="mt-1.5 flex justify-between border-t border-border pt-1.5 text-[10px] text-faint">
+          <span>{firstDay}</span>
+          <span>{lastDay}</span>
+        </div>
+      )}
     </div>
   );
 }
