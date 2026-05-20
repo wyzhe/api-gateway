@@ -113,7 +113,7 @@ else:
 
   return (
     <div className="max-w-4xl">
-      <PageHeader title={t("docs.title")} subtitle={t("docs.subtitle")} />
+      <PageHeader title={t("docs.title")} />
 
       <div className="flex flex-col gap-4">
         <Card>
