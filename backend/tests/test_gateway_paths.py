@@ -93,3 +93,33 @@ def test_task_id_unknown_returns_404(client, user_api_key_funded):
         "/v1/tasks/task_999999", headers={"Authorization": f"Bearer {user_api_key_funded}"}
     )
     assert r.status_code == 404
+
+
+def test_v1_models_lists_deepseek_when_active(client, db_session, user_api_key):
+    """deepseek-v4-flash is seeded; force it active and confirm it shows in /v1/models."""
+    from app.models import ModelRow
+
+    row = db_session.query(ModelRow).filter(ModelRow.public_name == "deepseek-v4-flash").one()
+    original_status, original_visible = row.status, row.visible
+    row.status = "active"
+    row.visible = True
+    db_session.commit()
+    try:
+        r = client.get("/v1/models", headers={"Authorization": f"Bearer {user_api_key}"})
+        assert r.status_code == 200
+        ids = {m["id"] for m in r.json()["data"]}
+        assert "deepseek-v4-flash" in ids
+    finally:
+        row.status = original_status
+        row.visible = original_visible
+        db_session.commit()
+
+
+def test_deepseek_models_seeded_under_deepseek_provider(db_session):
+    from app.models import ModelRow, Provider
+
+    deepseek = db_session.query(Provider).filter(Provider.name == "deepseek").one()
+    for name in ("deepseek-v4-flash", "deepseek-v4-pro"):
+        row = db_session.query(ModelRow).filter(ModelRow.public_name == name).one()
+        assert row.provider_id == deepseek.id
+        assert row.type == "text"

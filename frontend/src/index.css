@@ -33,6 +33,7 @@
   --xai: #b8b8b8;
   --veo: #c084fc;
   --apimart: #7be38b;
+  --deepseek: #4d6bfe;
 
   --radius: 8px;
 
@@ -84,6 +85,7 @@
   --color-xai: var(--xai);
   --color-veo: var(--veo);
   --color-apimart: var(--apimart);
+  --color-deepseek: var(--deepseek);
   --radius-sm: calc(var(--radius) - 2px);
   --radius-md: var(--radius);
   --radius-lg: calc(var(--radius) + 2px);

@@ -29,6 +29,7 @@ class ModelOut(BaseModel):
     image_price: Decimal | None
     video_second_price: Decimal | None
     generation_price: Decimal | None
+    price_markup: Decimal
     created_at: datetime
 
 
@@ -54,6 +55,7 @@ class ModelCreate(BaseModel):
     image_price: Decimal | None = None
     video_second_price: Decimal | None = None
     generation_price: Decimal | None = None
+    price_markup: Decimal = Field(default=Decimal("1"), gt=0)
 
 
 class ModelUpdate(BaseModel):
@@ -78,3 +80,4 @@ class ModelUpdate(BaseModel):
     image_price: Decimal | None = None
     video_second_price: Decimal | None = None
     generation_price: Decimal | None = None
+    price_markup: Decimal | None = Field(default=None, gt=0)

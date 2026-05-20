@@ -179,6 +179,41 @@ DEFAULT_MODELS: list[dict] = [
     },
 ]
 
+# DeepSeek 模型走独立的 deepseek provider。定价为官方列表价按 ¥7.2/$ 换算的
+# USD 值（不含临时折扣，不加价）；DeepSeek 缓存无写入费 → cache_write_price=None。
+DEEPSEEK_MODELS: list[dict] = [
+    {
+        "public_name": "deepseek-v4-flash",
+        "upstream_model": "deepseek-v4-flash",
+        "type": "text",
+        "display_name": "DeepSeek V4 Flash",
+        "display_provider": "deepseek",
+        "description": "DeepSeek V4 fast-inference model.",
+        "pricing_mode": "per_token",
+        "input_price": Decimal("0.14"),
+        "output_price": Decimal("0.28"),
+        "capabilities": {"stream": True, "tools": True, "vision": False, "ctx": 128_000},
+        "max_input_tokens": 128_000,
+        "cache_write_price": None,
+        "cache_read_price": Decimal("0.003"),
+    },
+    {
+        "public_name": "deepseek-v4-pro",
+        "upstream_model": "deepseek-v4-pro",
+        "type": "text",
+        "display_name": "DeepSeek V4 Pro",
+        "display_provider": "deepseek",
+        "description": "DeepSeek V4 advanced-reasoning model.",
+        "pricing_mode": "per_token",
+        "input_price": Decimal("0.42"),
+        "output_price": Decimal("0.83"),
+        "capabilities": {"stream": True, "tools": True, "vision": False, "ctx": 128_000},
+        "max_input_tokens": 128_000,
+        "cache_write_price": None,
+        "cache_read_price": Decimal("0.0035"),
+    },
+]
+
 
 def ensure_admin(db: Session) -> User:
     admin = db.query(User).filter(User.email == settings.admin_email).one_or_none()
@@ -226,6 +261,40 @@ def ensure_apimart_provider(db: Session) -> Provider:
     return p
 
 
+def ensure_deepseek_provider(db: Session) -> Provider:
+    p = db.query(Provider).filter(Provider.name == "deepseek").one_or_none()
+    if p:
+        return p
+    p = Provider(
+        name="deepseek",
+        display_name="DeepSeek",
+        base_url=settings.deepseek_base_url,
+        status="active",
+    )
+    db.add(p)
+    db.flush()
+    return p
+
+
+def ensure_deepseek_models(db: Session, provider: Provider) -> None:
+    # If no API key is configured at boot, seed the models disabled so they
+    # don't surface as broken — an admin can enable them later (same posture
+    # as the grok placeholder rows).
+    default_status = "active" if settings.deepseek_api_key else "disabled"
+    existing = {m.public_name for m in db.query(ModelRow.public_name).all()}
+    for spec in DEEPSEEK_MODELS:
+        if spec["public_name"] in existing:
+            continue
+        db.add(
+            ModelRow(
+                provider_id=provider.id,
+                visible=True,
+                status=default_status,
+                **{k: v for k, v in spec.items() if k != "status"},
+            )
+        )
+
+
 # Rename map: old public_name -> new public_name. Existing FK rows keep working.
 RENAME_ON_BOOT: dict[str, str] = {
     "claude-sonnet-4.5": "claude-sonnet-4.6",
@@ -270,4 +339,6 @@ def run_seed(db: Session) -> None:
     ensure_admin(db)
     provider = ensure_apimart_provider(db)
     ensure_default_models(db, provider)
+    deepseek = ensure_deepseek_provider(db)
+    ensure_deepseek_models(db, deepseek)
     db.commit()

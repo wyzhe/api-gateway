@@ -73,25 +73,38 @@ export type PricedModel = {
   image_price?: string | null;
   video_second_price?: string | null;
   generation_price?: string | null;
+  price_markup?: string | null;
 };
 
+/** Multiply a base price string by the model's markup; returns a numeric
+ *  string for `fmtCompactMoney` to format. Returns "0" for a null base price. */
+function applyMarkup(price: string | null | undefined, markup: string | null | undefined): string {
+  if (price == null) return "0";
+  const m = markup == null ? 1 : Number(markup);
+  const factor = Number.isFinite(m) && m > 0 ? m : 1;
+  const v = Number(price) * factor;
+  return Number.isFinite(v) ? String(v) : "0";
+}
+
 export function priceLabel(m: PricedModel): string {
+  // Apply the per-model markup, then format OpenRouter-style for display.
+  const p = (v: string | null | undefined) => fmtCompactMoney(applyMarkup(v, m.price_markup));
   switch (m.pricing_mode) {
     case "per_token": {
-      const base = `${fmtCompactMoney(m.input_price ?? "0")} in · ${fmtCompactMoney(m.output_price ?? "0")} out / 1M`;
+      const base = `${p(m.input_price)} in · ${p(m.output_price)} out / 1M`;
       if (m.cache_write_price || m.cache_read_price) {
-        const cw = m.cache_write_price ?? m.input_price ?? "0";
-        const cr = m.cache_read_price ?? m.input_price ?? "0";
-        return `${base} (cache: ${fmtCompactMoney(cw)} w · ${fmtCompactMoney(cr)} r)`;
+        const cw = p(m.cache_write_price ?? m.input_price);
+        const cr = p(m.cache_read_price ?? m.input_price);
+        return `${base} (cache: ${cw} w · ${cr} r)`;
       }
       return `${base} tokens`;
     }
     case "per_image":
-      return `${fmtCompactMoney(m.image_price ?? m.generation_price ?? "0")} / image`;
+      return `${p(m.image_price ?? m.generation_price)} / image`;
     case "per_second":
-      return `${fmtCompactMoney(m.video_second_price ?? "0")} / second`;
+      return `${p(m.video_second_price)} / second`;
     case "per_generation":
-      return `${fmtCompactMoney(m.generation_price ?? "0")} / generation`;
+      return `${p(m.generation_price)} / generation`;
     default:
       return "—";
   }

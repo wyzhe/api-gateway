@@ -2,7 +2,7 @@
 
 Responsibilities:
 - Resolve a `public_name` from the user payload to a (ModelRow, Provider) pair.
-- Build the APIMartProvider instance for the current request.
+- Build the upstream provider adapter for the current request.
 - Pre-authorize spend against the monthly cap via reservation_service (Redis).
 - Persist request_logs atomically with debit (single transaction, FOR UPDATE).
 """
@@ -23,7 +23,7 @@ from ..config import get_settings
 from ..enums import RequestType
 from ..logging_config import get_logger
 from ..models import ApiKey, ModelRow, Provider, RequestLog, User
-from ..providers import APIMartProvider
+from ..providers import APIMartProvider, BaseProvider, DeepSeekProvider
 from ..redis_client import get_redis
 from ..utils.redact import redact
 from ..utils.time import month_start_utc
@@ -92,12 +92,16 @@ def session_key_for_request(api_key: ApiKey) -> str:
     return f"k{api_key.id}"
 
 
-def build_provider(provider: Provider) -> APIMartProvider:
-    if provider.name != "apimart":
-        raise HTTPException(status_code=501, detail=f"Provider '{provider.name}' not implemented")
-    if not settings.apimart_api_key:
-        raise HTTPException(status_code=500, detail="APIMART_API_KEY is not configured")
-    return APIMartProvider(base_url=provider.base_url, api_key=settings.apimart_api_key)
+def build_provider(provider: Provider) -> BaseProvider:
+    if provider.name == "apimart":
+        if not settings.apimart_api_key:
+            raise HTTPException(status_code=500, detail="APIMART_API_KEY is not configured")
+        return APIMartProvider(base_url=provider.base_url, api_key=settings.apimart_api_key)
+    if provider.name == "deepseek":
+        if not settings.deepseek_api_key:
+            raise HTTPException(status_code=500, detail="DEEPSEEK_API_KEY is not configured")
+        return DeepSeekProvider(base_url=provider.base_url, api_key=settings.deepseek_api_key)
+    raise HTTPException(status_code=501, detail=f"Provider '{provider.name}' not implemented")
 
 
 def new_request_id() -> str:

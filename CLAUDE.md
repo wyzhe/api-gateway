@@ -6,7 +6,7 @@ You're working on a self-hosted OpenAI-compatible API gateway in active producti
 
 ## What this is, what it isn't
 
-- **Is**: an OpenAI-compatible gateway in front of upstream LLM providers (currently APIMart) that adds (a) per-user API keys, (b) `Decimal`-precise balance-based billing with monthly caps, (c) full request logs, (d) async task lifecycle (image/video), (e) a React dashboard + admin console, (f) Redis-backed rate limiting, (g) an arq worker for async task finalization.
+- **Is**: an OpenAI-compatible gateway in front of upstream LLM providers (APIMart and DeepSeek) that adds (a) per-user API keys, (b) `Decimal`-precise balance-based billing with monthly caps, (c) full request logs, (d) async task lifecycle (image/video), (e) a React dashboard + admin console, (f) Redis-backed rate limiting, (g) an arq worker for async task finalization.
 - **Isn't**: a chat product, a managed offering, a multi-tenant SaaS, or a hosted public service. No online payments, no per-org workspaces. Self-serve sign-up via Google / GitHub OAuth is now supported (open registration, default balance 0); admin manual provisioning still works as before.
 
 ## Stack and where to look first
@@ -19,7 +19,7 @@ You're working on a self-hosted OpenAI-compatible API gateway in active producti
 | Cache / queue / rate limit | Redis 7+ | `backend/app/redis.py` |
 | Auth | bcrypt + python-jose JWT (access + refresh) | `backend/app/security.py`, `deps.py` |
 | Token counting | tiktoken (cl100k_base / o200k_base) | `backend/app/services/token_estimator.py` |
-| Upstream | APIMart only (docs.apimart.ai); pluggable via `BaseProvider` | `backend/app/providers/apimart.py` |
+| Upstream | APIMart + DeepSeek; pluggable via `BaseProvider` | `backend/app/providers/` |
 | Observability | structlog (JSON), `prometheus-client` `/metrics` | `backend/app/logging_config.py`, `backend/app/metrics.py` |
 | Frontend | Vite + React 19 + TS + Tailwind v4 + hand-rolled shadcn-style primitives | `frontend/src/App.tsx` |
 
@@ -84,13 +84,13 @@ When choosing a model name in `/v1/messages`, you still send our public_name (e.
 
 ## Multi-provider session stickiness (hook)
 
-`services/provider_selector.py` is the seam where future per-session provider selection lives. Today there's only one upstream (APIMart), so `pick_provider(model)` just returns the model's `provider_id`. The `session_key` argument is wired through `resolve_for_request()` from the API key id (`session_key_for_request(api_key) → "k{id}"`).
+`services/provider_selector.py` is the seam where future per-session provider selection lives. There are now two upstreams (APIMart, DeepSeek), but each model still maps to exactly one provider via `provider_id`, so `pick_provider(model)` still just returns `model.provider_id`. The `session_key` argument is wired through `resolve_for_request()` from the API key id (`session_key_for_request(api_key) → "k{id}"`).
 
-When a second provider lands:
-1. Implement its `BaseProvider` subclass.
-2. Switch in `gateway_service.build_provider()`.
-3. Decide whether multiple `models` rows with the same `public_name` should be allowed (probably no — one public name per provider).
-4. The sticky map in Redis (`sticky:{session_key}:{model_id} → provider_id`) is already being read and written; just point it at meaningful provider choices.
+The per-session sticky map (`sticky:{session_key}:{model_id} → provider_id`) remains a hook for the future case where one `public_name` is served by multiple providers. The steps followed to add DeepSeek — and that apply to any further provider — are:
+1. Implement its `BaseProvider` subclass (e.g. `backend/app/providers/deepseek.py`).
+2. Dispatch on `provider.name` in `gateway_service.build_provider()`.
+3. Decide whether multiple `models` rows with the same `public_name` should be allowed (currently no — one public name maps to exactly one provider).
+4. When a model genuinely needs to be served by multiple providers, point the sticky map at meaningful provider choices.
 
 Do NOT add cross-provider fallback. If upstream is down, surface the error.
 
@@ -152,7 +152,7 @@ A failed worker job is retried with exponential backoff. Worker job exceptions a
 
 | Want to | Touch |
 |---|---|
-| Add a second upstream provider | New subclass of `BaseProvider` in `app/providers/`; switch in `gateway_service.build_provider()`; add `Provider` row via Admin → Providers |
+| Add a second upstream provider | New subclass of `BaseProvider` in `app/providers/`; switch in `gateway_service.build_provider()`; add `Provider` row via Admin → Providers. DeepSeek is already wired up this way (`backend/app/providers/deepseek.py`; `build_provider` dispatches on `provider.name`). |
 | Add a new endpoint (e.g. `/v1/embeddings`) | Add method on `BaseProvider` + `APIMartProvider`; add route in `app/api/gateway.py`; add cost rule in `cost_service.py`; pre-reserve in `preauthorize_spend()` if it costs more than chat |
 | Add a new chat protocol (e.g. Google Gen AI) | New methods on `BaseProvider`, mirror the `/v1/messages` plumbing in `app/api/gateway.py`, share the same model rows and pricing. Don't translate between protocols at the gateway layer. |
 | Change billing rules | `app/services/cost_service.py`. Don't touch billing inside endpoints. |
@@ -178,6 +178,7 @@ A failed worker job is retried with exponential backoff. Worker job exceptions a
 - `REDIS_URL` is required. The app fails to start if Redis is unreachable at startup.
 - `CORS_ORIGINS` is a strict allowlist. Wildcards are not honored in production mode (`ENV=production`).
 - OAuth 端配置:`GOOGLE_OAUTH_CLIENT_ID/_SECRET`、`GITHUB_OAUTH_CLIENT_ID/_SECRET`、`OAUTH_BACKEND_BASE_URL`、`OAUTH_FRONTEND_BASE_URL`。生产环境校验:配了 `*_client_id` 必须有 `*_client_secret`;url 必须 https;backend / frontend url 必须同站(eTLD+1 相同),否则 `SameSite=Strict` cookie 会失效。`SIGNUP_PER_IP_PER_DAY`(默认 10)和 `API_KEY_PER_USER_PER_DAY`(默认 5)必须 >= 1。
+- `DEEPSEEK_API_KEY` / `DEEPSEEK_BASE_URL` 可选;启动时缺 key 则 DeepSeek 模型 seed 为 disabled。
 
 ## Known gaps / deferred items (not "won't fix" — "next")
 

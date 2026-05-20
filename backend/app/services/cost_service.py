@@ -15,6 +15,13 @@ from ..models import ModelRow
 MILLION = Decimal("1000000")
 
 
+def _markup(model: Any) -> Decimal:
+    """Per-model price multiplier. Returns 1 for stubs/None so non-ModelRow
+    callers (tests) and pre-column rows never crash or zero out a price."""
+    mk = getattr(model, "price_markup", None)
+    return mk if isinstance(mk, Decimal) else Decimal("1")
+
+
 # ---------------- Actual cost (post-call) ----------------
 
 
@@ -29,7 +36,7 @@ def calc_text_cost(model: ModelRow, prompt_tokens: int, completion_tokens: int) 
         cost += Decimal(prompt_tokens) / MILLION * Decimal(input_p)
     if output_p is not None and completion_tokens:
         cost += Decimal(completion_tokens) / MILLION * Decimal(output_p)
-    return cost, False
+    return cost * _markup(model), False
 
 
 def _compute_cache_cost(
@@ -96,14 +103,14 @@ def calc_text_cost_with_cache(
         cached_tokens=cached_tokens,
         cache_creation_tokens=cache_creation_tokens,
     )
-    return cost, False
+    return cost * _markup(model), False
 
 
 def calc_image_cost(model: ModelRow, image_count: int) -> tuple[Decimal, bool]:
     per = model.image_price if model.image_price is not None else model.generation_price
     if per is None:
         return Decimal("0"), True
-    return Decimal(per) * Decimal(image_count or 1), False
+    return Decimal(per) * Decimal(image_count or 1) * _markup(model), False
 
 
 def calc_video_cost(
@@ -113,9 +120,9 @@ def calc_video_cost(
         # Wrap in str() so a float arg (legacy callers) doesn't introduce
         # binary-float precision drift.
         d = duration_seconds if isinstance(duration_seconds, Decimal) else Decimal(str(duration_seconds))
-        return Decimal(model.video_second_price) * d, False
+        return Decimal(model.video_second_price) * d * _markup(model), False
     if model.generation_price is not None:
-        return Decimal(model.generation_price), False
+        return Decimal(model.generation_price) * _markup(model), False
     return Decimal("0"), True
 
 
@@ -135,23 +142,23 @@ def estimate_text_cost_upper_bound(
     output_p = model.output_price or Decimal("0")
     cost = Decimal(prompt_tokens_est) / MILLION * Decimal(input_p)
     cost += Decimal(max_completion_tokens) / MILLION * Decimal(output_p)
-    return cost
+    return cost * _markup(model)
 
 
 def estimate_image_cost_upper_bound(model: ModelRow, image_count: int) -> Decimal:
     per = model.image_price if model.image_price is not None else model.generation_price
     if per is None:
         return Decimal("0")
-    return Decimal(per) * Decimal(max(image_count, 1))
+    return Decimal(per) * Decimal(max(image_count, 1)) * _markup(model)
 
 
 def estimate_video_cost_upper_bound(model: ModelRow, requested_duration_seconds: int | None) -> Decimal:
     if model.video_second_price is not None:
         # If client requested no duration, fall back to a conservative 60s ceiling.
         d = Decimal(requested_duration_seconds or 60)
-        return Decimal(model.video_second_price) * d
+        return Decimal(model.video_second_price) * d * _markup(model)
     if model.generation_price is not None:
-        return Decimal(model.generation_price)
+        return Decimal(model.generation_price) * _markup(model)
     return Decimal("0")
 
 
@@ -180,6 +187,7 @@ def price_snapshot(model: ModelRow) -> dict[str, Any]:
         "image_price": s(model.image_price),
         "video_second_price": s(model.video_second_price),
         "generation_price": s(model.generation_price),
+        "price_markup": s(_markup(model)),
     }
 
 
@@ -201,7 +209,9 @@ def recompute_text_cost_from_snapshot(
     op = Decimal(snapshot.get("output_price") or "0")
     cw = snapshot.get("cache_write_price")
     cr = snapshot.get("cache_read_price")
-    return _compute_cache_cost(
+    markup_raw = snapshot.get("price_markup")
+    markup = Decimal(markup_raw) if markup_raw is not None else Decimal("1")
+    base = _compute_cache_cost(
         input_p=ip,
         output_p=op,
         cw=Decimal(cw) if cw is not None else None,
@@ -211,3 +221,4 @@ def recompute_text_cost_from_snapshot(
         cached_tokens=cached_tokens,
         cache_creation_tokens=cache_creation_tokens,
     )
+    return base * markup

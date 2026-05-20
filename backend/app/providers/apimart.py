@@ -18,6 +18,7 @@ import httpx
 
 from ..config import get_settings
 from ..metrics import upstream_latency_ms
+from ._sse import parse_sse_line
 from .base import BaseProvider, ProviderResponse, ProviderStreamChunk, ProviderTaskResult
 
 PATH_CHAT = "/chat/completions"
@@ -133,26 +134,7 @@ class APIMartProvider(BaseProvider):
                 )
                 return
             async for raw_line in resp.aiter_lines():
-                if raw_line == "":
-                    yield ProviderStreamChunk(raw_line=b"\n", parsed=None)
-                    continue
-                if raw_line.startswith(":"):
-                    yield ProviderStreamChunk(raw_line=(raw_line + "\n").encode(), parsed=None)
-                    continue
-                parsed = None
-                if raw_line.startswith("data: "):
-                    data_str = raw_line[6:]
-                    if data_str != "[DONE]":
-                        import json as _json
-
-                        try:
-                            parsed = _json.loads(data_str)
-                        except Exception:
-                            parsed = None
-                yield ProviderStreamChunk(
-                    raw_line=(raw_line + "\n").encode(),
-                    parsed=parsed,
-                )
+                yield parse_sse_line(raw_line)
 
     # ---------------- Anthropic Messages API ----------------
 
@@ -191,26 +173,7 @@ class APIMartProvider(BaseProvider):
             # Anthropic SSE events have BOTH `event: <name>` and `data: {...}` lines.
             # We forward both verbatim and only parse `data:` lines for usage extraction.
             async for raw_line in resp.aiter_lines():
-                if raw_line == "":
-                    yield ProviderStreamChunk(raw_line=b"\n", parsed=None)
-                    continue
-                if raw_line.startswith(":"):
-                    yield ProviderStreamChunk(raw_line=(raw_line + "\n").encode(), parsed=None)
-                    continue
-                parsed = None
-                if raw_line.startswith("data: "):
-                    data_str = raw_line[6:]
-                    if data_str != "[DONE]":
-                        import json as _json
-
-                        try:
-                            parsed = _json.loads(data_str)
-                        except Exception:
-                            parsed = None
-                yield ProviderStreamChunk(
-                    raw_line=(raw_line + "\n").encode(),
-                    parsed=parsed,
-                )
+                yield parse_sse_line(raw_line)
 
     # ---------------- Image (async) ----------------
 

@@ -29,6 +29,11 @@ class ModelRow(Base):
     image_price: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
     video_second_price: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
     generation_price: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    # Per-model price multiplier. Charged cost = base cost × price_markup.
+    # Always positive; 1 = no markup. NOT NULL with DB default 1.
+    price_markup: Mapped[Decimal] = mapped_column(
+        Numeric(18, 8), nullable=False, default=Decimal("1"), server_default="1"
+    )
     # Cache pricing per Anthropic and OpenAI conventions, expressed per 1M tokens
     # to match input_price / output_price denomination (both are per 1M tokens).
     # - cache_write_price: price per 1M tokens written to prompt cache (Anthropic only)
