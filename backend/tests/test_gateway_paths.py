@@ -100,14 +100,19 @@ def test_v1_models_lists_deepseek_when_active(client, db_session, user_api_key):
     from app.models import ModelRow
 
     row = db_session.query(ModelRow).filter(ModelRow.public_name == "deepseek-v4-flash").one()
+    original_status, original_visible = row.status, row.visible
     row.status = "active"
     row.visible = True
     db_session.commit()
-
-    r = client.get("/v1/models", headers={"Authorization": f"Bearer {user_api_key}"})
-    assert r.status_code == 200
-    ids = {m["id"] for m in r.json()["data"]}
-    assert "deepseek-v4-flash" in ids
+    try:
+        r = client.get("/v1/models", headers={"Authorization": f"Bearer {user_api_key}"})
+        assert r.status_code == 200
+        ids = {m["id"] for m in r.json()["data"]}
+        assert "deepseek-v4-flash" in ids
+    finally:
+        row.status = original_status
+        row.visible = original_visible
+        db_session.commit()
 
 
 def test_deepseek_models_seeded_under_deepseek_provider(db_session):
