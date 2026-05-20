@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { KpiTile } from "@/components/kpi-tile";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { KpiStrip } from "@/components/kpi-strip";
+import { SectionHeading } from "@/components/section-heading";
 import { PageHeader } from "@/components/shell";
 import { api } from "@/lib/api";
 import { fmtCompactMoney } from "@/lib/utils";
@@ -25,26 +25,31 @@ export function AdminOverviewPage() {
   return (
     <div>
       <PageHeader title={t("admin.overview.title")} />
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <KpiTile label={t("admin.overview.kpiUsers")} value={data?.users ?? 0} />
-        <KpiTile
-          label={t("admin.overview.kpiRequestsToday")}
-          value={data?.today_requests ?? 0}
-          hint={t("admin.overview.kpiRequestsTodayHint", {
-            rate: ((data?.error_rate_today ?? 0) * 100).toFixed(1),
-          })}
+      <KpiStrip
+        items={[
+          { label: t("admin.overview.kpiUsers"), value: data?.users ?? 0 },
+          {
+            label: t("admin.overview.kpiRequestsToday"),
+            value: data?.today_requests ?? 0,
+            hint: t("admin.overview.kpiRequestsTodayHint", {
+              rate: ((data?.error_rate_today ?? 0) * 100).toFixed(1),
+            }),
+          },
+          { label: t("admin.overview.kpiTodaySpend"), value: fmtCompactMoney(data?.today_spend) },
+          { label: t("admin.overview.kpiMonthSpend"), value: fmtCompactMoney(data?.month_spend) },
+        ]}
+      />
+      <section>
+        <SectionHeading>{t("admin.overview.todayByTypeTitle")}</SectionHeading>
+        <KpiStrip
+          cols={3}
+          items={[
+            { label: t("common.reqType.text"), value: data?.usage_today.text ?? 0 },
+            { label: t("common.reqType.image"), value: data?.usage_today.image ?? 0 },
+            { label: t("common.reqType.video"), value: data?.usage_today.video ?? 0 },
+          ]}
         />
-        <KpiTile label={t("admin.overview.kpiTodaySpend")} value={fmtCompactMoney(data?.today_spend)} />
-        <KpiTile label={t("admin.overview.kpiMonthSpend")} value={fmtCompactMoney(data?.month_spend)} />
-      </div>
-      <Card className="mt-4">
-        <CardHeader><CardTitle>{t("admin.overview.todayByTypeTitle")}</CardTitle></CardHeader>
-        <CardContent className="grid grid-cols-3 gap-3">
-          <KpiTile label={t("common.reqType.text")} value={data?.usage_today.text ?? 0} />
-          <KpiTile label={t("common.reqType.image")} value={data?.usage_today.image ?? 0} />
-          <KpiTile label={t("common.reqType.video")} value={data?.usage_today.video ?? 0} />
-        </CardContent>
-      </Card>
+      </section>
     </div>
   );
 }

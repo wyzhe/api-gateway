@@ -119,6 +119,13 @@
   .mono {
     font-family: var(--font-mono);
   }
+  /* Paired with <KpiStrip> cell values. See components/kpi-strip.tsx. */
+  .kpi-strip-value {
+    font-size: 1.375rem;
+    line-height: 1.1;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
   .kbd {
     display: inline-flex;
     align-items: center;

@@ -23,25 +23,48 @@ import { useAuth } from "@/lib/auth";
 import { useT, type TKey } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
-const WS_NAV: { to: string; key: TKey; Icon: typeof Gauge }[] = [
-  { to: "/dashboard", key: "nav.dashboard", Icon: Gauge },
-  { to: "/keys", key: "nav.apiKeys", Icon: Key },
-  { to: "/logs", key: "nav.usageLogs", Icon: Activity },
-  { to: "/playground", key: "nav.playground", Icon: PlayCircle },
-  { to: "/generations", key: "nav.generations", Icon: ImageIcon },
-  { to: "/billing", key: "nav.billing", Icon: CircleDollarSign },
-  { to: "/models", key: "nav.models", Icon: CpuIcon },
-  { to: "/docs", key: "nav.docs", Icon: BookOpen },
-  { to: "/settings/connections", key: "nav.settingsConnections", Icon: Shield },
-  { to: "/settings/security", key: "nav.settingsSecurity", Icon: Settings },
+type NavItem = { to: string; key: TKey; Icon: typeof Gauge };
+type NavGroup = { labelKey: TKey; items: NavItem[] };
+
+const WS_GROUPS: NavGroup[] = [
+  {
+    labelKey: "nav.groupWorkspace",
+    items: [
+      { to: "/dashboard", key: "nav.dashboard", Icon: Gauge },
+      { to: "/keys", key: "nav.apiKeys", Icon: Key },
+      { to: "/logs", key: "nav.usageLogs", Icon: Activity },
+      { to: "/playground", key: "nav.playground", Icon: PlayCircle },
+      { to: "/generations", key: "nav.generations", Icon: ImageIcon },
+    ],
+  },
+  {
+    labelKey: "nav.groupAccount",
+    items: [
+      { to: "/billing", key: "nav.billing", Icon: CircleDollarSign },
+      { to: "/settings/connections", key: "nav.settingsConnections", Icon: Shield },
+      { to: "/settings/security", key: "nav.settingsSecurity", Icon: Settings },
+    ],
+  },
+  {
+    labelKey: "nav.groupReference",
+    items: [
+      { to: "/models", key: "nav.models", Icon: CpuIcon },
+      { to: "/docs", key: "nav.docs", Icon: BookOpen },
+    ],
+  },
 ];
 
-const ADMIN_NAV: { to: string; key: TKey; Icon: typeof Gauge }[] = [
-  { to: "/admin", key: "nav.adminOverview", Icon: LayoutGrid },
-  { to: "/admin/users", key: "nav.adminUsers", Icon: Users },
-  { to: "/admin/models", key: "nav.adminModels", Icon: CpuIcon },
-  { to: "/admin/providers", key: "nav.adminProviders", Icon: Settings },
-  { to: "/admin/logs", key: "nav.adminLogs", Icon: Terminal },
+const ADMIN_GROUPS: NavGroup[] = [
+  {
+    labelKey: "nav.sectionAdmin",
+    items: [
+      { to: "/admin", key: "nav.adminOverview", Icon: LayoutGrid },
+      { to: "/admin/users", key: "nav.adminUsers", Icon: Users },
+      { to: "/admin/models", key: "nav.adminModels", Icon: CpuIcon },
+      { to: "/admin/providers", key: "nav.adminProviders", Icon: Settings },
+      { to: "/admin/logs", key: "nav.adminLogs", Icon: Terminal },
+    ],
+  },
 ];
 
 export function Shell({ children }: { children: ReactNode }) {
@@ -49,7 +72,6 @@ export function Shell({ children }: { children: ReactNode }) {
   const loc = useLocation();
   const t = useT();
   const isAdminArea = loc.pathname.startsWith("/admin");
-  const nav = isAdminArea ? ADMIN_NAV : WS_NAV;
 
   return (
     <div className="flex h-screen overflow-hidden">
@@ -62,26 +84,15 @@ export function Shell({ children }: { children: ReactNode }) {
         </div>
 
         <nav className="flex-1 overflow-y-auto p-2 flex flex-col gap-0.5">
-          <div className="text-[11px] text-muted-foreground px-2 py-1.5 mt-1">
-            {isAdminArea ? t("nav.sectionAdmin") : t("nav.sectionWorkspace")}
-          </div>
-          {nav.map(({ to, key, Icon }) => (
-            <NavLink
-              key={to}
-              to={to}
-              end={to === "/admin"}
-              className={({ isActive }) =>
-                cn(
-                  "flex items-center gap-2 px-2 py-1 rounded-md text-[13px]",
-                  isActive
-                    ? "bg-surface-2 text-foreground"
-                    : "text-muted-foreground hover:text-foreground hover:bg-surface-2",
-                )
-              }
-            >
-              <Icon className="h-3.5 w-3.5" />
-              {t(key)}
-            </NavLink>
+          {(isAdminArea ? ADMIN_GROUPS : WS_GROUPS).map((group, gi) => (
+            <div key={group.labelKey} className={gi === 0 ? "" : "mt-2"}>
+              <NavGroupLabel>{t(group.labelKey)}</NavGroupLabel>
+              <div className="flex flex-col gap-0.5">
+                {group.items.map((item) => (
+                  <NavItemLink key={item.to} item={item} />
+                ))}
+              </div>
+            </div>
           ))}
         </nav>
 
@@ -147,21 +158,44 @@ export function Shell({ children }: { children: ReactNode }) {
   );
 }
 
+function NavGroupLabel({ children }: { children: ReactNode }) {
+  return (
+    <div className="text-[11px] text-muted-foreground px-2 py-1">{children}</div>
+  );
+}
+
+function NavItemLink({ item }: { item: NavItem }) {
+  const t = useT();
+  const { to, key, Icon } = item;
+  return (
+    <NavLink
+      to={to}
+      end={to === "/admin"}
+      className={({ isActive }) =>
+        cn(
+          "relative flex items-center gap-2 px-2 py-1 rounded-md text-[13px]",
+          isActive
+            ? "bg-surface-2 text-foreground before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-0.5 before:bg-accent before:rounded-r-sm"
+            : "text-muted-foreground hover:text-foreground hover:bg-surface-2",
+        )
+      }
+    >
+      <Icon className="h-3.5 w-3.5" />
+      {t(key)}
+    </NavLink>
+  );
+}
+
 export function PageHeader({
   title,
-  subtitle,
   actions,
 }: {
   title: ReactNode;
-  subtitle?: ReactNode;
   actions?: ReactNode;
 }) {
   return (
-    <div className="flex items-start justify-between mb-4">
-      <div>
-        <h1 className="text-base font-semibold">{title}</h1>
-        {subtitle && <p className="text-xs text-muted-foreground mt-1">{subtitle}</p>}
-      </div>
+    <div className="flex items-center justify-between pb-3 mb-4 border-b border-border">
+      <h1 className="text-base font-semibold">{title}</h1>
       {actions && <div className="flex items-center gap-2">{actions}</div>}
     </div>
   );

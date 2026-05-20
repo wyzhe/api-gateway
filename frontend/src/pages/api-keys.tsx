@@ -11,6 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { EmptyState } from "@/components/empty-state";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -193,8 +194,8 @@ export function ApiKeysPage() {
           <TableBody>
             {keys.length === 0 && (
               <TableRow>
-                <TableCell colSpan={7} className="text-center text-sm text-muted-foreground py-8">
-                  {t("apiKeys.empty")}
+                <TableCell colSpan={7} className="p-0">
+                  <EmptyState title={t("apiKeys.empty")} />
                 </TableCell>
               </TableRow>
             )}

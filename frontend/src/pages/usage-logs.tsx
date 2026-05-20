@@ -12,6 +12,7 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { LogDetailDrawer, useLogDetail } from "@/components/log-detail-drawer";
 import { DotStatus } from "@/components/dot-status";
+import { EmptyState } from "@/components/empty-state";
 import { TypeBadge } from "@/components/type-badge";
 import { PageHeader } from "@/components/shell";
 import { api } from "@/lib/api";
@@ -93,8 +94,8 @@ export function UsageLogsPage() {
           <TableBody>
             {rows.length === 0 && (
               <TableRow>
-                <TableCell colSpan={8} className="text-center text-sm text-muted-foreground py-8">
-                  {t("usageLogs.empty")}
+                <TableCell colSpan={8} className="p-0">
+                  <EmptyState title={t("usageLogs.empty")} />
                 </TableCell>
               </TableRow>
             )}

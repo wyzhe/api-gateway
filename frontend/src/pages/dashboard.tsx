@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { KpiTile } from "@/components/kpi-tile";
+import { KpiStrip } from "@/components/kpi-strip";
+import { EmptyState } from "@/components/empty-state";
+import { SectionHeading } from "@/components/section-heading";
 import { DotStatus } from "@/components/dot-status";
 import { LogDetailDrawer, useLogDetail } from "@/components/log-detail-drawer";
 import { TypeBadge } from "@/components/type-badge";
@@ -38,75 +39,70 @@ export function DashboardPage() {
     <div>
       <PageHeader title={t("dashboard.title")} />
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-        <KpiTile
-          label={t("dashboard.kpiBalance")}
-          value={fmtBalance(data?.balance)}
-          hint={<Link to="/billing" className="text-primary hover:underline">{t("dashboard.kpiBillingLink")}</Link>}
-        />
-        <KpiTile
-          label={t("dashboard.kpiTodaySpend")}
-          value={fmtCompactMoney(data?.today_spend)}
-          hint={t("dashboard.kpiThisMonthHint", { amount: fmtCompactMoney(data?.month_spend) })}
-        />
-        <KpiTile
-          label={t("dashboard.kpiTextRequestsToday")}
-          value={data?.today_text_requests ?? 0}
-          hint={t("dashboard.kpiMediaHint", {
-            image: data?.today_image_requests ?? 0,
-            video: data?.today_video_requests ?? 0,
-          })}
-        />
-        <button
-          type="button"
-          onClick={() => nav("/logs?status=failed")}
-          className="text-left focus:outline-none focus:ring-2 focus:ring-ring rounded-md"
-          title={t("dashboard.kpiViewFailedTitle")}
-        >
-          <KpiTile
-            label={t("dashboard.kpiFailuresRecent")}
-            value={data?.recent_failures.length ?? 0}
-            hint={<span className="text-primary hover:underline">{t("dashboard.kpiViewFailed")}</span>}
-          />
-        </button>
-      </div>
+      <KpiStrip
+        items={[
+          {
+            label: t("dashboard.kpiBalance"),
+            value: fmtBalance(data?.balance),
+            hint: <Link to="/billing" className="text-primary hover:underline">{t("dashboard.kpiBillingLink")}</Link>,
+          },
+          {
+            label: t("dashboard.kpiTodaySpend"),
+            value: fmtCompactMoney(data?.today_spend),
+            hint: t("dashboard.kpiThisMonthHint", { amount: fmtCompactMoney(data?.month_spend) }),
+          },
+          {
+            label: t("dashboard.kpiTextRequestsToday"),
+            value: data?.today_text_requests ?? 0,
+            hint: t("dashboard.kpiMediaHint", {
+              image: data?.today_image_requests ?? 0,
+              video: data?.today_video_requests ?? 0,
+            }),
+          },
+          {
+            label: t("dashboard.kpiFailuresRecent"),
+            value: data?.recent_failures.length ?? 0,
+            hint: <span className="text-primary hover:underline">{t("dashboard.kpiViewFailed")}</span>,
+            onClick: () => nav("/logs?status=failed"),
+            title: t("dashboard.kpiViewFailedTitle"),
+          },
+        ]}
+      />
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <Card className="lg:col-span-2">
-          <CardHeader className="flex-row items-center justify-between">
-            <CardTitle>{t("dashboard.recentActivity")}</CardTitle>
-            <Link to="/logs" className="text-xs text-primary hover:underline">{t("dashboard.allLogsLink")}</Link>
-          </CardHeader>
-          <CardContent className="p-0">
-            {data && data.recent_logs.length === 0 ? (
-              <div className="px-4 py-10 text-center text-sm text-muted-foreground">
-                {t("dashboard.emptyRecentPrefix")}
-                <Link to="/playground" className="text-primary hover:underline">{t("dashboard.emptyRecentLink")}</Link>
-                {t("dashboard.emptyRecentSuffix")}
-              </div>
-            ) : (
-              <ul className="divide-y divide-border">
-                {data?.recent_logs.slice(0, 10).map((r) => (
-                  <li
-                    key={r.id}
-                    onClick={() => detail.open(r.id)}
-                    className="px-4 py-2.5 flex items-center gap-3 text-xs cursor-pointer hover:bg-surface-2"
-                  >
-                    <TypeBadge type={r.request_type} />
-                    <span className="mono text-foreground">{r.model_name || r.upstream_model}</span>
-                    <DotStatus status={r.status} label={t(reqStatusKey(r.status))} />
-                    <span className="text-muted-foreground ml-auto">{fmtCompactMoney(r.cost)}</span>
-                    <span className="text-muted-foreground w-20 text-right">{fmtRelative(r.created_at, t)}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <section className="lg:col-span-2">
+          <SectionHeading
+            actions={<Link to="/logs" className="text-xs text-primary hover:underline">{t("dashboard.allLogsLink")}</Link>}
+          >
+            {t("dashboard.recentActivity")}
+          </SectionHeading>
+          {data && data.recent_logs.length === 0 ? (
+            <EmptyState
+              title={t("dashboard.emptyRecentTitle")}
+              action={<Link to="/playground" className="text-primary hover:underline">{t("dashboard.emptyRecentLink")}</Link>}
+            />
+          ) : (
+            <ul className="divide-y divide-border border-t border-b border-border">
+              {data?.recent_logs.slice(0, 10).map((r) => (
+                <li
+                  key={r.id}
+                  onClick={() => detail.open(r.id)}
+                  className="px-2 py-2 flex items-center gap-3 text-xs cursor-pointer hover:bg-surface-2"
+                >
+                  <TypeBadge type={r.request_type} />
+                  <span className="mono text-foreground">{r.model_name || r.upstream_model}</span>
+                  <DotStatus status={r.status} label={t(reqStatusKey(r.status))} />
+                  <span className="text-muted-foreground ml-auto">{fmtCompactMoney(r.cost)}</span>
+                  <span className="text-muted-foreground w-20 text-right">{fmtRelative(r.created_at, t)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
 
-        <Card>
-          <CardHeader><CardTitle>{t("dashboard.topModels")}</CardTitle></CardHeader>
-          <CardContent className="p-0">
+        <div className="flex flex-col gap-6">
+          <section>
+            <SectionHeading>{t("dashboard.topModels")}</SectionHeading>
             <StatRows
               empty={t("dashboard.noDataYet")}
               items={data?.top_models_by_cost ?? []}
@@ -115,9 +111,9 @@ export function DashboardPage() {
               getValue={(m) => t("dashboard.statValueCostRequests", { cost: fmtCompactMoney(m.cost), requests: m.requests })}
               onClick={(m) => m.model_name && nav(`/logs?model=${encodeURIComponent(m.model_name)}`)}
             />
-          </CardContent>
-          <CardHeader className="border-t border-border"><CardTitle>{t("dashboard.topApiKeys")}</CardTitle></CardHeader>
-          <CardContent className="p-0">
+          </section>
+          <section>
+            <SectionHeading>{t("dashboard.topApiKeys")}</SectionHeading>
             <StatRows
               empty={t("dashboard.noDataYet")}
               items={data?.top_api_keys_by_usage ?? []}
@@ -126,8 +122,8 @@ export function DashboardPage() {
               getValue={(k) => t("dashboard.statValueRequestsCost", { requests: k.requests, cost: fmtCompactMoney(k.cost) })}
               onClick={(k) => k.api_key_id && nav(`/logs?api_key_id=${k.api_key_id}`)}
             />
-          </CardContent>
-        </Card>
+          </section>
+        </div>
       </div>
 
       <LogDetailDrawer log={detail.selected} onClose={detail.close} />
@@ -146,15 +142,15 @@ function StatRows<T>({
   onClick: (it: T) => void;
 }) {
   if (items.length === 0) {
-    return <div className="p-3 text-xs text-muted-foreground">{empty}</div>;
+    return <div className="py-3 text-xs text-muted-foreground">{empty}</div>;
   }
   return (
-    <ul className="divide-y divide-border">
+    <ul className="divide-y divide-border border-t border-b border-border">
       {items.map((it) => (
         <li
           key={getKey(it)}
           onClick={() => onClick(it)}
-          className="px-3.5 py-1.5 flex items-center justify-between text-xs cursor-pointer hover:bg-surface-2"
+          className="px-2 py-1.5 flex items-center justify-between text-xs cursor-pointer hover:bg-surface-2"
         >
           <span className="mono">{getLabel(it)}</span>
           <span className="text-muted-foreground">{getValue(it)}</span>

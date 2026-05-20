@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { EmptyState } from "@/components/empty-state";
 import { TypeBadge } from "@/components/type-badge";
 import { ProviderTag } from "@/components/provider-tag";
 import { PageHeader } from "@/components/shell";
@@ -55,7 +56,7 @@ function CapabilityChips({ caps }: { caps: CapBag }) {
   return (
     <div className="flex flex-wrap gap-1 border-t border-border pt-1.5 mt-1">
       {chips.map((c) => (
-        <Badge key={c.key} variant="outline" className="text-[10px] font-normal">
+        <Badge key={c.key} variant="outline" className="font-normal">
           {c.label}
         </Badge>
       ))}
@@ -65,8 +66,7 @@ function CapabilityChips({ caps }: { caps: CapBag }) {
 
 function ModelGrid({ models }: { models: Model[] }) {
   const t = useT();
-  if (models.length === 0)
-    return <div className="text-sm text-muted-foreground py-8 text-center">{t("models.empty")}</div>;
+  if (models.length === 0) return <EmptyState title={t("models.empty")} />;
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
       {models.map((m) => (
@@ -86,7 +86,7 @@ function ModelGrid({ models }: { models: Model[] }) {
               <p className="text-xs text-muted-foreground">{m.description}</p>
             )}
             <div className="text-xs mono text-foreground">{priceLabel(m)}</div>
-            <div className="text-[10px] text-muted-foreground">
+            <div className="text-[11px] text-muted-foreground">
               {t("models.upstreamLabel")} <span className="mono">{m.upstream_model}</span>
             </div>
             {m.capabilities && <CapabilityChips caps={m.capabilities} />}

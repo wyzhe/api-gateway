@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DotStatus } from "@/components/dot-status";
+import { EmptyState } from "@/components/empty-state";
 import { LogDetailDrawer, useLogDetail } from "@/components/log-detail-drawer";
 import { PageHeader } from "@/components/shell";
 import { TypeBadge } from "@/components/type-badge";
@@ -44,11 +46,10 @@ export function GenerationsPage() {
       />
 
       {withAsset.length === 0 && withoutAsset.length === 0 && (
-        <Card>
-          <CardContent className="text-center text-sm text-muted-foreground py-10">
-            {t("generations.emptyPrefix")}{t("generations.emptyLink")}{t("generations.emptySuffix")}
-          </CardContent>
-        </Card>
+        <EmptyState
+          title={t("generations.emptyTitle")}
+          action={<Link to="/playground" className="text-primary hover:underline">{t("generations.emptyLink")}</Link>}
+        />
       )}
 
       {withAsset.length > 0 && (
@@ -77,7 +78,7 @@ export function GenerationsPage() {
                   <TypeBadge type={it.request_type} />
                   <span className="mono text-xs">{it.model_name || it.upstream_model}</span>
                 </div>
-                <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                <div className="flex items-center justify-between text-[11px] text-muted-foreground">
                   <span>{fmtCompactMoney(it.cost)}</span>
                   <span>{fmtRelative(it.created_at, t)}</span>
                 </div>

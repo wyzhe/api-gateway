@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { KpiTile } from "@/components/kpi-tile";
+import { KpiStrip } from "@/components/kpi-strip";
+import { EmptyState } from "@/components/empty-state";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { PageHeader } from "@/components/shell";
 import { api } from "@/lib/api";
@@ -41,29 +42,31 @@ export function BillingPage() {
     <div>
       <PageHeader title={t("billing.title")} />
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-        <KpiTile label={t("billing.kpiBalance")} value={fmtBalance(summary?.balance)} />
-        <KpiTile
-          label={t("billing.kpiTodaySpend")}
-          value={fmtCompactMoney(summary?.today_spend)}
-          hint={t("billing.kpiRequestsHint", { count: summary?.today_requests ?? 0 })}
-        />
-        <KpiTile
-          label={t("billing.kpiMonthSpend")}
-          value={fmtCompactMoney(summary?.month_spend)}
-          hint={t("billing.kpiRequestsHint", { count: summary?.month_requests ?? 0 })}
-        />
-        <KpiTile
-          label={t("billing.kpiByTypeMonth")}
-          value={
-            <div className="text-sm font-normal mt-1 flex flex-col gap-0.5">
-              <Row label={t("common.reqType.text")} v={summary?.spend_by_type.text} />
-              <Row label={t("common.reqType.image")} v={summary?.spend_by_type.image} />
-              <Row label={t("common.reqType.video")} v={summary?.spend_by_type.video} />
-            </div>
-          }
-        />
-      </div>
+      <KpiStrip
+        items={[
+          { label: t("billing.kpiBalance"), value: fmtBalance(summary?.balance) },
+          {
+            label: t("billing.kpiTodaySpend"),
+            value: fmtCompactMoney(summary?.today_spend),
+            hint: t("billing.kpiRequestsHint", { count: summary?.today_requests ?? 0 }),
+          },
+          {
+            label: t("billing.kpiMonthSpend"),
+            value: fmtCompactMoney(summary?.month_spend),
+            hint: t("billing.kpiRequestsHint", { count: summary?.month_requests ?? 0 }),
+          },
+          {
+            label: t("billing.kpiByTypeMonth"),
+            value: (
+              <div className="text-sm font-normal flex flex-col gap-0.5 -mt-0.5">
+                <Row label={t("common.reqType.text")} v={summary?.spend_by_type.text} />
+                <Row label={t("common.reqType.image")} v={summary?.spend_by_type.image} />
+                <Row label={t("common.reqType.video")} v={summary?.spend_by_type.video} />
+              </div>
+            ),
+          },
+        ]}
+      />
 
       <Card>
         <CardHeader className="flex-row items-center justify-between">
@@ -86,8 +89,8 @@ export function BillingPage() {
             <TableBody>
               {txns.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center text-sm text-muted-foreground py-8">
-                    {t("billing.emptyTxns")}
+                  <TableCell colSpan={5} className="p-0">
+                    <EmptyState title={t("billing.emptyTxns")} />
                   </TableCell>
                 </TableRow>
               )}

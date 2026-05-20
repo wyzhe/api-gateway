@@ -79,7 +79,7 @@ export function PlaygroundPage() {
               aria-invalid={!!keyValue && !API_KEY_RE.test(keyValue)}
             />
             {keys.length > 0 && (
-              <span className="text-[10px] text-muted-foreground">
+              <span className="text-[11px] text-muted-foreground">
                 {t("playground.apiKeyActive", {
                   count: keys.length,
                   prefixes: keys.map((k) => k.key_prefix).join(", "),
