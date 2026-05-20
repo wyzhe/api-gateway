@@ -42,6 +42,11 @@ class Settings(BaseSettings):
     apimart_timeout_connect: float = Field(default=10.0)
     apimart_timeout_read: float = Field(default=120.0)
     apimart_timeout_write: float = Field(default=30.0)
+    deepseek_api_key: str = Field(default="")
+    deepseek_base_url: str = Field(default="https://api.deepseek.com")
+    deepseek_timeout_connect: float = Field(default=10.0)
+    deepseek_timeout_read: float = Field(default=120.0)
+    deepseek_timeout_write: float = Field(default=30.0)
 
     # --- Auth ---
     jwt_secret: str = Field(default="")
