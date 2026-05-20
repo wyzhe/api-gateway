@@ -67,8 +67,11 @@ class DailyUsageEntry(BaseModel):
 一条 group-by 查询,按 **UTC 自然日** 和 `request_type` 分组:
 
 ```python
+from sqlalchemy import Date, cast, func
+
 start = today_utc() - timedelta(days=29)   # today_utc() 来自 utils/time.py,返回今天 00:00 UTC
-day_col = func.date(func.timezone("UTC", RequestLog.created_at)).label("d")
+# created_at 是 timestamptz;timezone('UTC', ...) 转成 UTC 墙钟 timestamp,再 CAST 成 date。
+day_col = cast(func.timezone("UTC", RequestLog.created_at), Date).label("d")
 rows = (
     db.query(
         day_col,
@@ -82,7 +85,7 @@ rows = (
 )
 ```
 
-- **UTC 日界**:用 `func.timezone("UTC", created_at)` 显式锁时区(等价 SQL `created_at AT TIME ZONE 'UTC'`),不依赖 DB session 时区。与现有 `today_utc()` / `month_spend` 的 UTC 口径一致。
+- **UTC 日界**:用 `func.timezone("UTC", created_at)` 显式锁时区(等价 SQL `created_at AT TIME ZONE 'UTC'`),再 `cast(..., Date)`(等价 `::date`)。不要用 `func.date(...)` —— Postgres 核心没有 `date()` 函数,会报错。与现有 `today_utc()` / `month_spend` 的 UTC 口径一致。
 - **失败请求**:`status="failed"` 的 `cost=0`(项目不变量),`sum(cost)` 自然不计失败的花费;`count(*)` **计入所有状态**——与现有 KPI `_count_by_type` 行为一致(它不过滤 status)。
 
 ### 4.4 纯函数:补零 + 透视
