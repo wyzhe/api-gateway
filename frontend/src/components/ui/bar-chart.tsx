@@ -108,7 +108,7 @@ export function BarChart({
               : "translateX(-50%)";
         return (
           <div
-            className="pointer-events-none absolute top-0 z-10 rounded-md border border-border-strong bg-surface-3 px-2 py-1.5 text-xs shadow-lg"
+            className="pointer-events-none absolute top-0 z-10 w-max rounded-md border border-border-strong bg-surface-3 px-2 py-1.5 text-xs shadow-lg"
             style={{ left: `${hoverPct * 100}%`, transform }}
           >
           <div className="mb-1 text-muted-foreground">{data[hover].tooltipLabel}</div>
