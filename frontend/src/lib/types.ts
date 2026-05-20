@@ -122,6 +122,17 @@ export type LogDetail = LogSummary & {
   response_payload_json: any;
 };
 
+/** One UTC day of usage, from GET /api/dashboard `daily_usage`. */
+export type DailyUsage = {
+  date: string; // "YYYY-MM-DD" (UTC day)
+  text_cost: string;
+  image_cost: string;
+  video_cost: string;
+  text_requests: number;
+  image_requests: number;
+  video_requests: number;
+};
+
 export type HealthCheckResult = {
   model_id: number;
   public_name: string;

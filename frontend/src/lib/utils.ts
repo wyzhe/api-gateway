@@ -25,32 +25,37 @@ function toFiniteNumber(value: number | string | null | undefined): number | nul
   return Number.isNaN(n) ? null : n;
 }
 
+/** Strip trailing zeros from a fixed-decimal string, keeping a 2-decimal floor
+ *  so a sub-dollar amount still reads like money ("0.50", not "0.5"). */
+function trimDecimalZeros(fixed: string): string {
+  const dot = fixed.indexOf(".");
+  if (dot === -1) return fixed;
+  const minEnd = dot + 2;
+  let end = fixed.length - 1;
+  while (end > minEnd && fixed[end] === "0") end--;
+  return fixed.slice(0, end + 1);
+}
+
+/**
+ * Format a USD value for display, OpenRouter-style: amounts >= $1 show 2
+ * decimals with thousands grouping ($1,234.56); sub-dollar amounts show ~2
+ * significant figures so tiny costs stay legible ($0.012, $0.00034) without a
+ * long tail of zeros. Display-only — this rounds; never feed it back into math.
+ */
 export function fmtCompactMoney(value: number | string | null | undefined): string {
   const n = toFiniteNumber(value);
   if (n === null) return "—";
   if (n === 0) return "$0";
-  if (n < 0.01) return `$${n.toFixed(6)}`;
-  if (n < 1) return `$${n.toFixed(4)}`;
-  return `$${n.toFixed(2)}`;
-}
-
-/**
- * Format a balance value losslessly: keeps up to 6 decimals, never rounds
- * sub-cent precision away. Use for actual account balances and ledger
- * "balance after" fields where a debit must remain visible.
- */
-export function fmtBalance(value: number | string | null | undefined): string {
-  const n = toFiniteNumber(value);
-  if (n === null) return "—";
-  if (n === 0) return "$0";
   const sign = n < 0 ? "-" : "";
-  const fixed = Math.abs(n).toFixed(6);
-  // Trim trailing zeros but keep at least 2 decimals (so $5 always renders as $5.00).
-  let end = fixed.length - 1;
-  const dot = fixed.indexOf(".");
-  const minEnd = dot + 2;
-  while (end > minEnd && fixed[end] === "0") end--;
-  return `${sign}$${fixed.slice(0, end + 1)}`;
+  const abs = Math.abs(n);
+  if (abs >= 1) {
+    return `${sign}$${abs.toLocaleString("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
+  }
+  const decimals = Math.min(8, -Math.floor(Math.log10(abs)) + 1);
+  return `${sign}$${trimDecimalZeros(abs.toFixed(decimals))}`;
 }
 
 export function fmtDate(value: string | Date | null | undefined): string {
@@ -71,33 +76,35 @@ export type PricedModel = {
   price_markup?: string | null;
 };
 
-/** Multiply a base price string by the model's markup; returns a display string. */
+/** Multiply a base price string by the model's markup; returns a numeric
+ *  string for `fmtCompactMoney` to format. Returns "0" for a null base price. */
 function applyMarkup(price: string | null | undefined, markup: string | null | undefined): string {
   if (price == null) return "0";
   const m = markup == null ? 1 : Number(markup);
   const factor = Number.isFinite(m) && m > 0 ? m : 1;
   const v = Number(price) * factor;
-  return Number.isFinite(v) ? parseFloat(v.toFixed(8)).toString() : "0";
+  return Number.isFinite(v) ? String(v) : "0";
 }
 
 export function priceLabel(m: PricedModel): string {
-  const p = (v: string | null | undefined) => applyMarkup(v, m.price_markup);
+  // Apply the per-model markup, then format OpenRouter-style for display.
+  const p = (v: string | null | undefined) => fmtCompactMoney(applyMarkup(v, m.price_markup));
   switch (m.pricing_mode) {
     case "per_token": {
-      const base = `$${p(m.input_price)} in · $${p(m.output_price)} out / 1M`;
+      const base = `${p(m.input_price)} in · ${p(m.output_price)} out / 1M`;
       if (m.cache_write_price || m.cache_read_price) {
         const cw = p(m.cache_write_price ?? m.input_price);
         const cr = p(m.cache_read_price ?? m.input_price);
-        return `${base} (cache: $${cw} w · $${cr} r)`;
+        return `${base} (cache: ${cw} w · ${cr} r)`;
       }
       return `${base} tokens`;
     }
     case "per_image":
-      return `$${p(m.image_price ?? m.generation_price)} / image`;
+      return `${p(m.image_price ?? m.generation_price)} / image`;
     case "per_second":
-      return `$${p(m.video_second_price)} / second`;
+      return `${p(m.video_second_price)} / second`;
     case "per_generation":
-      return `$${p(m.generation_price)} / generation`;
+      return `${p(m.generation_price)} / generation`;
     default:
       return "—";
   }

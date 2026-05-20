@@ -146,7 +146,7 @@ components:
   dot-status:
     note: "6px colored dot + lowercase label. Replaces Badge for request/task lifecycle status."
   kpi-strip:
-    note: "Edge-to-edge horizontal strip. grid-cols-2 md:grid-cols-4, border-b border-border under the row, each cell py-4 pr-5, cells separated by md:border-r border-border. No outer card border. Value uses kpi-strip-value typography."
+    note: "Edge-to-edge horizontal strip. grid-cols-2 md:grid-cols-4 (cols={5} → grid-cols-2 md:grid-cols-3 lg:grid-cols-5), border-b border-border under the row, each cell py-4 pr-5, cells separated by md:border-r border-border. No outer card border. Value uses kpi-strip-value typography."
   empty-state:
     note: "py-10 px-4 flex-col items-center text-center. Icon (optional, h-6 w-6 text-faint), title (text-sm muted-foreground), hint (text-xs faint), action slot. Use inside <TableCell colSpan=N> or in panel. Replaces hand-rolled 'text-center text-muted-foreground py-8' blocks."
   tabs-list:
@@ -320,11 +320,12 @@ Density rules. The viewport is treated as a workspace, not a canvas.
   the default. Row action icon groups are `opacity-50` at rest and
   `opacity-100` on `group-hover` / keyboard focus.
 - **KPI strip** = `<KpiStrip items={[…]} />` (`grid-cols-2 md:grid-cols-4
-  border-b border-border mb-6`). Edge-to-edge — no outer card border.
+  border-b border-border mb-6`; `cols={5}` → `grid-cols-2 md:grid-cols-3
+  lg:grid-cols-5`). Edge-to-edge — no outer card border.
   Each cell `py-4 pr-5`, separated by `md:border-r border-border`. Value
   uses the `kpi-strip-value` typography (22px mono, semibold). Label
-  `text-xs text-muted-foreground`. Always four KPIs at the top of a
-  metrics page; if there are 5, pick four. A cell becomes a focusable
+  `text-xs text-muted-foreground`. Four KPIs is the default; `cols`
+  accepts `3 | 4 | 5` (the dashboard uses 5). A cell becomes a focusable
   button when `onClick` is provided.
 - **Dialog** = `max-w-lg` centered, `p-5` (20px), `gap-4` between sections.
 - **PageHeader** = `flex justify-between items-center pb-3 mb-4 border-b
@@ -411,6 +412,7 @@ hand-written set. **Don't run `shadcn` CLI** — see CLAUDE.md.
 | `Sheet` | `ui/sheet.tsx` | Right-side drawer (currently the log detail). |
 | `CodeBlock` | `ui/code-block.tsx` | Any block of code or "machine string." Includes lang chip + copy button. Always prefer this over a raw `<pre>`. |
 | `Label` + `FormField` | `ui/label.tsx`, `ui/form-field.tsx` | Form labels. `Label > Input` is the canonical pair. `LabeledValue` label is `text-[11px] text-muted-foreground`. |
+| `BarChart` | `ui/bar-chart.tsx` | Stacked vertical bar chart, hand-rolled SVG (no chart lib). `<BarChart data series formatValue emptyText totalLabel height? />`. Responsive via viewBox; HTML hover tooltip; renders `emptyText` when all values are 0. |
 
 ### Composite / shared
 
@@ -419,12 +421,13 @@ hand-written set. **Don't run `shadcn` CLI** — see CLAUDE.md.
 | `Shell` + `PageHeader` | `components/shell.tsx` | The workspace/admin layout. `PageHeader` carries `title` + optional `actions`. **Subtitles are removed** — see Do's/Don'ts. |
 | `BrandMark` | `components/brand-mark.tsx` | The accent-green "R" square. Used in shell, landing nav, landing footer. Don't reimplement. |
 | `LanguageSwitcher` | `components/language-switcher.tsx` | The `EN / 中文` pill. Lives in shell footer and landing header. |
-| `KpiStrip` | `components/kpi-strip.tsx` | Edge-to-edge 4-up KPI strip on dashboard / billing / admin overview. `<KpiStrip items={[{ label, value, hint?, onClick?, title? }, …]} />`. Value rendered via `.kpi-strip-value` (22px mono). Use it; do not hand-roll a card-bounded KPI grid. |
+| `KpiStrip` | `components/kpi-strip.tsx` | Edge-to-edge KPI strip on dashboard / billing / admin overview. `<KpiStrip cols?={3\|4\|5} items={[{ label, value, hint?, onClick?, title? }, …]} />` — 4-up default, dashboard uses `cols={5}`. Value rendered via `.kpi-strip-value` (22px mono). Use it; do not hand-roll a card-bounded KPI grid. |
 | `EmptyState` | `components/empty-state.tsx` | Any "no data yet" surface — table row (`colSpan` cell), list, or panel. `<EmptyState icon? title hint? action? />`. Replaces hand-rolled `text-center text-muted-foreground py-8` blocks. |
 | `TypeBadge` | `components/type-badge.tsx` | The `TXT / IMG / VID / MUL` modality pill. **Stays uppercase** (these are 3-letter abbreviations) — the one explicit exception to the lowercase-label rule. `text-[9px] leading-4`, `h-2.5 w-2.5` icon. |
 | `ProviderTag` | `components/provider-tag.tsx` | OpenAI / Anthropic / Gemini / xAI / Veo / APIMart / DeepSeek attribution. 8px colored dot + muted label. Reuse for any provider display. |
 | `DotStatus` | `components/dot-status.tsx` | Request / task lifecycle status (`success`, `failed`, `queued`, `running`, `pending`, `cancelled`). 6px colored dot + lowercase label. Replaces `Badge` for ephemeral state in tables and feeds. |
 | `LogDetailDrawer` | `components/log-detail-drawer.tsx` | Shared drawer used by both user-side `usage-logs` and admin `logs`. Don't fork. |
+| `UsageTrends` | `components/usage-trends.tsx` | Dashboard "usage trends" block — two Helicone-style cards (spend / requests) wrapping a stacked `BarChart`, with a 7/30-day toggle. |
 
 ### State pattern
 
@@ -515,7 +518,7 @@ a bespoke CSS keyframe or a separate `<Spinner>` primitive.
 | Render every chunk of code via `<CodeBlock>` — it provides a lang chip + copy. | Bare `<pre>` blocks. |
 | Use `color-mix(in oklch, var(--token) N%, transparent)` for tints. | Hand-tinted `rgba(123,227,139,0.12)`. |
 | Use `<PageHeader title={...} actions={...} />` — title left, hairline `border-b` underneath, optional actions on the right at `h-7`. | Adding a `subtitle` "for clarity" (the prop was removed). Wrapping `PageHeader` in your own `<div className="mb-4">` — the hairline + `mb-4` are baked in. |
-| Use `<KpiStrip items={[…]} />` for the 4-up top-of-page metrics. | Hand-rolling `<div className="grid grid-cols-4 gap-3"><Card>$…</Card>…</div>` — the card border doubled the page chrome. |
+| Use `<KpiStrip items={[…]} />` for top-of-page metrics (3/4/5-up via `cols`). | Hand-rolling `<div className="grid grid-cols-4 gap-3"><Card>$…</Card>…</div>` — the card border doubled the page chrome. |
 | Use `<EmptyState title={…} action={…} />` inside `<TableCell colSpan={N}>` or as a panel for "no data yet". | Hand-rolled `<div className="text-center text-muted-foreground py-8">…</div>` — inconsistent spacing across pages. |
 | Use `<TypeBadge type="image" />` for any "what modality" rendering. | A custom colored badge per page that duplicates the type→icon mapping. |
 | Use `<DotStatus status={...} label={t(...)} />` for request / task status in tables and feeds. | Use `<Badge>` for ephemeral request state — that's `DotStatus`'s job. Badge is for durable state. |
