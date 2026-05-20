@@ -1,7 +1,15 @@
+import { Image, Play, Video } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { DotStatus } from "@/components/dot-status";
 import { EmptyState } from "@/components/empty-state";
 import { LogDetailDrawer, useLogDetail } from "@/components/log-detail-drawer";
@@ -10,7 +18,34 @@ import { TypeBadge } from "@/components/type-badge";
 import { api } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import type { LogSummary as Log } from "@/lib/types";
-import { fmtCompactMoney, fmtRelative, reqStatusKey } from "@/lib/utils";
+import { cn, fmtCompactMoney, fmtRelative, reqStatusKey } from "@/lib/utils";
+
+/** 40×40 preview cell. The full-size asset opens in the detail drawer on row click. */
+function Thumbnail({ log }: { log: Log }) {
+  const box =
+    "h-10 w-10 shrink-0 rounded-md border border-border bg-surface-2 overflow-hidden flex items-center justify-center";
+  if (log.asset_url && log.request_type === "image") {
+    return (
+      <div className={box}>
+        <img src={log.asset_url} loading="lazy" className="h-full w-full object-cover" />
+      </div>
+    );
+  }
+  if (log.asset_url && log.request_type === "video") {
+    return (
+      <div className={cn(box, "relative")}>
+        <video src={log.asset_url} preload="metadata" muted className="h-full w-full object-cover" />
+        <Play className="absolute h-3.5 w-3.5 fill-white/90 text-white/90 drop-shadow" />
+      </div>
+    );
+  }
+  const Icon = log.request_type === "video" ? Video : Image;
+  return (
+    <div className={box}>
+      <Icon className="h-4 w-4 text-faint" />
+    </div>
+  );
+}
 
 export function GenerationsPage() {
   const t = useT();
@@ -35,9 +70,6 @@ export function GenerationsPage() {
     refresh();
   }, []);
 
-  const withAsset = items.filter((i) => i.asset_url);
-  const withoutAsset = items.filter((i) => !i.asset_url);
-
   return (
     <div>
       <PageHeader
@@ -45,73 +77,63 @@ export function GenerationsPage() {
         actions={<Button variant="outline" onClick={refresh}>{t("generations.refreshBtn")}</Button>}
       />
 
-      {withAsset.length === 0 && withoutAsset.length === 0 && (
-        <EmptyState
-          title={t("generations.emptyTitle")}
-          action={<Link to="/playground" className="text-primary hover:underline">{t("generations.emptyLink")}</Link>}
-        />
-      )}
-
-      {withAsset.length > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 mb-6">
-          {withAsset.map((it) => (
-            <Card
-              key={it.id}
-              onClick={() => detail.open(it.id)}
-              className="cursor-pointer hover:border-border-strong"
-            >
-              <div className="bg-surface-2 border-b border-border aspect-video flex items-center justify-center overflow-hidden">
-                {it.request_type === "video" ? (
-                  // stopPropagation so play/pause clicks don't open the detail sheet
-                  <video
-                    src={it.asset_url!}
-                    controls
-                    onClick={(e) => e.stopPropagation()}
-                    className="max-w-full max-h-full"
+      <div className="rounded-md border border-border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-14">{t("generations.colPreview")}</TableHead>
+              <TableHead>{t("generations.colType")}</TableHead>
+              <TableHead>{t("generations.colModel")}</TableHead>
+              <TableHead>{t("generations.colStatus")}</TableHead>
+              <TableHead>{t("generations.colCost")}</TableHead>
+              <TableHead>{t("generations.colWhen")}</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {items.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={6} className="p-0">
+                  <EmptyState
+                    title={t("generations.emptyTitle")}
+                    action={
+                      <Link to="/playground" className="text-primary hover:underline">
+                        {t("generations.emptyLink")}
+                      </Link>
+                    }
                   />
-                ) : (
-                  <img src={it.asset_url!} className="max-w-full max-h-full object-cover" />
-                )}
-              </div>
-              <CardContent className="flex flex-col gap-1.5">
-                <div className="flex items-center gap-2">
-                  <TypeBadge type={it.request_type} />
-                  <span className="mono text-xs">{it.model_name || it.upstream_model}</span>
-                </div>
-                <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-                  <span>{fmtCompactMoney(it.cost)}</span>
-                  <span>{fmtRelative(it.created_at, t)}</span>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
-
-      {withoutAsset.length > 0 && (
-        <Card>
-          <CardHeader><CardTitle>{t("generations.pendingFailedTitle")}</CardTitle></CardHeader>
-          <CardContent className="p-0">
-            <ul className="divide-y divide-border">
-              {withoutAsset.map((it) => (
-                <li
+                </TableCell>
+              </TableRow>
+            )}
+            {items.map((it) => {
+              const status = it.task_status || it.status;
+              return (
+                <TableRow
                   key={it.id}
                   onClick={() => detail.open(it.id)}
-                  className="px-4 py-2 flex items-center gap-3 text-xs cursor-pointer hover:bg-surface-2"
+                  className="cursor-pointer"
                 >
-                  <TypeBadge type={it.request_type} />
-                  <span className="mono">{it.model_name || it.upstream_model}</span>
-                  <DotStatus
-                    status={it.task_status || it.status}
-                    label={t(reqStatusKey(it.task_status || it.status))}
-                  />
-                  <span className="text-muted-foreground ml-auto">{fmtRelative(it.created_at, t)}</span>
-                </li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
-      )}
+                  <TableCell>
+                    <Thumbnail log={it} />
+                  </TableCell>
+                  <TableCell>
+                    <TypeBadge type={it.request_type} />
+                  </TableCell>
+                  <TableCell className="mono text-xs">
+                    {it.model_name || it.upstream_model}
+                  </TableCell>
+                  <TableCell>
+                    <DotStatus status={status} label={t(reqStatusKey(status))} />
+                  </TableCell>
+                  <TableCell className="mono text-xs">{fmtCompactMoney(it.cost)}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">
+                    {fmtRelative(it.created_at, t)}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      </div>
 
       <LogDetailDrawer log={detail.selected} onClose={detail.close} showPrompt />
     </div>

@@ -388,7 +388,12 @@ export const en = {
     refreshBtn: "Refresh",
     emptyTitle: "No generations yet.",
     emptyLink: "Try the Playground →",
-    pendingFailedTitle: "Pending / failed",
+    colPreview: "Preview",
+    colType: "Type",
+    colModel: "Model",
+    colStatus: "Status",
+    colCost: "Cost",
+    colWhen: "When",
   },
   docs: {
     title: "Docs",

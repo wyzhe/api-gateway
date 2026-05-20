@@ -382,7 +382,12 @@ export const zh: EnDict = {
     refreshBtn: "刷新",
     emptyTitle: "还没有生成记录。",
     emptyLink: "去 Playground 试一下 →",
-    pendingFailedTitle: "进行中 / 失败",
+    colPreview: "预览",
+    colType: "类型",
+    colModel: "模型",
+    colStatus: "状态",
+    colCost: "费用",
+    colWhen: "时间",
   },
   docs: {
     title: "文档",
