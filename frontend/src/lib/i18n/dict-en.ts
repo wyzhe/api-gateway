@@ -165,7 +165,7 @@ export const en = {
     noDataYet: "No data yet.",
     statValueCostRequests: "{cost} · {requests}",
     statValueRequestsCost: "{requests} req · {cost}",
-    kpiMonthSpend: "This month",
+    kpiMonthSpend: "Month spend",
     usageTrends: "Usage trends",
     chartSpend: "Spend",
     chartRequests: "Requests",

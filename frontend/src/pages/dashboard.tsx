@@ -187,7 +187,7 @@ function TopModelBars({
           <li
             key={m.model_id ?? -1}
             onClick={() => m.model_name && onClick(m.model_name)}
-            className="group cursor-pointer px-2"
+            className="group cursor-pointer rounded-sm px-2 py-1 transition-colors hover:bg-surface-2"
           >
             <div className="mb-1 flex items-center justify-between text-xs">
               <span className="mono group-hover:text-foreground">{m.model_name || "—"}</span>
