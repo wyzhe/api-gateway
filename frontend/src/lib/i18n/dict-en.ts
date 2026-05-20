@@ -412,6 +412,16 @@ export const en = {
     sectionChatCompletions: "Chat completions",
     sectionImageGeneration: "Image generation (async)",
     sectionVideoGeneration: "Video generation (async)",
+    authBody1:
+      "All /v1/* calls require an Authorization: Bearer sk-… header. Create a key on the API Keys page.",
+    authBody2:
+      "Dashboard APIs under /api/* use a JWT obtained at /api/auth/login.",
+    chatStreamNote:
+      "Supports stream=true via SSE. The gateway forces stream_options.include_usage=true so the final chunk carries usage for billing.",
+    imageIntro:
+      "Image generation is asynchronous. The gateway returns a task_id; poll /v1/tasks/{task_id} until status is succeeded or failed.",
+    videoNote:
+      "Video tasks typically take 1–3 minutes. Poll the same /v1/tasks/{task_id} endpoint until the task reaches a terminal state.",
   },
   admin: {
     overview: {

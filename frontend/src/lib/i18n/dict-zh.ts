@@ -406,6 +406,16 @@ export const zh: EnDict = {
     sectionChatCompletions: "Chat Completions",
     sectionImageGeneration: "图像生成（异步）",
     sectionVideoGeneration: "视频生成（异步）",
+    authBody1:
+      "所有 /v1/* 调用都需要 Authorization: Bearer sk-… 请求头。请在 API Keys 页面创建密钥。",
+    authBody2:
+      "/api/* 下的仪表盘接口使用通过 /api/auth/login 获取的 JWT。",
+    chatStreamNote:
+      "支持通过 SSE 使用 stream=true。网关会强制 stream_options.include_usage=true，使最后一个数据块携带用于计费的 usage。",
+    imageIntro:
+      "图像生成是异步的。网关返回 task_id；轮询 /v1/tasks/{task_id} 直到状态变为 succeeded 或 failed。",
+    videoNote:
+      "视频任务通常需要 1–3 分钟。轮询同一个 /v1/tasks/{task_id} 接口，直到任务进入终态。",
   },
   admin: {
     overview: {
