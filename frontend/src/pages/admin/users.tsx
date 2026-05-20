@@ -32,7 +32,7 @@ import { adminMarkEmailVerified, api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useT } from "@/lib/i18n";
 import type { AdminUser, Transaction } from "@/lib/types";
-import { fmtBalance, fmtCompactMoney, fmtDate, txnBadgeVariant, txnTypeKey } from "@/lib/utils";
+import { fmtCompactMoney, fmtDate, txnBadgeVariant, txnTypeKey } from "@/lib/utils";
 
 export function AdminUsersPage() {
   const t = useT();
@@ -193,7 +193,7 @@ export function AdminUsersPage() {
                       : t("common.status.disabled")}
                   </Badge>
                 </TableCell>
-                <TableCell className="mono text-xs">{fmtBalance(u.balance)}</TableCell>
+                <TableCell className="mono text-xs">{fmtCompactMoney(u.balance)}</TableCell>
                 <TableCell className="text-xs text-muted-foreground">{fmtDate(u.created_at)}</TableCell>
                 <TableCell className="text-right">
                   <div className="inline-flex gap-1">
@@ -360,7 +360,7 @@ export function AdminUsersPage() {
                 <SheetTitle>{openTxns.email}</SheetTitle>
                 <SheetDescription>
                   {t("admin.users.txnsDrawer.currentBalance")}{" "}
-                  <span className="mono text-foreground">{fmtBalance(openTxns.balance)}</span>
+                  <span className="mono text-foreground">{fmtCompactMoney(openTxns.balance)}</span>
                   {" · "}
                   {t("admin.users.txnsDrawer.txnsCount", { count: txns.length })}
                 </SheetDescription>
@@ -394,7 +394,7 @@ export function AdminUsersPage() {
                             {tx.type === "debit" ? "−" : "+"}
                             {fmtCompactMoney(tx.amount)}
                           </TableCell>
-                          <TableCell className="mono text-xs">{fmtBalance(tx.balance_after)}</TableCell>
+                          <TableCell className="mono text-xs">{fmtCompactMoney(tx.balance_after)}</TableCell>
                           <TableCell className="text-xs text-muted-foreground">{tx.note || "—"}</TableCell>
                           <TableCell className="text-xs text-muted-foreground">{fmtDate(tx.created_at)}</TableCell>
                         </TableRow>

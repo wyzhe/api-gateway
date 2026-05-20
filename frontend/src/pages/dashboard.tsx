@@ -10,7 +10,7 @@ import { PageHeader } from "@/components/shell";
 import { UsageTrends } from "@/components/usage-trends";
 import { api } from "@/lib/api";
 import type { LogSummary, DailyUsage } from "@/lib/types";
-import { fmtBalance, fmtCompactMoney, fmtRelative, reqStatusKey } from "@/lib/utils";
+import { fmtCompactMoney, fmtRelative, reqStatusKey } from "@/lib/utils";
 import { useT } from "@/lib/i18n";
 
 type DashboardOut = {
@@ -46,7 +46,7 @@ export function DashboardPage() {
         items={[
           {
             label: t("dashboard.kpiBalance"),
-            value: fmtBalance(data?.balance),
+            value: fmtCompactMoney(data?.balance),
             hint: <Link to="/billing" className="text-primary hover:underline">{t("dashboard.kpiBillingLink")}</Link>,
           },
           {
