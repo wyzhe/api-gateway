@@ -410,6 +410,7 @@ hand-written set. **Don't run `shadcn` CLI** — see CLAUDE.md.
 | `Sheet` | `ui/sheet.tsx` | Right-side drawer (currently the log detail). |
 | `CodeBlock` | `ui/code-block.tsx` | Any block of code or "machine string." Includes lang chip + copy button. Always prefer this over a raw `<pre>`. |
 | `Label` + `FormField` | `ui/label.tsx`, `ui/form-field.tsx` | Form labels. `Label > Input` is the canonical pair. `LabeledValue` label is `text-[11px] text-muted-foreground`. |
+| `BarChart` | `ui/bar-chart.tsx` | Stacked vertical bar chart, hand-rolled SVG (no chart lib). `<BarChart data series formatValue emptyText totalLabel height? />`. Responsive via viewBox; HTML hover tooltip; renders `emptyText` when all values are 0. |
 
 ### Composite / shared
 
