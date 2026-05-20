@@ -33,6 +33,7 @@ def _to_out(row: ModelRow, providers_by_id: dict[int, Provider]) -> ModelOut:
         image_price=row.image_price,
         video_second_price=row.video_second_price,
         generation_price=row.generation_price,
+        price_markup=row.price_markup,
         created_at=row.created_at,
     )
 
