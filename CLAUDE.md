@@ -2,6 +2,8 @@
 
 You're working on a self-hosted OpenAI-compatible API gateway in active production-prep development. Read this whole file before changing code; the design choices below are deliberate and unwinding them silently will break correctness, billing, or security.
 
+> **沟通语言 — 必须遵守**:与用户交流一律用**中文**。所有面向用户的解释、状态更新、进度汇报、总结都必须用中文(代码标识符、技术术语保留原文即可)。不要因为代码库是中英双语、报错信息是英文、或话题涉及其他语言,就擅自切换成英文 / 日文等其他语言。
+
 > **Posture**: This project is no longer MVP. It's being hardened for real usage. Treat every decision in this file as a production constraint, not a "good enough for friends" tradeoff. If you see a `# TODO` or a note like "acceptable for now," that's a known-defect to fix, not a license to skip a hard problem.
 
 ## What this is, what it isn't
