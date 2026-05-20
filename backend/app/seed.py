@@ -126,8 +126,10 @@ DEFAULT_MODELS: list[dict] = [
         "capabilities": {"sizes": ["1:1", "16:9", "9:16"], "resolutions": ["1k", "2k", "4k"]},
     },
     {
+        # Exposed as "nano-banana"; APIMart has no such id — routes to the
+        # underlying Gemini image model (APIMart id: gemini-2.5-flash-image-preview).
         "public_name": "nano-banana",
-        "upstream_model": "nano-banana",
+        "upstream_model": "gemini-2.5-flash-image-preview",
         "type": "image",
         "display_name": "Nano Banana",
         "display_provider": "gemini",
@@ -137,8 +139,10 @@ DEFAULT_MODELS: list[dict] = [
         "capabilities": {"sizes": ["1:1", "16:9", "9:16"]},
     },
     {
+        # Exposed as "nano-banana-pro"; routes to APIMart's Gemini 3 Pro image
+        # model (APIMart id: gemini-3-pro-image-preview).
         "public_name": "nano-banana-pro",
-        "upstream_model": "nano-banana-pro",
+        "upstream_model": "gemini-3-pro-image-preview",
         "type": "image",
         "display_name": "Nano Banana Pro",
         "display_provider": "gemini",
@@ -148,13 +152,13 @@ DEFAULT_MODELS: list[dict] = [
         "capabilities": {"sizes": ["1:1", "16:9", "9:16"]},
     },
     {
-        # APIMart docs do not currently list grok image generation — seed disabled.
+        # APIMart id: grok-imagine-1.0-apimart. Seeded disabled — an admin can enable it.
         "public_name": "grok-imagine",
-        "upstream_model": "grok-imagine",
+        "upstream_model": "grok-imagine-1.0-apimart",
         "type": "image",
         "display_name": "Grok Imagine",
         "display_provider": "xai",
-        "description": "xAI image model. Not yet confirmed on APIMart — admin must enable.",
+        "description": "xAI image model. Seeded disabled — an admin can enable it.",
         "pricing_mode": "per_image",
         "image_price": Decimal("0.05"),
         "capabilities": {},
@@ -316,6 +320,9 @@ RENAME_ON_BOOT: dict[str, str] = {
 # migration needed. Fresh DBs get the right value straight from DEFAULT_MODELS.
 RETARGET_ON_BOOT: dict[str, str] = {
     "claude-sonnet-4.6": "claude-sonnet-4-6",
+    "nano-banana": "gemini-2.5-flash-image-preview",
+    "nano-banana-pro": "gemini-3-pro-image-preview",
+    "grok-imagine": "grok-imagine-1.0-apimart",
 }
 
 # Names we want to keep in the DB (for log FK integrity) but mark disabled.

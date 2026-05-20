@@ -142,11 +142,25 @@ def test_all_price_fields_are_decimal():
                 assert isinstance(s[k], Decimal), f"{s['public_name']}.{k} is {type(s[k])}"
 
 
+def test_image_upstream_models_match_apimart_ids():
+    """Image upstream_model = APIMart's exact id. nano-banana / nano-banana-pro
+    keep their friendly public_name but route to APIMart's Gemini image ids."""
+    m = _by_name(DEFAULT_MODELS)
+    assert m["gpt-image-2"]["upstream_model"] == "gpt-image-2"
+    assert m["nano-banana"]["upstream_model"] == "gemini-2.5-flash-image-preview"
+    assert m["nano-banana-pro"]["upstream_model"] == "gemini-3-pro-image-preview"
+    assert m["grok-imagine"]["upstream_model"] == "grok-imagine-1.0-apimart"
+
+
 def test_retarget_on_boot_corrects_legacy_upstream():
     """Existing prod rows seeded with a wrong APIMart upstream_model get
-    corrected on boot. claude-sonnet-4.6 was seeded with the dotted id;
-    APIMart's actual id is the hyphenated claude-sonnet-4-6."""
-    assert RETARGET_ON_BOOT == {"claude-sonnet-4.6": "claude-sonnet-4-6"}
+    corrected on boot — APIMart rejects ids that don't match its catalogue."""
+    assert RETARGET_ON_BOOT == {
+        "claude-sonnet-4.6": "claude-sonnet-4-6",
+        "nano-banana": "gemini-2.5-flash-image-preview",
+        "nano-banana-pro": "gemini-3-pro-image-preview",
+        "grok-imagine": "grok-imagine-1.0-apimart",
+    }
     # every retarget target must match the catalogue's own upstream_model
     m = _by_name(DEFAULT_MODELS)
     for public_name, upstream in RETARGET_ON_BOOT.items():
