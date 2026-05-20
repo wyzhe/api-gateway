@@ -197,14 +197,19 @@ function NavItemLink({ item }: { item: NavItem }) {
 
 export function PageHeader({
   title,
+  subtitle,
   actions,
 }: {
   title: ReactNode;
+  subtitle?: ReactNode;
   actions?: ReactNode;
 }) {
   return (
     <div className="flex items-center justify-between pb-3 mb-4 border-b border-border">
-      <h1 className="text-base font-semibold">{title}</h1>
+      <div className="flex flex-col gap-0.5">
+        <h1 className="text-base font-semibold">{title}</h1>
+        {subtitle && <p className="text-xs text-muted-foreground">{subtitle}</p>}
+      </div>
       {actions && <div className="flex items-center gap-2">{actions}</div>}
     </div>
   );
