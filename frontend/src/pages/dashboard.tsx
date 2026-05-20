@@ -47,7 +47,8 @@ export function DashboardPage() {
           {
             label: t("dashboard.kpiBalance"),
             value: fmtCompactMoney(data?.balance),
-            hint: <Link to="/billing" className="text-primary hover:underline">{t("dashboard.kpiBillingLink")}</Link>,
+            onClick: () => nav("/billing"),
+            title: t("dashboard.kpiBillingLink"),
           },
           {
             label: t("dashboard.kpiTodaySpend"),
@@ -68,7 +69,6 @@ export function DashboardPage() {
           {
             label: t("dashboard.kpiFailuresRecent"),
             value: data?.recent_failures.length ?? 0,
-            hint: <span className="text-primary hover:underline">{t("dashboard.kpiViewFailed")}</span>,
             onClick: () => nav("/logs?status=failed"),
             title: t("dashboard.kpiViewFailedTitle"),
           },
