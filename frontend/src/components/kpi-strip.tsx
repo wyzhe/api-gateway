@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
+import { Tooltip } from "@/components/ui/tooltip";
 
 export type KpiStripItem = {
   label: ReactNode;
@@ -37,18 +38,18 @@ export function KpiStrip({
         );
         if (it.onClick) {
           return (
-            <button
-              key={i}
-              type="button"
-              onClick={it.onClick}
-              title={it.title}
-              className={cn(
-                cellClass,
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background rounded-sm",
-              )}
-            >
-              {body}
-            </button>
+            <Tooltip key={i} content={it.title}>
+              <button
+                type="button"
+                onClick={it.onClick}
+                className={cn(
+                  cellClass,
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background rounded-sm",
+                )}
+              >
+                {body}
+              </button>
+            </Tooltip>
           );
         }
         return (

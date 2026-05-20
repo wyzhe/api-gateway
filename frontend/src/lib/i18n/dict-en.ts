@@ -315,7 +315,6 @@ export const en = {
     durationLabel: "Duration (s)",
     aspectLabel: "Aspect",
     resolutionLabel: "Resolution",
-    runBtn: "Run",
     stopBtn: "Stop",
     generateBtn: "Generate",
     outputEmpty: "— output appears here —",

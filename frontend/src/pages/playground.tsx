@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CodeBlock } from "@/components/ui/code-block";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { NumberInput } from "@/components/ui/number-input";
 import {
   Select,
   SelectContent,
@@ -241,24 +242,15 @@ function ChatTab({ models, apiKey }: { models: Model[]; apiKey: string }) {
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1.5">
               <Label>{t("playground.temperatureLabel")}</Label>
-              <Input
-                type="number"
-                step="0.1"
-                value={temperature}
-                onChange={(e) => setTemperature(Number(e.target.value))}
-              />
+              <NumberInput step={0.1} value={temperature} onChange={setTemperature} />
             </div>
             <div className="flex flex-col gap-1.5">
               <Label>{t("playground.maxTokensLabel")}</Label>
-              <Input
-                type="number"
-                value={maxTokens}
-                onChange={(e) => setMaxTokens(Number(e.target.value))}
-              />
+              <NumberInput value={maxTokens} onChange={setMaxTokens} />
             </div>
           </div>
           <div className="flex gap-2">
-            <Button onClick={run} disabled={busy}><Play className="h-3.5 w-3.5" /> {t("playground.runBtn")}</Button>
+            <Button onClick={run} disabled={busy} className="flex-1"><Play className="h-3.5 w-3.5" /> {t("playground.generateBtn")}</Button>
             {busy && (
               <Button variant="outline" onClick={() => abortRef.current?.abort()}>
                 <Square className="h-3.5 w-3.5" /> {t("playground.stopBtn")}
@@ -413,7 +405,7 @@ function ImageTab({ models, apiKey }: { models: Model[]; apiKey: string }) {
             </div>
             <div className="flex flex-col gap-1.5">
               <Label>{t("playground.nLabel")}</Label>
-              <Input type="number" min={1} max={4} value={n} onChange={(e) => setN(Number(e.target.value))} />
+              <NumberInput min={1} max={4} value={n} onChange={setN} />
             </div>
           </div>
           <Button onClick={run} disabled={busy}><Play className="h-3.5 w-3.5" /> {t("playground.generateBtn")}</Button>
@@ -567,7 +559,7 @@ function VideoTab({ models, apiKey }: { models: Model[]; apiKey: string }) {
           <div className="grid grid-cols-3 gap-3">
             <div className="flex flex-col gap-1.5">
               <Label>{t("playground.durationLabel")}</Label>
-              <Input type="number" min={4} max={20} value={duration} onChange={(e) => setDuration(Number(e.target.value))} />
+              <NumberInput min={4} max={20} value={duration} onChange={setDuration} />
             </div>
             <div className="flex flex-col gap-1.5">
               <Label>{t("playground.aspectLabel")}</Label>

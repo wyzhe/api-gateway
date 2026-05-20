@@ -137,4 +137,14 @@
     font-size: 11px;
     color: var(--muted-foreground);
   }
+  /* Suppress native browser spin buttons — <NumberInput> draws its own. */
+  .number-input-field {
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+  .number-input-field::-webkit-outer-spin-button,
+  .number-input-field::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
 }

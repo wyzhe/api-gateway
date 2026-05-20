@@ -399,8 +399,10 @@ hand-written set. **Don't run `shadcn` CLI** — see CLAUDE.md.
 | `Card` | `ui/card.tsx` | Any grouping of content. Compose `Card > CardHeader > CardTitle/CardDescription` + `CardContent` + `CardFooter`. `CardContent` is `p-3`; `CardHeader` is `px-3.5 py-2.5` with no default divider (opt-in). |
 | `Input` | `ui/input.tsx` | All single-line text fields. `bg-input` (`surface-3`), `h-7`, `rounded-md`. |
 | `Textarea` | `ui/textarea.tsx` | Multi-line input. Same surface/border as `Input`. |
+| `NumberInput` | `ui/number-input.tsx` | Numeric form fields. Same `h-7` / `bg-input` shell as `Input`, but native browser spin buttons are suppressed and replaced with a stacked chevron stepper. Takes `value: number` / `onChange: (n) => void` (not the raw event) plus optional `min` / `max` / `step`. Use instead of `<Input type="number">`. |
 | `Select` | `ui/select.tsx` | Native-feel dropdown via Radix. `h-7` trigger. |
 | `Popover` | `ui/popover.tsx` | Light dropdown surface used by the sidebar user menu. Radix-backed. `w-56` content. |
+| `Tooltip` | `ui/tooltip.tsx` | Hover/focus hint on any element — `<Tooltip content={…}><El/></Tooltip>`. Radix-backed dark chip on `bg-popover`, no arrow. Replaces native `title=` attributes (which render an OS-styled light box). Empty/undefined `content` renders the child bare. `TooltipProvider` is mounted once at the app root. To hint a disabled button, wrap it in a `<span>` so the trigger still receives hover. |
 | `Switch` | `ui/switch.tsx` | Binary toggle. On = `accent`. Use **only** for binary state — for choosing one of N, use `Tabs` or `Select`. |
 | `Tabs` | `ui/tabs.tsx` | Top-of-page modality switcher (playground, models) — list is `h-7 bg-surface-2 p-0.5 rounded-md`, active trigger has `bg-surface`. |
 | `Table` | `ui/table.tsx` | All tabular data. Head row is `h-7 + text-xs text-muted-foreground` (lowercase). Cells are `px-3 py-1.5`. Row hover = `bg-surface-2`. |

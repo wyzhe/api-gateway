@@ -310,7 +310,6 @@ export const zh: EnDict = {
     durationLabel: "时长（秒）",
     aspectLabel: "宽高比",
     resolutionLabel: "分辨率",
-    runBtn: "发送",
     stopBtn: "中止",
     generateBtn: "生成",
     outputEmpty: "— 输出将显示在此 —",

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Tooltip } from "@/components/ui/tooltip";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { GitHubIcon } from "@/components/ui/github-icon";
 import { GoogleIcon } from "@/components/ui/google-icon";
@@ -78,15 +79,18 @@ export function SettingsConnectionsPage() {
                   </span>
                 )}
               </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => onDetach(id)}
-                disabled={!canDetach(id)}
-                title={!canDetach(id) ? t("settings.connections.cannotDetachLast") : undefined}
-              >
-                {t("settings.connections.detach")}
-              </Button>
+              <Tooltip content={!canDetach(id) ? t("settings.connections.cannotDetachLast") : undefined}>
+                <span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => onDetach(id)}
+                    disabled={!canDetach(id)}
+                  >
+                    {t("settings.connections.detach")}
+                  </Button>
+                </span>
+              </Tooltip>
             </div>
           ))}
 

@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Tooltip } from "@/components/ui/tooltip";
 import {
   Dialog,
   DialogContent,
@@ -309,20 +310,24 @@ export function AdminModelsPage() {
                       <span className="text-muted-foreground">{t("admin.models.healthPinging")}</span>
                     )}
                     {h && h !== "pending" && (
-                      <span title={h.error || h.sample || ""}>
-                        <Badge variant={h.ok ? "success" : "danger"}>
-                          {h.ok ? t("admin.models.healthOk") : t("admin.models.healthFail")}
-                        </Badge>
-                        <span className="mono ml-1.5 text-muted-foreground">{h.latency_ms}ms</span>
-                      </span>
+                      <Tooltip content={h.error || h.sample || ""}>
+                        <span>
+                          <Badge variant={h.ok ? "success" : "danger"}>
+                            {h.ok ? t("admin.models.healthOk") : t("admin.models.healthFail")}
+                          </Badge>
+                          <span className="mono ml-1.5 text-muted-foreground">{h.latency_ms}ms</span>
+                        </span>
+                      </Tooltip>
                     )}
                     {!h && <span className="text-muted-foreground">{t("admin.models.healthPlaceholder")}</span>}
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="inline-flex gap-1">
-                      <Button variant="ghost" size="icon" onClick={() => startEdit(m)} title={t("admin.models.actionEdit")}>
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
+                      <Tooltip content={t("admin.models.actionEdit")}>
+                        <Button variant="ghost" size="icon" onClick={() => startEdit(m)} aria-label={t("admin.models.actionEdit")}>
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                      </Tooltip>
                       <Button variant="outline" size="sm" onClick={() => ping(m)} disabled={h === "pending"}>
                         <Activity className="h-3.5 w-3.5" /> {t("admin.models.actionPing")}
                       </Button>

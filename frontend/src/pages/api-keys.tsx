@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { CodeBlock } from "@/components/ui/code-block";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Tooltip } from "@/components/ui/tooltip";
 import {
   Dialog,
   DialogContent,
@@ -222,15 +223,16 @@ export function ApiKeysPage() {
                   <TableCell className="mono text-xs">
                     <span className="inline-flex items-center gap-1.5">
                       <span>{k.key_prefix}…</span>
-                      <button
-                        type="button"
-                        onClick={() => copyFullKey(k)}
-                        className="text-muted-foreground hover:text-foreground"
-                        aria-label={t("apiKeys.revealDialog.copyBtn")}
-                        title={t("apiKeys.revealDialog.copyBtn")}
-                      >
-                        <Copy className="h-3 w-3" />
-                      </button>
+                      <Tooltip content={t("apiKeys.revealDialog.copyBtn")}>
+                        <button
+                          type="button"
+                          onClick={() => copyFullKey(k)}
+                          className="text-muted-foreground transition-colors hover:text-foreground"
+                          aria-label={t("apiKeys.revealDialog.copyBtn")}
+                        >
+                          <Copy className="h-3 w-3" />
+                        </button>
+                      </Tooltip>
                     </span>
                   </TableCell>
                   <TableCell>
@@ -252,9 +254,15 @@ export function ApiKeysPage() {
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">
                     <div className="flex flex-col gap-0.5 mono">
-                      <span title={t("apiKeys.rpmTooltip")}>RPM: {k.rate_limit_rpm ?? <span className="text-muted-foreground/60">{t("apiKeys.rateLimitDefault")}</span>}</span>
-                      <span title={t("apiKeys.tpmTooltip")}>TPM: {k.rate_limit_tpm ?? <span className="text-muted-foreground/60">{t("apiKeys.rateLimitUnlimited")}</span>}</span>
-                      <span title={t("apiKeys.concurrencyTooltip")}>{t("apiKeys.concurrencyShort")}: {k.max_concurrent_requests ?? <span className="text-muted-foreground/60">{t("apiKeys.rateLimitDefault")}</span>}</span>
+                      <Tooltip content={t("apiKeys.rpmTooltip")}>
+                        <span>RPM: {k.rate_limit_rpm ?? <span className="text-muted-foreground/60">{t("apiKeys.rateLimitDefault")}</span>}</span>
+                      </Tooltip>
+                      <Tooltip content={t("apiKeys.tpmTooltip")}>
+                        <span>TPM: {k.rate_limit_tpm ?? <span className="text-muted-foreground/60">{t("apiKeys.rateLimitUnlimited")}</span>}</span>
+                      </Tooltip>
+                      <Tooltip content={t("apiKeys.concurrencyTooltip")}>
+                        <span>{t("apiKeys.concurrencyShort")}: {k.max_concurrent_requests ?? <span className="text-muted-foreground/60">{t("apiKeys.rateLimitDefault")}</span>}</span>
+                      </Tooltip>
                     </div>
                   </TableCell>
                   <TableCell className="text-muted-foreground text-xs">
@@ -267,30 +275,31 @@ export function ApiKeysPage() {
                         size="sm"
                         className="h-6 px-2 text-[11px] min-w-[64px]"
                         onClick={() => onToggle(k)}
-                        title={k.status === "active" ? t("apiKeys.disable") : t("apiKeys.enable")}
                       >
                         {k.status === "active" ? t("apiKeys.disable") : t("apiKeys.enable")}
                       </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6"
-                        onClick={() => openEdit(k)}
-                        title={t("apiKeys.editTitle")}
-                        aria-label={t("apiKeys.editTitle")}
-                      >
-                        <Pencil className="h-3 w-3" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6"
-                        onClick={() => onDelete(k)}
-                        title={t("apiKeys.deleteTitle")}
-                        aria-label={t("apiKeys.deleteTitle")}
-                      >
-                        <Trash2 className="h-3 w-3 text-destructive" />
-                      </Button>
+                      <Tooltip content={t("apiKeys.editTitle")}>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6"
+                          onClick={() => openEdit(k)}
+                          aria-label={t("apiKeys.editTitle")}
+                        >
+                          <Pencil className="h-3 w-3" />
+                        </Button>
+                      </Tooltip>
+                      <Tooltip content={t("apiKeys.deleteTitle")}>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6"
+                          onClick={() => onDelete(k)}
+                          aria-label={t("apiKeys.deleteTitle")}
+                        >
+                          <Trash2 className="h-3 w-3 text-destructive" />
+                        </Button>
+                      </Tooltip>
                     </div>
                   </TableCell>
                 </TableRow>

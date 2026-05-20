@@ -19,6 +19,7 @@ import { Link, NavLink, useLocation } from "react-router-dom";
 import { BrandMark } from "@/components/brand-mark";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Tooltip } from "@/components/ui/tooltip";
 import { useAuth } from "@/lib/auth";
 import { useT, type TKey } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -77,10 +78,12 @@ export function Shell({ children }: { children: ReactNode }) {
     <div className="flex h-screen overflow-hidden">
       <aside className="w-56 shrink-0 border-r border-border bg-surface flex flex-col">
         <div className="px-3 py-2.5">
-          <Link to="/" className="flex items-center gap-2" title={t("nav.toLanding")}>
-            <BrandMark />
-            <span className="font-semibold text-sm">Relay</span>
-          </Link>
+          <Tooltip content={t("nav.toLanding")}>
+            <Link to="/" className="flex items-center gap-2">
+              <BrandMark />
+              <span className="font-semibold text-sm">Relay</span>
+            </Link>
+          </Tooltip>
         </div>
 
         <nav className="flex-1 overflow-y-auto p-2 flex flex-col gap-0.5">
@@ -115,9 +118,11 @@ export function Shell({ children }: { children: ReactNode }) {
               </button>
             </PopoverTrigger>
             <PopoverContent side="top" align="start" className="w-56">
-              <div className="px-2 py-1.5 text-[11px] text-muted-foreground mono truncate" title={user?.email}>
-                {user?.email}
-              </div>
+              <Tooltip content={user?.email}>
+                <div className="px-2 py-1.5 text-[11px] text-muted-foreground mono truncate">
+                  {user?.email}
+                </div>
+              </Tooltip>
               <div className="h-px bg-border my-1" />
               {user?.role === "admin" && !isAdminArea && (
                 <Link

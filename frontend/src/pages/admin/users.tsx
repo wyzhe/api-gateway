@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Tooltip } from "@/components/ui/tooltip";
 import {
   Dialog,
   DialogContent,
@@ -196,36 +197,45 @@ export function AdminUsersPage() {
                 <TableCell className="text-xs text-muted-foreground">{fmtDate(u.created_at)}</TableCell>
                 <TableCell className="text-right">
                   <div className="inline-flex gap-1">
-                    <Button variant="ghost" size="icon" onClick={() => openEditDialog(u)} title={t("admin.users.actionEdit")}>
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button variant="ghost" size="icon" onClick={() => setOpenTxns(u)} title={t("admin.users.actionTransactions")}>
-                      <History className="h-3.5 w-3.5" />
-                    </Button>
-                    {!u.email_verified_at && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => markVerified(u)}
-                        title={t("admin.markEmailVerified.label")}
-                      >
-                        <CheckCircle2 className="h-3.5 w-3.5" />
+                    <Tooltip content={t("admin.users.actionEdit")}>
+                      <Button variant="ghost" size="icon" onClick={() => openEditDialog(u)} aria-label={t("admin.users.actionEdit")}>
+                        <Pencil className="h-3.5 w-3.5" />
                       </Button>
+                    </Tooltip>
+                    <Tooltip content={t("admin.users.actionTransactions")}>
+                      <Button variant="ghost" size="icon" onClick={() => setOpenTxns(u)} aria-label={t("admin.users.actionTransactions")}>
+                        <History className="h-3.5 w-3.5" />
+                      </Button>
+                    </Tooltip>
+                    {!u.email_verified_at && (
+                      <Tooltip content={t("admin.markEmailVerified.label")}>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => markVerified(u)}
+                          aria-label={t("admin.markEmailVerified.label")}
+                        >
+                          <CheckCircle2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </Tooltip>
                     )}
                     <Button variant="outline" size="sm" onClick={() => setOpenRecharge(u)}>
                       {t("admin.users.actionRecharge")}
                     </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => toggle(u)}
-                      disabled={u.id === me?.id}
-                      title={u.id === me?.id ? t("admin.users.selfActionBlocked") : undefined}
-                    >
-                      {u.status === "active"
-                        ? t("admin.users.actionDisable")
-                        : t("admin.users.actionEnable")}
-                    </Button>
+                    <Tooltip content={u.id === me?.id ? t("admin.users.selfActionBlocked") : undefined}>
+                      <span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => toggle(u)}
+                          disabled={u.id === me?.id}
+                        >
+                          {u.status === "active"
+                            ? t("admin.users.actionDisable")
+                            : t("admin.users.actionEnable")}
+                        </Button>
+                      </span>
+                    </Tooltip>
                   </div>
                 </TableCell>
               </TableRow>
