@@ -2,7 +2,7 @@
 No DB needed; these check the catalogue shape directly."""
 from decimal import Decimal
 
-from app.seed import DEFAULT_MODELS, DISABLE_ON_BOOT
+from app.seed import DEFAULT_MODELS, DISABLE_ON_BOOT, RETARGET_ON_BOOT
 
 
 def _by_name(specs):
@@ -99,10 +99,17 @@ def test_video_models_use_official_per_second_prices():
     assert m["grok-imagine-1.0-video-apimart"]["video_second_price"] == Decimal("0.05")
 
 
-def test_chat_public_name_equals_upstream_model():
-    for s in DEFAULT_MODELS:
-        if s["type"] == "text":
-            assert s["public_name"] == s["upstream_model"]
+def test_chat_upstream_models_match_apimart_ids():
+    """upstream_model must be APIMart's exact model id (verified against
+    GET /v1/models). It differs from public_name — APIMart hyphenates Anthropic
+    version numbers and suffixes Gemini 3.1 Pro with -preview. Do not assume
+    public_name == upstream_model."""
+    m = _by_name(DEFAULT_MODELS)
+    assert m["gpt-5.5"]["upstream_model"] == "gpt-5.5"
+    assert m["claude-opus-4.7"]["upstream_model"] == "claude-opus-4-7"
+    assert m["claude-sonnet-4.6"]["upstream_model"] == "claude-sonnet-4-6"
+    assert m["gemini-3.1-pro"]["upstream_model"] == "gemini-3.1-pro-preview"
+    assert m["gemini-3.5-flash"]["upstream_model"] == "gemini-3.5-flash"
 
 
 def test_video_display_and_upstream_names_match_spec():
@@ -133,6 +140,18 @@ def test_all_price_fields_are_decimal():
         for k in money_keys & s.keys():
             if s[k] is not None:
                 assert isinstance(s[k], Decimal), f"{s['public_name']}.{k} is {type(s[k])}"
+
+
+def test_retarget_on_boot_corrects_legacy_upstream():
+    """Existing prod rows seeded with a wrong APIMart upstream_model get
+    corrected on boot. claude-sonnet-4.6 was seeded with the dotted id;
+    APIMart's actual id is the hyphenated claude-sonnet-4-6."""
+    assert RETARGET_ON_BOOT == {"claude-sonnet-4.6": "claude-sonnet-4-6"}
+    # every retarget target must match the catalogue's own upstream_model
+    m = _by_name(DEFAULT_MODELS)
+    for public_name, upstream in RETARGET_ON_BOOT.items():
+        if public_name in m:
+            assert m[public_name]["upstream_model"] == upstream
 
 
 def test_model_statuses_match_spec():

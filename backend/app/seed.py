@@ -29,6 +29,10 @@ log = get_logger(__name__)
 
 DEFAULT_MODELS: list[dict] = [
     # ------------ Text ------------
+    # NOTE: `upstream_model` is APIMart's EXACT model id (per GET /v1/models),
+    # which often differs from `public_name` — APIMart hyphenates Anthropic
+    # version numbers (claude-opus-4-7) and suffixes Gemini 3.1 Pro with
+    # -preview. Do not "normalise" upstream_model back to match public_name.
     {
         "public_name": "gpt-5.5",
         "upstream_model": "gpt-5.5",
@@ -47,7 +51,7 @@ DEFAULT_MODELS: list[dict] = [
     },
     {
         "public_name": "claude-opus-4.7",
-        "upstream_model": "claude-opus-4.7",
+        "upstream_model": "claude-opus-4-7",
         "type": "text",
         "display_name": "Claude Opus 4.7",
         "display_provider": "anthropic",
@@ -63,7 +67,7 @@ DEFAULT_MODELS: list[dict] = [
     },
     {
         "public_name": "claude-sonnet-4.6",
-        "upstream_model": "claude-sonnet-4.6",
+        "upstream_model": "claude-sonnet-4-6",
         "type": "text",
         "display_name": "Claude Sonnet 4.6",
         "display_provider": "anthropic",
@@ -79,7 +83,7 @@ DEFAULT_MODELS: list[dict] = [
     },
     {
         "public_name": "gemini-3.1-pro",
-        "upstream_model": "gemini-3.1-pro",
+        "upstream_model": "gemini-3.1-pro-preview",
         "type": "text",
         "display_name": "Gemini 3.1 Pro",
         "display_provider": "gemini",
@@ -305,6 +309,15 @@ RENAME_ON_BOOT: dict[str, str] = {
     "claude-sonnet-4.5": "claude-sonnet-4.6",
 }
 
+# Retarget map: public_name -> correct upstream_model. Fixes already-seeded
+# production rows whose upstream_model used the wrong APIMart id (APIMart
+# hyphenates Anthropic versions; we originally seeded the dotted form, which
+# APIMart rejects with model_not_found). Applied on boot, idempotent — no
+# migration needed. Fresh DBs get the right value straight from DEFAULT_MODELS.
+RETARGET_ON_BOOT: dict[str, str] = {
+    "claude-sonnet-4.6": "claude-sonnet-4-6",
+}
+
 # Names we want to keep in the DB (for log FK integrity) but mark disabled.
 # Retired models: soft-disabled on existing DBs so request_logs FKs / price
 # snapshots stay intact. New DBs simply never seed them (absent from DEFAULT_MODELS).
@@ -325,6 +338,13 @@ def ensure_default_models(db: Session, provider: Provider) -> None:
         if row and not db.query(ModelRow).filter(ModelRow.public_name == new).one_or_none():
             row.public_name = new
             row.upstream_model = new
+
+    # Correct upstream_model on existing rows whose APIMart id was wrong.
+    # Runs after RENAME_ON_BOOT so a just-renamed row gets the right id too.
+    for public_name, correct_upstream in RETARGET_ON_BOOT.items():
+        row = db.query(ModelRow).filter(ModelRow.public_name == public_name).one_or_none()
+        if row and row.upstream_model != correct_upstream:
+            row.upstream_model = correct_upstream
 
     # Soft-disable models we no longer want exposed.
     for name in DISABLE_ON_BOOT:
