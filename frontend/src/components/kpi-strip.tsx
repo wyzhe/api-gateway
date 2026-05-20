@@ -30,7 +30,7 @@ export function KpiStrip({
       {items.map((it, i) => {
         const isLast = i === items.length - 1;
         const cellClass = cn(
-          "py-4 pr-5 flex flex-col gap-1 text-left",
+          "py-5 pr-5 flex flex-col gap-1 text-left",
           isLast && "pr-0",
           !isLast && "md:border-r md:border-border",
         );

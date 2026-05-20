@@ -146,7 +146,7 @@ components:
   dot-status:
     note: "6px colored dot + lowercase label. Replaces Badge for request/task lifecycle status."
   kpi-strip:
-    note: "Edge-to-edge horizontal strip. grid-cols-2 md:grid-cols-4 (cols={5} → grid-cols-2 md:grid-cols-3 lg:grid-cols-5), border-b border-border under the row, each cell py-4 pr-5, cells separated by md:border-r border-border. No outer card border. Value uses kpi-strip-value typography."
+    note: "Edge-to-edge horizontal strip. grid-cols-2 md:grid-cols-4 (cols={5} → grid-cols-2 md:grid-cols-3 lg:grid-cols-5), border-b border-border under the row, each cell py-5 pr-5, cells separated by md:border-r border-border. No outer card border. Value uses kpi-strip-value typography."
   empty-state:
     note: "py-10 px-4 flex-col items-center text-center. Icon (optional, h-6 w-6 text-faint), title (text-sm muted-foreground), hint (text-xs faint), action slot. Use inside <TableCell colSpan=N> or in panel. Replaces hand-rolled 'text-center text-muted-foreground py-8' blocks."
   tabs-list:
@@ -322,7 +322,7 @@ Density rules. The viewport is treated as a workspace, not a canvas.
 - **KPI strip** = `<KpiStrip items={[…]} />` (`grid-cols-2 md:grid-cols-4
   border-b border-border mb-6`; `cols={5}` → `grid-cols-2 md:grid-cols-3
   lg:grid-cols-5`). Edge-to-edge — no outer card border.
-  Each cell `py-4 pr-5`, separated by `md:border-r border-border`. Value
+  Each cell `py-5 pr-5`, separated by `md:border-r border-border`. Value
   uses the `kpi-strip-value` typography (22px mono, semibold). Label
   `text-xs text-muted-foreground`. Four KPIs is the default; `cols`
   accepts `3 | 4 | 5` (the dashboard uses 5). A cell becomes a focusable
