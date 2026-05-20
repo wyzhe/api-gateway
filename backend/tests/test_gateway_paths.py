@@ -9,7 +9,7 @@ def test_v1_models_via_user_key(client, user_api_key):
     body = r.json()
     assert body["object"] == "list"
     ids = {m["id"] for m in body["data"]}
-    assert "gpt-4o" in ids
+    assert "claude-sonnet-4.6" in ids
 
 
 def test_v1_rejects_invalid_key(client):
@@ -36,7 +36,7 @@ def test_v1_zero_balance_returns_402(client, user_api_key, test_user):
     r = client.post(
         "/v1/chat/completions",
         headers={"Authorization": f"Bearer {user_api_key}"},
-        json={"model": "gpt-4o", "messages": [{"role": "user", "content": "hi"}]},
+        json={"model": "claude-sonnet-4.6", "messages": [{"role": "user", "content": "hi"}]},
     )
     assert r.status_code == 402
 
@@ -81,7 +81,7 @@ def test_monthly_limit_returns_429(client, user_api_key_funded, test_user_funded
     r = client.post(
         "/v1/chat/completions",
         headers={"Authorization": f"Bearer {user_api_key_funded}"},
-        json={"model": "gpt-4o", "messages": [{"role": "user", "content": "hi"}]},
+        json={"model": "claude-sonnet-4.6", "messages": [{"role": "user", "content": "hi"}]},
     )
     assert r.status_code == 429
     msg = r.json()["error"]["message"].lower()

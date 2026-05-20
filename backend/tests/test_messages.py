@@ -6,7 +6,7 @@ from decimal import Decimal
 
 
 def test_messages_requires_api_key(client):
-    r = client.post("/v1/messages", json={"model": "gpt-4o", "messages": []})
+    r = client.post("/v1/messages", json={"model": "claude-sonnet-4.6", "messages": []})
     assert r.status_code == 401
 
 
