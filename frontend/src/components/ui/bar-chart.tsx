@@ -96,11 +96,21 @@ export function BarChart({
         })}
       </svg>
 
-      {hover !== null && (
-        <div
-          className="pointer-events-none absolute top-0 z-10 -translate-x-1/2 rounded-md border border-border-strong bg-surface-3 px-2 py-1.5 text-xs shadow-lg"
-          style={{ left: `${((hover + 0.5) / n) * 100}%` }}
-        >
+      {hover !== null && (() => {
+        const hoverPct = (hover + 0.5) / n;
+        // Anchor the tooltip so it never clips past the chart edges:
+        // left-edge bars anchor their left side, right-edge bars their right side.
+        const transform =
+          hoverPct < 0.15
+            ? "translateX(0)"
+            : hoverPct > 0.85
+              ? "translateX(-100%)"
+              : "translateX(-50%)";
+        return (
+          <div
+            className="pointer-events-none absolute top-0 z-10 rounded-md border border-border-strong bg-surface-3 px-2 py-1.5 text-xs shadow-lg"
+            style={{ left: `${hoverPct * 100}%`, transform }}
+          >
           <div className="mb-1 text-muted-foreground">{data[hover].tooltipLabel}</div>
           {series.map((ser) => (
             <div key={ser.key} className="flex items-center gap-1.5">
@@ -118,8 +128,9 @@ export function BarChart({
             <span className="text-muted-foreground">{totalLabel}</span>
             <span className="mono text-foreground">{formatValue(totals[hover])}</span>
           </div>
-        </div>
-      )}
+          </div>
+        );
+      })()}
     </div>
   );
 }
