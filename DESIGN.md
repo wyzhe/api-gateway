@@ -425,6 +425,7 @@ hand-written set. **Don't run `shadcn` CLI** — see CLAUDE.md.
 | `ProviderTag` | `components/provider-tag.tsx` | OpenAI / Anthropic / Gemini / xAI / Veo / APIMart attribution. 8px colored dot + muted label. Reuse for any provider display. |
 | `DotStatus` | `components/dot-status.tsx` | Request / task lifecycle status (`success`, `failed`, `queued`, `running`, `pending`, `cancelled`). 6px colored dot + lowercase label. Replaces `Badge` for ephemeral state in tables and feeds. |
 | `LogDetailDrawer` | `components/log-detail-drawer.tsx` | Shared drawer used by both user-side `usage-logs` and admin `logs`. Don't fork. |
+| `UsageTrends` | `components/usage-trends.tsx` | Dashboard "usage trends" block — two Helicone-style cards (spend / requests) wrapping a stacked `BarChart`, with a 7/30-day toggle. |
 
 ### State pattern
 

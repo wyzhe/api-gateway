@@ -16,10 +16,15 @@ export function KpiStrip({
   className,
 }: {
   items: KpiStripItem[];
-  cols?: 3 | 4;
+  cols?: 3 | 4 | 5;
   className?: string;
 }) {
-  const gridClass = cols === 3 ? "grid-cols-3" : "grid-cols-2 md:grid-cols-4";
+  const gridClass =
+    cols === 5
+      ? "grid-cols-2 md:grid-cols-3 lg:grid-cols-5"
+      : cols === 3
+        ? "grid-cols-3"
+        : "grid-cols-2 md:grid-cols-4";
   return (
     <div className={cn("grid border-b border-border mb-6", gridClass, className)}>
       {items.map((it, i) => {

@@ -7,8 +7,9 @@ import { DotStatus } from "@/components/dot-status";
 import { LogDetailDrawer, useLogDetail } from "@/components/log-detail-drawer";
 import { TypeBadge } from "@/components/type-badge";
 import { PageHeader } from "@/components/shell";
+import { UsageTrends } from "@/components/usage-trends";
 import { api } from "@/lib/api";
-import type { LogSummary } from "@/lib/types";
+import type { LogSummary, DailyUsage } from "@/lib/types";
 import { fmtBalance, fmtCompactMoney, fmtRelative, reqStatusKey } from "@/lib/utils";
 import { useT } from "@/lib/i18n";
 
@@ -23,6 +24,7 @@ type DashboardOut = {
   recent_logs: LogSummary[];
   top_models_by_cost: Array<{ model_id: number | null; model_name: string | null; cost: string; requests: number }>;
   top_api_keys_by_usage: Array<{ api_key_id: number | null; api_key_prefix: string | null; requests: number; cost: string }>;
+  daily_usage: DailyUsage[];
 };
 
 export function DashboardPage() {
@@ -40,6 +42,7 @@ export function DashboardPage() {
       <PageHeader title={t("dashboard.title")} />
 
       <KpiStrip
+        cols={5}
         items={[
           {
             label: t("dashboard.kpiBalance"),
@@ -49,7 +52,10 @@ export function DashboardPage() {
           {
             label: t("dashboard.kpiTodaySpend"),
             value: fmtCompactMoney(data?.today_spend),
-            hint: t("dashboard.kpiThisMonthHint", { amount: fmtCompactMoney(data?.month_spend) }),
+          },
+          {
+            label: t("dashboard.kpiMonthSpend"),
+            value: fmtCompactMoney(data?.month_spend),
           },
           {
             label: t("dashboard.kpiTextRequestsToday"),
@@ -68,6 +74,8 @@ export function DashboardPage() {
           },
         ]}
       />
+
+      <UsageTrends data={data?.daily_usage} />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <section className="lg:col-span-2">
@@ -103,13 +111,10 @@ export function DashboardPage() {
         <div className="flex flex-col gap-6">
           <section>
             <SectionHeading>{t("dashboard.topModels")}</SectionHeading>
-            <StatRows
+            <TopModelBars
               empty={t("dashboard.noDataYet")}
               items={data?.top_models_by_cost ?? []}
-              getKey={(m) => m.model_id ?? -1}
-              getLabel={(m) => m.model_name || "—"}
-              getValue={(m) => t("dashboard.statValueCostRequests", { cost: fmtCompactMoney(m.cost), requests: m.requests })}
-              onClick={(m) => m.model_name && nav(`/logs?model=${encodeURIComponent(m.model_name)}`)}
+              onClick={(name) => nav(`/logs?model=${encodeURIComponent(name)}`)}
             />
           </section>
           <section>
@@ -156,6 +161,49 @@ function StatRows<T>({
           <span className="text-muted-foreground">{getValue(it)}</span>
         </li>
       ))}
+    </ul>
+  );
+}
+
+function TopModelBars({
+  empty,
+  items,
+  onClick,
+}: {
+  empty: string;
+  items: DashboardOut["top_models_by_cost"];
+  onClick: (modelName: string) => void;
+}) {
+  const t = useT();
+  if (items.length === 0) {
+    return <div className="py-3 text-xs text-muted-foreground">{empty}</div>;
+  }
+  const max = Math.max(...items.map((m) => Number(m.cost)), 0);
+  return (
+    <ul className="flex flex-col gap-2.5 border-t border-b border-border py-2.5">
+      {items.map((m) => {
+        const pct = max > 0 ? (Number(m.cost) / max) * 100 : 0;
+        return (
+          <li
+            key={m.model_id ?? -1}
+            onClick={() => m.model_name && onClick(m.model_name)}
+            className="group cursor-pointer px-2"
+          >
+            <div className="mb-1 flex items-center justify-between text-xs">
+              <span className="mono group-hover:text-foreground">{m.model_name || "—"}</span>
+              <span className="text-muted-foreground">
+                {t("dashboard.statValueCostRequests", {
+                  cost: fmtCompactMoney(m.cost),
+                  requests: m.requests,
+                })}
+              </span>
+            </div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-surface-2">
+              <div className="h-full rounded-full bg-info" style={{ width: `${pct}%` }} />
+            </div>
+          </li>
+        );
+      })}
     </ul>
   );
 }
