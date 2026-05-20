@@ -1,8 +1,9 @@
+from datetime import date, timedelta
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from sqlalchemy import desc, func
+from sqlalchemy import Date, cast, desc, func
 from sqlalchemy.orm import Session
 
 from ..deps import get_current_user, get_db
@@ -30,6 +31,16 @@ class TopApiKeyEntry(BaseModel):
     cost: Decimal
 
 
+class DailyUsageEntry(BaseModel):
+    date: date
+    text_cost: Decimal
+    image_cost: Decimal
+    video_cost: Decimal
+    text_requests: int
+    image_requests: int
+    video_requests: int
+
+
 class DashboardOut(BaseModel):
     balance: Decimal
     today_text_requests: int
@@ -41,6 +52,45 @@ class DashboardOut(BaseModel):
     recent_logs: list[RequestLogSummary]
     top_models_by_cost: list[TopModelEntry]
     top_api_keys_by_usage: list[TopApiKeyEntry]
+    daily_usage: list[DailyUsageEntry]
+
+
+def build_daily_usage(
+    rows: list[tuple[date, str, Decimal, int]],
+    start: date,
+    num_days: int = 30,
+) -> list[DailyUsageEntry]:
+    """Pivot grouped (day, request_type, cost, count) rows into `num_days`
+    consecutive daily buckets starting at `start`. Missing days are zero-filled.
+    Only request_type in {text, image, video} is counted; others are ignored.
+    cost is always wrapped as Decimal(str(...)) — never raw float.
+
+    Precondition: at most one row per (day, request_type); a duplicate pair
+    silently overwrites. The caller's SQL GROUP BY day+request_type guarantees
+    this."""
+    by_day: dict[date, dict[str, tuple[Decimal, int]]] = {}
+    for day, rtype, cost, count in rows:
+        by_day.setdefault(day, {})[rtype] = (Decimal(str(cost)), int(count))
+
+    out: list[DailyUsageEntry] = []
+    for i in range(num_days):
+        d = start + timedelta(days=i)
+        types = by_day.get(d, {})
+        t_cost, t_n = types.get("text", (Decimal("0"), 0))
+        i_cost, i_n = types.get("image", (Decimal("0"), 0))
+        v_cost, v_n = types.get("video", (Decimal("0"), 0))
+        out.append(
+            DailyUsageEntry(
+                date=d,
+                text_cost=t_cost,
+                image_cost=i_cost,
+                video_cost=v_cost,
+                text_requests=t_n,
+                image_requests=i_n,
+                video_requests=v_n,
+            )
+        )
+    return out
 
 
 @router.get("", response_model=DashboardOut)
@@ -116,6 +166,25 @@ def dashboard(
         .all()
     )
 
+    # Last 30 UTC days of per-type cost/count, for the usage-trend charts.
+    usage_start = today - timedelta(days=29)
+    day_col = cast(func.timezone("UTC", RequestLog.created_at), Date).label("d")
+    usage_rows = (
+        db.query(
+            day_col,
+            RequestLog.request_type,
+            func.coalesce(func.sum(RequestLog.cost), 0).label("cost"),
+            func.count(RequestLog.id).label("n"),
+        )
+        .filter(RequestLog.user_id == user.id, RequestLog.created_at >= usage_start)
+        .group_by(day_col, RequestLog.request_type)
+        .all()
+    )
+    daily_usage = build_daily_usage(
+        [(r.d, r.request_type, Decimal(str(r.cost)), int(r.n)) for r in usage_rows],
+        usage_start.date(),
+    )
+
     keys_by_id = {k.id: k for k in db.query(ApiKey).filter(ApiKey.user_id == user.id).all()}
     models_by_id = {m.id: m for m in db.query(ModelRow).all()}
 
@@ -146,4 +215,5 @@ def dashboard(
             )
             for (k_id, n, c) in top_keys
         ],
+        daily_usage=daily_usage,
     )
