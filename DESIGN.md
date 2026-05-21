@@ -278,6 +278,8 @@ surfaces.
 | `xai` | `#6b7280` | xAI brand dot in light mode (darker for contrast). |
 | `apimart` | `#1a7a2e` | APIMart brand dot in light mode (same as `accent`). |
 
+> **Note:** The light `--warn` (`#9a6500`) clears WCAG AA with a thin margin (~4.6:1 on `--background` `#f6f7f8`); re-verify its contrast before lightening `--background`.
+
 Note that `accent` and `accent-foreground` differ between themes: dark uses
 `#7be38b` + `#0a0b0d` (bright green on near-black); light uses `#1a7a2e` +
 `#ffffff` (deep green on white). Always use the pair together via the Tailwind

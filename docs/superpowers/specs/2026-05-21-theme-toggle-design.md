@@ -86,7 +86,7 @@ Relay 前端目前是**刻意的 dark-only 操作台**（见 `DESIGN.md` 与 `CL
 
 ## 5. 亮色色板（`:root`）
 
-以 Linear / Vercel / Stripe 亮色开发者工具为参照：页面浅灰、卡片纯白、靠边框与表面分层（不用阴影），单一绿色强调。下表为**起始值**，实现时用浏览器预览微调。
+以 Linear / Vercel / Stripe 亮色开发者工具为参照：页面浅灰、卡片纯白、靠边框与表面分层（不用阴影），单一绿色强调。下表为**最终实现值**（已经过 WCAG AA 对比度校验微调）；与 `frontend/src/index.css` 的 `:root` 块一致。
 
 | Token | 亮色值 | 说明 |
 |---|---|---|
@@ -101,16 +101,16 @@ Relay 前端目前是**刻意的 dark-only 操作台**（见 `DESIGN.md` 与 `CL
 | `--muted-foreground` | `#585d66` | 次要文字——确保白底可读 |
 | `--faint` | `#868c95` | 提示 / 时间戳 |
 | `--dim` | `#a9aeb6` | 极淡——占位、cancelled 终态 |
-| `--accent` | `#2f9e44` | 强调绿——白底需更深的绿（`#7be38b` 在白底不可读） |
-| `--accent-dim` | `#248236` | 强调绿暗调 |
+| `--accent` | `#1a7a2e` | 强调绿——白底需更深的绿（`#7be38b` 在白底不可读） |
+| `--accent-dim` | `#145c22` | 强调绿暗调 |
 | `--accent-foreground` | `#ffffff` | 叠在 accent 上的文字——亮色下为白 |
-| `--success` | `#2f9e44` | |
-| `--warn` | `#b0750f` | 白底加深 |
-| `--danger` | `#d33d3d` | |
-| `--info` | `#2873c8` | 白底加深 |
+| `--success` | `#1a7a2e` | |
+| `--warn` | `#9a6500` | 白底加深 |
+| `--danger` | `#c02c2c` | |
+| `--info` | `#1c60b0` | 白底加深 |
 | `--xai` | `#6b7280` | provider 色覆盖——原 `#b8b8b8` 在白底不可见 |
 
-其余 provider 品牌色（`openai / anthropic / gemini / veo / apimart / deepseek`）两套主题共用，定义在 `:root`，`.dark` 不覆盖。`accent` 与 `accent-foreground` 必须成对——亮色下是 `#2f9e44` + `#ffffff`，暗色下是 `#7be38b` + `#0a0b0d`，DESIGN.md 的"accent 配 accent-foreground"规则不变，只是值随主题。
+其余 provider 品牌色（`openai / anthropic / gemini / veo / apimart / deepseek`）两套主题共用，定义在 `:root`，`.dark` 不覆盖。`accent` 与 `accent-foreground` 必须成对——亮色下是 `#1a7a2e` + `#ffffff`，暗色下是 `#7be38b` + `#0a0b0d`，DESIGN.md 的"accent 配 accent-foreground"规则不变，只是值随主题。
 
 `color-mix` 派生的色调（`bg-success/10` 等）引用 `var(--token)`，自动随主题适配，无需改组件。
 
