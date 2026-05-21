@@ -12,6 +12,7 @@ import {
 import { Link } from "react-router-dom";
 import { BrandMark } from "@/components/brand-mark";
 import { LanguageSwitcher } from "@/components/language-switcher";
+import { ThemeSwitcher } from "@/components/theme-switcher";
 import { Button } from "@/components/ui/button";
 import { CodeBlock } from "@/components/ui/code-block";
 import { useAuth } from "@/lib/auth";
@@ -203,6 +204,7 @@ export function LandingPage() {
             <a href="#quickstart" className="hover:text-foreground">{t("landing.nav.quickstart")}</a>
           </nav>
           <div className="flex items-center gap-2">
+            <ThemeSwitcher />
             <LanguageSwitcher />
             <PrimaryCta className="min-w-[96px]" />
           </div>

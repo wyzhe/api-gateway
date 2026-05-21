@@ -18,6 +18,7 @@ import type { ReactNode } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
 import { BrandMark } from "@/components/brand-mark";
 import { LanguageSwitcher } from "@/components/language-switcher";
+import { ThemeSwitcher } from "@/components/theme-switcher";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip } from "@/components/ui/tooltip";
 import { useAuth } from "@/lib/auth";
@@ -144,6 +145,10 @@ export function Shell({ children }: { children: ReactNode }) {
                   <Shield className="h-3.5 w-3.5" /> {t("nav.toWorkspace")}
                 </Link>
               )}
+              <div className="flex items-center justify-between px-2 py-1.5 text-[13px] text-muted-foreground">
+                <span>{t("nav.theme")}</span>
+                <ThemeSwitcher />
+              </div>
               <div className="flex items-center justify-between px-2 py-1.5 text-[13px] text-muted-foreground">
                 <span>{t("nav.language")}</span>
                 <LanguageSwitcher compact />
