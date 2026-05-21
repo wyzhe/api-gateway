@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { CodeBlock } from "@/components/ui/code-block";
 import { useAuth } from "@/lib/auth";
 import { useT } from "@/lib/i18n";
+import { cn } from "@/lib/utils";
 
 const PY_SNIPPET = `from openai import OpenAI
 
@@ -153,23 +154,32 @@ function CapabilityCard({
   );
 }
 
+function ProofCard({
+  value,
+  label,
+  mono,
+}: {
+  value: string;
+  label: string;
+  mono?: boolean;
+}) {
+  return (
+    <article className="rounded-md border border-border bg-surface p-4">
+      <div className={cn("text-base font-semibold", mono && "mono")}>{value}</div>
+      <div className="mt-1 text-xs text-muted-foreground">{label}</div>
+    </article>
+  );
+}
+
 export function LandingPage() {
   const t = useT();
 
   const proofs = [
-    t("landing.hero.proof.endpoint.value"),
-    t("landing.hero.proof.modalities.value"),
-    t("landing.hero.proof.caps.value"),
-    t("landing.hero.proof.logs.value"),
-  ].map((value, index) => ({
-    value,
-    label: [
-      t("landing.hero.proof.endpoint.label"),
-      t("landing.hero.proof.modalities.label"),
-      t("landing.hero.proof.caps.label"),
-      t("landing.hero.proof.logs.label"),
-    ][index],
-  }));
+    { value: t("landing.hero.proof.endpoint.value"), label: t("landing.hero.proof.endpoint.label"), mono: true },
+    { value: t("landing.hero.proof.modalities.value"), label: t("landing.hero.proof.modalities.label") },
+    { value: t("landing.hero.proof.caps.value"), label: t("landing.hero.proof.caps.label") },
+    { value: t("landing.hero.proof.logs.value"), label: t("landing.hero.proof.logs.label") },
+  ];
 
   const modalities = [
     { Icon: MessageSquare, tag: "chat", label: t("landing.modalities.text.label"), desc: t("landing.modalities.text.desc") },
@@ -235,12 +245,9 @@ export function LandingPage() {
                 </Button>
                 <span className="text-xs text-muted-foreground mono">{t("landing.hero.ctaNoSignup")}</span>
               </div>
-              <div className="mt-10 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 border-y border-border">
-                {proofs.map(({ value, label }) => (
-                  <div key={value} className="py-4 pr-4 border-b sm:border-b-0 sm:border-r border-border last:border-r-0">
-                    <div className="text-base font-semibold mono">{value}</div>
-                    <div className="mt-1 text-xs text-faint">{label}</div>
-                  </div>
+              <div className="mt-10 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {proofs.map((proof) => (
+                  <ProofCard key={proof.value} {...proof} />
                 ))}
               </div>
             </div>
