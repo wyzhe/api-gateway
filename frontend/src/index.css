@@ -3,20 +3,57 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* Relay design tokens — carried over from the prototype's styles.css. */
+/* Relay design tokens.
+   :root = light theme. .dark = dark theme. The active theme is decided before
+   first paint by public/theme-boot.js (follows the OS by default) and is kept
+   in sync at runtime by ThemeProvider (src/lib/theme.tsx). */
 :root {
+  --background: #f6f7f8;
+  --surface: #ffffff;
+  --surface-2: #f0f1f3;
+  --surface-3: #e7e9ec;
+  --border: #e3e5e9;
+  --border-strong: #cbcfd5;
+  --border-soft: #eef0f2;
+
+  --foreground: #1a1c1f;
+  --muted-foreground: #585d66;
+  --faint: #868c95;
+  --dim: #a9aeb6;
+
+  --accent: #2f9e44;
+  --accent-dim: #248236;
+  --accent-foreground: #ffffff;
+
+  --success: #2f9e44;
+  --warn: #b0750f;
+  --danger: #d33d3d;
+  --info: #2873c8;
+
+  --openai: #10a37f;
+  --anthropic: #d97757;
+  --gemini: #5b8def;
+  --xai: #6b7280;
+  --veo: #c084fc;
+  --apimart: #2f9e44;
+  --deepseek: #4d6bfe;
+
+  --radius: 8px;
+}
+
+.dark {
   --background: #0a0b0d;
   --surface: #111316;
   --surface-2: #16191d;
   --surface-3: #1b1e23;
-  --border: #23262b;
+  --border: #2b2f35;
   --border-strong: #2e3239;
   --border-soft: #1b1e22;
 
   --foreground: #eceef1;
-  --muted-foreground: #9097a1;
-  --faint: #5c636d;
-  --dim: #43484f;
+  --muted-foreground: #a2a9b4;
+  --faint: #6c727c;
+  --dim: #565c64;
 
   --accent: #7be38b;
   --accent-dim: #4f9e5c;
@@ -27,16 +64,14 @@
   --danger: #f87171;
   --info: #7ab7ff;
 
-  --openai: #10a37f;
-  --anthropic: #d97757;
-  --gemini: #5b8def;
   --xai: #b8b8b8;
-  --veo: #c084fc;
   --apimart: #7be38b;
-  --deepseek: #4d6bfe;
+}
 
-  --radius: 8px;
-
+/* Derived tokens — reference the base tokens above. Declared for both themes
+   in one block so each var() resolves against the active theme's base values. */
+:root,
+.dark {
   --card: var(--surface);
   --card-foreground: var(--foreground);
   --popover: var(--surface-2);
