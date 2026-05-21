@@ -38,3 +38,6 @@ references/
 /ref-*.png
 /linear-*.png
 /.playwright-mcp/
+
+# Local scratch / smoke-test script (root only)
+/test.py
