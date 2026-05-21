@@ -17,21 +17,21 @@ export function ThemeSwitcher({ className }: { className?: string }) {
   return (
     <div
       className={cn(
-        "inline-flex h-7 shrink-0 items-center rounded-md bg-surface-2 p-0.5",
+        "inline-flex h-7 shrink-0 items-center rounded-md border border-border bg-surface-2 p-0.5",
         className,
       )}
       role="group"
       aria-label={t("nav.theme")}
     >
-      {OPTIONS.map(([value, key, Icon]) => {
+      {OPTIONS.map(([value, labelKey, Icon]) => {
         const active = preference === value;
         return (
-          <Tooltip key={value} content={t(key)}>
+          <Tooltip key={value} content={t(labelKey)}>
             <button
               type="button"
               onClick={() => setPreference(value)}
               aria-pressed={active}
-              aria-label={t(key)}
+              aria-label={t(labelKey)}
               className={cn(
                 "inline-flex h-6 w-6 items-center justify-center rounded-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
                 active
