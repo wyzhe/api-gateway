@@ -77,6 +77,8 @@ export function GenerationsPage() {
         actions={<Button variant="outline" onClick={refresh}>{t("generations.refreshBtn")}</Button>}
       />
 
+      <p className="mb-3 text-xs text-muted-foreground">{t("generations.assetExpiryNotice")}</p>
+
       <div className="rounded-md border border-border">
         <Table>
           <TableHeader>

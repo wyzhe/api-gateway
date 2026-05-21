@@ -460,6 +460,9 @@ function ImageTab({ models, apiKey }: { models: Model[]; apiKey: string }) {
               <span className="text-muted-foreground text-sm">{busy ? t("playground.waitingUpstream") : t("playground.imageEmpty")}</span>
             )}
           </div>
+          {assetUrl && (
+            <p className="text-xs text-muted-foreground">{t("playground.assetExpiryNotice")}</p>
+          )}
           <div>
             <Label>{t("playground.rawRequest")}</Label>
             <CodeBlock lang="json" code={JSON.stringify(rawReq, null, 2)} maxHeight="8rem" />
@@ -634,6 +637,9 @@ function VideoTab({ models, apiKey }: { models: Model[]; apiKey: string }) {
               <span className="text-muted-foreground text-sm">{busy ? t("playground.generating") : t("playground.videoEmpty")}</span>
             )}
           </div>
+          {assetUrl && (
+            <p className="text-xs text-muted-foreground">{t("playground.assetExpiryNotice")}</p>
+          )}
           <div>
             <Label>{t("playground.rawRequest")}</Label>
             <CodeBlock lang="json" code={JSON.stringify(rawReq, null, 2)} maxHeight="8rem" />
