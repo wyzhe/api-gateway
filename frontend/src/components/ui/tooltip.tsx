@@ -32,7 +32,7 @@ export function Tooltip({
           sideOffset={6}
           className={cn(
             "z-50 max-w-xs rounded-md border border-border bg-popover px-2 py-1 text-xs text-popover-foreground outline-none",
-            "data-[state=closed]:animate-out data-[state=closed]:fade-out-0",
+            // No exit animation — see the note in dialog.tsx.
             "data-[state=delayed-open]:animate-in data-[state=delayed-open]:fade-in-0",
             className,
           )}
