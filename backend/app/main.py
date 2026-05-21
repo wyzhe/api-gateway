@@ -146,12 +146,34 @@ async def metrics() -> Response:
 # ---------------- Unified error envelope ----------------
 
 
+# OpenAI-style error `type` keyed by HTTP status. Clients written against the
+# OpenAI/Anthropic SDKs branch on this vocabulary — emitting a gateway-private
+# `http_error` / `http_<code>` shape instead would be a non-standard surface.
+_OPENAI_ERROR_TYPE: dict[int, str] = {
+    400: "invalid_request_error",
+    401: "authentication_error",
+    403: "permission_error",
+    404: "invalid_request_error",
+    409: "invalid_request_error",
+    413: "invalid_request_error",
+    422: "invalid_request_error",
+    429: "rate_limit_error",
+}
+
+
+def _openai_error_type(status_code: int) -> str:
+    if status_code in _OPENAI_ERROR_TYPE:
+        return _OPENAI_ERROR_TYPE[status_code]
+    return "api_error" if status_code >= 500 else "invalid_request_error"
+
+
 @app.exception_handler(StarletteHTTPException)
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):
-    # Mirror OpenAI's `{"error": {...}}` shape so SDK clients can parse uniformly.
-    # Preserve any headers set on the HTTPException (e.g. Retry-After /
-    # Retry-After-Ms from the rate-limit gates) — without forwarding them
-    # here, the Anthropic SDK would never see the retry hint.
+    # Mirror OpenAI's `{"error": {message, type, param, code}}` shape so SDK
+    # clients can parse uniformly. Preserve any headers set on the
+    # HTTPException (e.g. Retry-After / Retry-After-Ms from the rate-limit
+    # gates) — without forwarding them here, the Anthropic SDK would never see
+    # the retry hint.
     headers = getattr(exc, "headers", None)
     detail = exc.detail
     if isinstance(detail, dict) and "error" in detail:
@@ -163,8 +185,9 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
         content={
             "error": {
                 "message": str(detail) if detail is not None else "Error",
-                "type": "http_error",
-                "code": f"http_{exc.status_code}",
+                "type": _openai_error_type(exc.status_code),
+                "param": None,
+                "code": None,
             }
         },
         headers=headers,

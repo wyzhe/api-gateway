@@ -6,6 +6,8 @@ You're working on a self-hosted OpenAI-compatible API gateway in active producti
 
 > **Posture**: This project is no longer MVP. It's being hardened for real usage. Treat every decision in this file as a production constraint, not a "good enough for friends" tradeoff. If you see a `# TODO` or a note like "acceptable for now," that's a known-defect to fix, not a license to skip a hard problem.
 
+> **遵循通用约定,不要自创用法**:凡是面向用户/客户端的东西 —— API 路径、认证方式、请求/响应 schema、字段命名、错误码、SDK 调用形式 —— 一律对齐业界主流产品的既有约定(OpenAI / Anthropic 官方 SDK、标准 HTTP `Authorization: Bearer`、OpenAI-compatible 的 `/v1/*` 形态等)。设计任何接口前先问"别人是怎么做的",默认照搬成熟约定。**Why**:自创私有 header、私有鉴权格式、私有调用方式会破坏标准 SDK 兼容性、抬高接入成本、让用户困惑 —— 这正是本网关坚持 OpenAI-compatible、用标准 Bearer 鉴权的原因。**How to apply**:除非有明确且不得已的技术理由,否则不要发明非标准用法;如果确实必须偏离约定,在代码注释和本文件里写清楚为什么。
+
 ## What this is, what it isn't
 
 - **Is**: an OpenAI-compatible gateway in front of upstream LLM providers (APIMart and DeepSeek) that adds (a) per-user API keys, (b) `Decimal`-precise balance-based billing with monthly caps, (c) full request logs, (d) async task lifecycle (image/video), (e) a React dashboard + admin console, (f) Redis-backed rate limiting, (g) an arq worker for async task finalization.
