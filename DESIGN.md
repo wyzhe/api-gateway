@@ -2,10 +2,11 @@
 version: alpha
 name: Relay
 description: >
-  Self-hosted LLM API gateway. Dark-only operator console — terminal-adjacent,
-  high information density, monospaced where it earns its keep. Aesthetically
-  closer to a developer log viewer (Vercel/Linear/Stripe internal tools) than to
-  a consumer SaaS.
+  Self-hosted LLM API gateway. Operator console with light and dark themes
+  (default: follows the OS via prefers-color-scheme; dark remains the primary
+  mood) — terminal-adjacent, high information density, monospaced where it
+  earns its keep. Aesthetically closer to a developer log viewer
+  (Vercel/Linear/Stripe internal tools) than to a consumer SaaS.
 colors:
   background: "#0a0b0d"
   surface: "#111316"
@@ -178,11 +179,12 @@ components:
 
 ## Overview
 
-Relay is a self-hosted developer tool. The UI is a **dark-only operator
-console** designed for engineers who already live in a terminal. Aesthetic
-references: Vercel dashboard, Linear settings, Stripe internal tools. **Not**
-references: consumer SaaS marketing pages, AI chat playgrounds, fintech apps
-that try to feel friendly.
+Relay is a self-hosted developer tool. The UI is an **operator console for
+engineers** — it supports both a light and a dark theme, defaulting to follow
+the OS (`prefers-color-scheme`), manually switchable, with dark remaining the
+product's primary and signature mood. Aesthetic references: Vercel dashboard,
+Linear settings, Stripe internal tools. **Not** references: consumer SaaS
+marketing pages, AI chat playgrounds, fintech apps that try to feel friendly.
 
 Three things define the feel:
 
@@ -195,10 +197,11 @@ Three things define the feel:
 2. **Mono everywhere it earns its keep.** Numbers, IDs, prefixes, code, paths,
    model names, currency — all monospaced. Prose is sans. The mono/sans split
    tells the eye what is data and what is chrome.
-3. **Green accent, used sparingly.** `#7be38b` (`--accent`) is the only
-   interactive-confident color. If everything is accented, nothing is. Reserve
-   it for: primary buttons, the active sidebar item, success badges, the brand
-   mark, and emphasis text on the landing page hero.
+3. **Green accent, used sparingly.** `--accent` is the only interactive-
+   confident color (bright `#7be38b` on dark, deep `#1a7a2e` on light — both
+   resolve from the same utility class). If everything is accented, nothing is.
+   Reserve it for: primary buttons, the active sidebar item, success badges,
+   the brand mark, and emphasis text on the landing page hero.
 
 Labels are normal case. The older uppercase-tracked `label-caps` pattern was
 retired in favor of Linear-style muted lowercase — the only place uppercase
@@ -212,41 +215,79 @@ the admin is inviting, not to convert anonymous traffic.
 
 ## Colors
 
-The palette is a near-black base with a single warm green accent. All semantic
-status colors are desaturated enough to coexist on the same dark background
-without one stealing the eye.
+Color tokens come in two themes: `:root` = light (default when OS uses light
+mode), `.dark` = dark (default when OS uses dark mode, and the product's
+primary/signature mood). Components always reference Tailwind utilities or
+CSS variables — never raw hex. A new token must be defined for **both** themes.
 
-- **`background` `#0a0b0d`** — the page. Used only on the outermost `<body>`
-  and on landing sections that visually "extend" the page.
-- **`surface` `#111316`** — the default card, sidebar, dialog. Anything that
-  the user is asked to read content out of.
-- **`surface-2` `#16191d`** — one tier in: form inputs' parent panel, tab
-  list, hover state on rows, KPI tiles inside the landing console preview.
-- **`surface-3` `#1b1e23`** — form inputs themselves; the deepest "the user
-  is editing something" tier.
-- **`border` `#23262b`** — the universal hairline. Use it for every card,
-  input, table row separator, section divider.
-- **`border-strong` `#2e3239`** — emphasis border (rare; used on focus-ring
-  offset).
-- **`foreground` `#eceef1`** — body text, headings.
-- **`muted-foreground` `#9097a1`** — secondary text, sidebar nav labels,
-  table column headers, helper text under inputs.
-- **`faint` `#5c636d`** / **`dim` `#43484f`** — for "almost invisible" labels.
-  `dim` powers the `cancelled` status dot in `<DotStatus>` and similar
-  end-state markers. Don't use for any text the user actually has to read.
-- **`accent` `#7be38b`** — primary action color. Buttons (default variant),
-  active sidebar item, switch-on state, brand square, hero emphasis word.
-  Never use as a background for blocks of text.
-- **`accent-foreground` `#0a0b0d`** — the dark text that goes on top of
-  `accent`-tinted surfaces. Always use this pair together.
-- **Semantic**: `success #4ade80`, `warn #f5b544`, `danger #f87171`,
-  `info #7ab7ff`. All four are exposed as background tints (`/10`),
-  borders (`/40`), and full color for text. The pattern is identical
-  across the four — pick by meaning, not by color.
-- **Provider brand colors** (`openai`, `anthropic`, `gemini`, `xai`, `veo`,
-  `apimart`, `deepseek`): used **only** in the `ProviderTag` component and the
-  `TypeBadge` for the `multimodal` modality. They are not for general use —
-  reaching for them outside those two components is a smell.
+### Dark theme palette
+
+The dark palette is a near-black base with a single warm green accent. All
+semantic status colors are desaturated enough to coexist on the same dark
+background without one stealing the eye.
+
+| Token | Value | Role |
+|:--|:--|:--|
+| `background` | `#0a0b0d` | Page. Outermost `<body>` and landing sections that visually "extend" the page. |
+| `surface` | `#111316` | Default card, sidebar, dialog — anything the user reads content out of. |
+| `surface-2` | `#16191d` | One tier in: form inputs' parent panel, tab list, hover state on rows. |
+| `surface-3` | `#1b1e23` | Form inputs themselves; the deepest "user is editing something" tier. |
+| `border` | `#2b2f35` | The universal hairline: every card, input, table row separator, section divider. |
+| `border-strong` | `#2e3239` | Emphasis border. Also used on the sidebar right edge. |
+| `border-soft` | `#1b1e22` | Subtle inner dividers. |
+| `foreground` | `#eceef1` | Body text, headings. |
+| `muted-foreground` | `#a2a9b4` | Secondary text, table column headers, helper text under inputs. |
+| `faint` | `#6c727c` | Near-invisible labels. Don't use for text the user must read. |
+| `dim` | `#565c64` | "Almost invisible" — powers the `cancelled` dot in `<DotStatus>` and similar end-state markers. |
+| `accent` | `#7be38b` | Primary action color. Buttons, active sidebar item, switch-on state, brand square. |
+| `accent-dim` | `#4f9e5c` | Subdued accent tint. |
+| `accent-foreground` | `#0a0b0d` | Text on `accent`-tinted surfaces. Always use this pair together. |
+| `success` | `#4ade80` | Success state. |
+| `warn` | `#f5b544` | Warning state. |
+| `danger` | `#f87171` | Destructive / error state. |
+| `info` | `#7ab7ff` | Informational state. |
+| `xai` (dark override) | `#b8b8b8` | xAI brand dot in dark mode. |
+| `apimart` (dark override) | `#7be38b` | APIMart brand dot in dark mode (same as `accent`). |
+
+### Light theme palette
+
+The light palette is a near-white base tuned for WCAG AA contrast, with a deep
+forest-green accent that meets contrast requirements against white/light
+surfaces.
+
+| Token | Value | Role |
+|:--|:--|:--|
+| `background` | `#f6f7f8` | Page. |
+| `surface` | `#ffffff` | Default card, sidebar, dialog. |
+| `surface-2` | `#f0f1f3` | One tier in: tab list, hover state on rows. |
+| `surface-3` | `#e7e9ec` | Form inputs. |
+| `border` | `#e3e5e9` | Universal hairline. |
+| `border-strong` | `#cbcfd5` | Emphasis border and sidebar right edge. |
+| `border-soft` | `#eef0f2` | Subtle inner dividers. |
+| `foreground` | `#1a1c1f` | Body text, headings. |
+| `muted-foreground` | `#585d66` | Secondary text, table column headers, helper text. |
+| `faint` | `#868c95` | Near-invisible labels. |
+| `dim` | `#a9aeb6` | End-state markers (`cancelled`, etc.). |
+| `accent` | `#1a7a2e` | Primary action color (deep forest green, WCAG AA on white). |
+| `accent-dim` | `#145c22` | Subdued accent tint. |
+| `accent-foreground` | `#ffffff` | Text on `accent`-tinted surfaces. Always use this pair together. |
+| `success` | `#1a7a2e` | Success state (same hue as `accent` in light mode). |
+| `warn` | `#9a6500` | Warning state. |
+| `danger` | `#c02c2c` | Destructive / error state. |
+| `info` | `#1c60b0` | Informational state. |
+| `xai` | `#6b7280` | xAI brand dot in light mode (darker for contrast). |
+| `apimart` | `#1a7a2e` | APIMart brand dot in light mode (same as `accent`). |
+
+Note that `accent` and `accent-foreground` differ between themes: dark uses
+`#7be38b` + `#0a0b0d` (bright green on near-black); light uses `#1a7a2e` +
+`#ffffff` (deep green on white). Always use the pair together via the Tailwind
+utilities `bg-accent` / `text-accent-foreground`.
+
+The provider brand colors `openai`, `anthropic`, `gemini`, `veo`, and `deepseek`
+are the same in both themes. `xai` and `apimart` have per-theme overrides in
+`.dark` (see table above). All provider colors are used **only** in the
+`ProviderTag` component and the `TypeBadge` for the `multimodal` modality —
+reaching for them outside those two components is a smell.
 
 ### Color rules
 
@@ -258,7 +299,13 @@ without one stealing the eye.
    than hand-picked rgba. This keeps the tint in lockstep with the base
    token if it ever changes.
 3. **Pair accent with `accent-foreground`.** Never put `foreground` on
-   `accent` — the contrast goes wrong because `accent-foreground` is dark.
+   `accent` — the contrast goes wrong. `accent-foreground` is dark
+   (`#0a0b0d`) in the dark theme and light (`#ffffff`) in the light theme;
+   using the token pair ensures correctness in both.
+4. **Adding a new token means defining it in both `:root` and `.dark`.** A
+   token defined only in `:root` will be missing in the dark theme (it will
+   resolve as `initial`); one defined only in `.dark` will be missing in
+   light mode.
 
 ## Typography
 
@@ -424,6 +471,7 @@ hand-written set. **Don't run `shadcn` CLI** — see CLAUDE.md.
 | `Shell` + `PageHeader` | `components/shell.tsx` | The workspace/admin layout. `PageHeader` carries `title` + optional `actions`. **Subtitles are removed** — see Do's/Don'ts. |
 | `BrandMark` | `components/brand-mark.tsx` | The accent-green "R" square. Used in shell, landing nav, landing footer. Don't reimplement. |
 | `LanguageSwitcher` | `components/language-switcher.tsx` | The `EN / 中文` pill. Lives in shell footer and landing header. |
+| `ThemeSwitcher` | `components/theme-switcher.tsx` | The three-way `系统 / 亮 / 暗` (System / Light / Dark) theme control. Lives in the sidebar user Popover and the landing header. Mirrors `LanguageSwitcher` in structure. Takes only a `className` prop — there is no `compact` variant. |
 | `KpiStrip` | `components/kpi-strip.tsx` | Edge-to-edge KPI strip on dashboard / billing / admin overview. `<KpiStrip cols?={3\|4\|5} items={[{ label, value, hint?, onClick?, title? }, …]} />` — 4-up default, dashboard uses `cols={5}`. Value rendered via `.kpi-strip-value` (22px mono). Use it; do not hand-roll a card-bounded KPI grid. |
 | `EmptyState` | `components/empty-state.tsx` | Any "no data yet" surface — table row (`colSpan` cell), list, or panel. `<EmptyState icon? title hint? action? />`. Replaces hand-rolled `text-center text-muted-foreground py-8` blocks. |
 | `TypeBadge` | `components/type-badge.tsx` | The `TXT / IMG / VID / MUL` modality pill. **Stays uppercase** (these are 3-letter abbreviations) — the one explicit exception to the lowercase-label rule. `text-[9px] leading-4`, `h-2.5 w-2.5` icon. |
@@ -574,13 +622,25 @@ a bespoke CSS keyframe or a separate `<Spinner>` primitive.
 
 ## Implementation pointers
 
-- All tokens live in `frontend/src/index.css` under `:root` + `@theme inline`.
+- Tokens live in `frontend/src/index.css` split into three blocks: `:root`
+  (light theme base values), `.dark` (dark theme base values), and a shared
+  `:root, .dark` block of derived tokens that reference the base values via
+  `var()`. The derived block resolves correctly against whichever theme is
+  active. All three blocks are exported into Tailwind via `@theme inline`.
+- Theme state is managed by `ThemeProvider` / `useTheme` in
+  `src/lib/theme.tsx`. Preference (`"system" | "light" | "dark"`) is
+  persisted in `localStorage["theme"]`; `"system"` is the default and
+  follows `prefers-color-scheme`.
+- A pre-paint script at `public/theme-boot.js` applies the `.dark` class (or
+  removes it) before the React tree mounts, preventing a flash of the wrong
+  theme on load.
 - All primitives live in `frontend/src/components/ui/` and are hand-written.
 - Tailwind v4 — class names like `bg-accent`, `text-muted-foreground`,
   `bg-surface-2` map directly to the tokens above. No `tailwind.config.js`
   customization beyond `@theme inline`.
-- When adding a new token: define it in `:root`, re-expose under `@theme
-  inline`, and document it here.
+- When adding a new token: define it in **both** `:root` and `.dark`, then
+  re-expose under `@theme inline`, and document it here under the
+  appropriate palette table.
 - When adding a new component: add to `components/ui/` if it's a primitive
   (used by 3+ pages), or `components/` if it's a composite of primitives.
   Document it under "Components" in this file.
