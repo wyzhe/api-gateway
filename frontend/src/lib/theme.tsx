@@ -62,7 +62,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   const resolved = resolveTheme(preference, systemDark);
 
-  // Apply the resolved theme to <html>.
+  // Keep <html>'s class synced as the theme changes at runtime; the boot
+  // script (public/theme-boot.js) is what sets it for the initial load.
   useEffect(() => {
     if (typeof document === "undefined") return;
     document.documentElement.classList.toggle("dark", resolved === "dark");

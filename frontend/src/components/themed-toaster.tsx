@@ -1,7 +1,6 @@
 import { Toaster } from "sonner";
 import { useTheme } from "@/lib/theme";
 
-/** sonner Toaster that follows the active Relay theme. */
 export function ThemedToaster() {
   const { resolved } = useTheme();
   return (
