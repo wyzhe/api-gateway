@@ -144,7 +144,7 @@ Relay 前端目前是**刻意的 dark-only 操作台**（见 `DESIGN.md` 与 `CL
 - 三态文字 pill：`系统 · 亮 · 暗`（用 `·` 分隔，与 `LanguageSwitcher` 一致）。
 - 读 `useTheme()`，点击调 `setPreference`。
 - `aria-pressed` 标记当前 preference；选中态 `text-foreground font-medium`，其余 `text-muted-foreground hover:text-foreground`；带 `transition-colors` 与 focus ring。
-- 接受 `className` 与 `compact`（紧凑态可用更短标签，如 `系统 · 浅 · 深` 或图标——实现时定）。
+- 接受 `className`。**不引入 `LanguageSwitcher` 那种 `compact` 简写态**——主题三态标签（`系统 · 亮色 · 暗色` / `System · Light · Dark`）本就短，且英文无自然的超短缩写（不像 `中文→中`），硬加简写反而难看。侧边栏 Popover 行能否容纳全标签，在 Task 8 QA 用浏览器实际核对；若 EN 标签溢出再处理。
 - 文案走 i18n，不硬编码。
 
 ## 8. 接入点
@@ -155,7 +155,7 @@ Relay 前端目前是**刻意的 dark-only 操作台**（见 `DESIGN.md` 与 `CL
 | `frontend/src/main.tsx` | 在 `LanguageProvider` 外层（或相邻）包 `ThemeProvider`；`Toaster` 的写死 `theme="dark"` 改为读 `useTheme().resolved` |
 | `frontend/src/lib/theme.tsx` | **新建**，`ThemeProvider` / `useTheme` |
 | `frontend/src/components/theme-switcher.tsx` | **新建** |
-| `frontend/src/components/shell.tsx` | 用户 Popover 内加"主题"行（仿"语言"行，放 `ThemeSwitcher compact`）；侧边栏对比度修复（第 6.2 节） |
+| `frontend/src/components/shell.tsx` | 用户 Popover 内加"主题"行（仿"语言"行，放 `ThemeSwitcher`）；侧边栏对比度修复（第 6.2 节） |
 | `frontend/src/pages/landing.tsx` | 头部 `LanguageSwitcher` 旁加 `ThemeSwitcher` |
 | `frontend/src/index.css` | 第 4.4 + 5 + 6 节的 token 改造 |
 
