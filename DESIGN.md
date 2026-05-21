@@ -7,7 +7,7 @@ description: >
   mood) — terminal-adjacent, high information density, monospaced where it
   earns its keep. Aesthetically closer to a developer log viewer
   (Vercel/Linear/Stripe internal tools) than to a consumer SaaS.
-colors:
+colors: # dark theme values; the light palette is in the "## Colors" section
   background: "#0a0b0d"
   surface: "#111316"
   surface-2: "#16191d"
@@ -236,7 +236,7 @@ background without one stealing the eye.
 | `border-strong` | `#2e3239` | Emphasis border. Also used on the sidebar right edge. |
 | `border-soft` | `#1b1e22` | Subtle inner dividers. |
 | `foreground` | `#eceef1` | Body text, headings. |
-| `muted-foreground` | `#a2a9b4` | Secondary text, table column headers, helper text under inputs. |
+| `muted-foreground` | `#a2a9b4` | Secondary text, sidebar nav group labels, table column headers, helper text under inputs. |
 | `faint` | `#6c727c` | Near-invisible labels. Don't use for text the user must read. |
 | `dim` | `#565c64` | "Almost invisible" — powers the `cancelled` dot in `<DotStatus>` and similar end-state markers. |
 | `accent` | `#7be38b` | Primary action color. Buttons, active sidebar item, switch-on state, brand square. |
@@ -268,7 +268,7 @@ surfaces.
 | `muted-foreground` | `#585d66` | Secondary text, table column headers, helper text. |
 | `faint` | `#868c95` | Near-invisible labels. |
 | `dim` | `#a9aeb6` | End-state markers (`cancelled`, etc.). |
-| `accent` | `#1a7a2e` | Primary action color (deep forest green, WCAG AA on white). |
+| `accent` | `#1a7a2e` | Primary action color. Buttons, active sidebar item, switch-on state, brand square (deep forest green, WCAG AA on white). |
 | `accent-dim` | `#145c22` | Subdued accent tint. |
 | `accent-foreground` | `#ffffff` | Text on `accent`-tinted surfaces. Always use this pair together. |
 | `success` | `#1a7a2e` | Success state (same hue as `accent` in light mode). |
