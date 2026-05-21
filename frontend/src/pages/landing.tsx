@@ -98,7 +98,7 @@ function ConsolePreview() {
         ].map(([value, label]) => (
           <div key={value} className="p-4 border-b sm:border-b-0 sm:border-r border-border last:border-r-0 last:border-b-0">
             <div className="text-lg font-semibold mono">{value}</div>
-            <div className="mt-1 text-xs text-faint">{label}</div>
+            <div className="mt-1 text-xs text-muted-foreground">{label}</div>
           </div>
         ))}
       </div>
@@ -213,7 +213,7 @@ export function LandingPage() {
             <a href="#capabilities" className="hover:text-foreground">{t("landing.nav.capabilities")}</a>
             <a href="#quickstart" className="hover:text-foreground">{t("landing.nav.quickstart")}</a>
           </nav>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 sm:gap-2">
             <ThemeSwitcher />
             <LanguageSwitcher />
             <PrimaryCta className="min-w-[96px]" />
