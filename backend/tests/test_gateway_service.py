@@ -48,3 +48,15 @@ def test_non_dict_response_is_not_persisted():
     """A non-dict/list response body (e.g. a raw string) is stored as None."""
     _req, resp = _payloads_for_log("image", {"prompt": "x"}, "raw string body")
     assert resp is None
+
+
+def test_image_request_payload_is_redacted():
+    """The non-text path runs redact() — secret-bearing keys must not survive
+    into a stored request payload (project invariant: no secrets in logs)."""
+    req, _resp = _payloads_for_log(
+        "image",
+        {"model": "gpt-image-2", "api_key": "sk-secret-value"},
+        {"task_id": "task_1"},
+    )
+    assert req["api_key"] == "***redacted***"
+    assert req["model"] == "gpt-image-2"
