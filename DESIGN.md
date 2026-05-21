@@ -146,7 +146,7 @@ components:
   dot-status:
     note: "6px colored dot + lowercase label. Replaces Badge for request/task lifecycle status."
   kpi-strip:
-    note: "Edge-to-edge horizontal strip. grid-cols-2 md:grid-cols-4 (cols={5} → grid-cols-2 md:grid-cols-3 lg:grid-cols-5), border-b border-border under the row, each cell py-5 pr-5, cells separated by md:border-r border-border. No outer card border. Value uses kpi-strip-value typography."
+    note: "Edge-to-edge horizontal strip. Outer div border-b border-border mb-6; inner grid -mx-5 with grid-cols-2 md:grid-cols-4 (cols={5} → grid-cols-2 md:grid-cols-3 lg:grid-cols-5). Each cell py-5 px-5 — the grid's -mx-5 cancels the px-5 at the strip edges so edge cells stay flush with the page gutter. Cells separated by md:border-r border-border. No outer card border. Value uses kpi-strip-value typography."
   empty-state:
     note: "py-10 px-4 flex-col items-center text-center. Icon (optional, h-6 w-6 text-faint), title (text-sm muted-foreground), hint (text-xs faint), action slot. Use inside <TableCell colSpan=N> or in panel. Replaces hand-rolled 'text-center text-muted-foreground py-8' blocks."
   tabs-list:
@@ -319,10 +319,13 @@ Density rules. The viewport is treated as a workspace, not a canvas.
   `px-3 py-1.5` cells. Sticky header is not used; "show me everything" is
   the default. Row action icon groups are `opacity-50` at rest and
   `opacity-100` on `group-hover` / keyboard focus.
-- **KPI strip** = `<KpiStrip items={[…]} />` (`grid-cols-2 md:grid-cols-4
-  border-b border-border mb-6`; `cols={5}` → `grid-cols-2 md:grid-cols-3
-  lg:grid-cols-5`). Edge-to-edge — no outer card border.
-  Each cell `py-5 pr-5`, separated by `md:border-r border-border`. Value
+- **KPI strip** = `<KpiStrip items={[…]} />`. Outer div `border-b
+  border-border mb-6`; inner `grid -mx-5` with `grid-cols-2 md:grid-cols-4`
+  (`cols={5}` → `grid-cols-2 md:grid-cols-3 lg:grid-cols-5`). Edge-to-edge —
+  no outer card border; the inner `-mx-5` cancels each cell's `px-5` so edge
+  cells stay flush with the page gutter while interior dividers keep even
+  padding on both sides.
+  Each cell `py-5 px-5`, separated by `md:border-r border-border`. Value
   uses the `kpi-strip-value` typography (22px mono, semibold). Label
   `text-xs text-muted-foreground`. Four KPIs is the default; `cols`
   accepts `3 | 4 | 5` (the dashboard uses 5). A cell becomes a focusable
