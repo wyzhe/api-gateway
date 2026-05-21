@@ -151,7 +151,7 @@ export function Shell({ children }: { children: ReactNode }) {
               </div>
               <div className="flex items-center justify-between px-2 py-1.5 text-[13px] text-muted-foreground">
                 <span>{t("nav.language")}</span>
-                <LanguageSwitcher compact />
+                <LanguageSwitcher />
               </div>
               <button
                 type="button"
