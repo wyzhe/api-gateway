@@ -24,6 +24,9 @@ function readStoredPreference(): ThemePreference {
 }
 
 function systemPrefersDark(): boolean {
+  // No window / matchMedia (SSR, very old browsers, some test envs): default to
+  // dark. Deliberate — dark is the product default, and it matches the fallback
+  // in public/theme-boot.js (whose catch block keeps the authored class="dark").
   if (typeof window === "undefined" || !window.matchMedia) return true;
   return window.matchMedia(MEDIA_QUERY).matches;
 }
