@@ -36,8 +36,8 @@
 
 | 函数 | 行 | 用途 | payload 来源 |
 |---|---|---|---|
-| `persist_success` | 243-318 | 同步成功、流式完成、异步任务最终成功 | `request_payload_json=redact(request_payload)`（302）、`response_payload_json=response_payload`（303） |
-| `persist_failure` | 321-363 | 任何阶段失败 | 同上（354-355） |
+| `persist_success` | 243-318 | 文本请求成功——4 个调用点全在 `gateway.py`（`/v1/chat/completions`、`/v1/messages` 的同步与流式分支），**实际只服务文本** | `request_payload_json=redact(request_payload)`（302）、`response_payload_json=response_payload`（303） |
+| `persist_failure` | 321-363 | 任何阶段失败——文本失败在 `gateway.py`，图片/视频提交失败在 `submit_async_task`（475/488/501） | 同上（354-355） |
 | `persist_queued_task` | 366-423 | 图片/视频异步提交 | 同上（403-404）——**图片/视频专用** |
 
 两个相关函数签名里都已有 `request_type: str` 参数（`persist_success` 第 250 行、`persist_failure` 第 328 行），并据此写入 `RequestLog.request_type`。`RequestType` 枚举（`backend/app/enums.py`，`TEXT="text" / IMAGE="image" / VIDEO="video"`）已在 `gateway_service.py` 内导入。
@@ -87,7 +87,7 @@ response_payload_json=(
 
 要点：
 
-- 判断只认 `RequestType.TEXT`；`image` / `video` 走 `else` 分支，行为与现在完全一致。
+- 判断只认 `RequestType.TEXT`。`persist_success` 实际只被文本请求调用（4 个调用点均为 chat/messages），`else` 分支为防御性保留；`persist_failure` 还会被图片/视频的提交失败路径调用（`submit_async_task` 内 3 处），`else` 分支保持图片/视频行为不变。
 - 流式文本：标记对象经 `persist_success` 落库，被同一判断归 `None`——无信息损失（token 数在专用列、`usage_source` 在专用列、估算标记在 `error_message`）。
 - `persist_queued_task`（图片/视频专用）不改。
 - `redact` 仍被图片/视频分支使用，import 保留。
