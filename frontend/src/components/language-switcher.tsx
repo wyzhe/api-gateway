@@ -1,48 +1,42 @@
-import { Fragment } from "react";
-import type { Lang } from "@/lib/i18n";
-import { useLang } from "@/lib/i18n";
+import { useLang, useT, type Lang } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
-const OPTIONS: ReadonlyArray<readonly [Lang, string, string]> = [
-  ["en", "EN", "EN"],
-  ["zh", "中文", "中"],
+const OPTIONS: ReadonlyArray<readonly [Lang, string]> = [
+  ["en", "EN"],
+  ["zh", "中文"],
 ];
 
-export function LanguageSwitcher({
-  className,
-  compact = false,
-}: {
-  className?: string;
-  compact?: boolean;
-}) {
+export function LanguageSwitcher({ className }: { className?: string }) {
   const { lang, setLang } = useLang();
+  const t = useT();
   return (
     <div
       className={cn(
-        "inline-flex shrink-0 items-center gap-1 text-[11px]",
+        "inline-flex h-7 shrink-0 items-center rounded-md border border-border bg-surface-2 p-0.5",
         className,
       )}
       role="group"
-      aria-label="Language"
+      aria-label={t("nav.language")}
     >
-      {OPTIONS.map(([code, label, shortLabel], i) => (
-        <Fragment key={code}>
-          {i > 0 && <span className="text-faint" aria-hidden>·</span>}
+      {OPTIONS.map(([code, label]) => {
+        const active = lang === code;
+        return (
           <button
+            key={code}
             type="button"
             onClick={() => setLang(code)}
-            aria-pressed={lang === code}
+            aria-pressed={active}
             className={cn(
-              "whitespace-nowrap transition-colors px-0.5 rounded-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-              lang === code
-                ? "text-foreground font-medium"
+              "inline-flex h-6 items-center justify-center whitespace-nowrap rounded-sm px-2 text-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+              active
+                ? "bg-surface text-foreground"
                 : "text-muted-foreground hover:text-foreground",
             )}
           >
-            {compact ? shortLabel : label}
+            {label}
           </button>
-        </Fragment>
-      ))}
+        );
+      })}
     </div>
   );
 }
