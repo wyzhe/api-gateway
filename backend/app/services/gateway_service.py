@@ -407,6 +407,7 @@ def persist_queued_task(
     """
     from ..models import VideoTask
 
+    req_json, resp_json = _payloads_for_log(request_type, request_payload, response_payload)
     log_row = RequestLog(
         user_id=user.id,
         api_key_id=api_key.id,
@@ -421,8 +422,8 @@ def persist_queued_task(
         http_status=http_status,
         request_id=request_id,
         upstream_request_id=upstream_request_id or upstream_task_id,
-        request_payload_json=redact(request_payload),
-        response_payload_json=response_payload if isinstance(response_payload, (dict, list)) else None,
+        request_payload_json=req_json,
+        response_payload_json=resp_json,
         unit_price_snapshot_json=cost_service.price_snapshot(model),
     )
     db.add(log_row)
