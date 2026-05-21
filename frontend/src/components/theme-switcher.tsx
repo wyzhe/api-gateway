@@ -25,13 +25,14 @@ export function ThemeSwitcher({ className }: { className?: string }) {
     >
       {OPTIONS.map(([value, labelKey, Icon]) => {
         const active = preference === value;
+        const label = t(labelKey);
         return (
-          <Tooltip key={value} content={t(labelKey)}>
+          <Tooltip key={value} content={label}>
             <button
               type="button"
               onClick={() => setPreference(value)}
               aria-pressed={active}
-              aria-label={t(labelKey)}
+              aria-label={label}
               className={cn(
                 "inline-flex h-6 w-6 items-center justify-center rounded-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
                 active
