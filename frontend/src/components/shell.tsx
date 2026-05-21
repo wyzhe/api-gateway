@@ -75,7 +75,7 @@ export function Shell({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex h-screen overflow-hidden">
-      <aside className="w-56 shrink-0 border-r border-border bg-surface flex flex-col">
+      <aside className="w-56 shrink-0 border-r border-border-strong bg-surface flex flex-col">
         <div className="px-3 py-2.5">
           <Tooltip content={t("nav.toLanding")}>
             <Link to="/" className="flex items-center gap-2">
@@ -190,7 +190,7 @@ function NavItemLink({ item }: { item: NavItem }) {
           "relative flex items-center gap-2 px-2 py-1 rounded-md text-[13px]",
           isActive
             ? "bg-surface-2 text-foreground before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-0.5 before:bg-accent before:rounded-r-sm"
-            : "text-muted-foreground hover:text-foreground hover:bg-surface-2",
+            : "text-foreground/70 hover:text-foreground hover:bg-surface-2",
         )
       }
     >
