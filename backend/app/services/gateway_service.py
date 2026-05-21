@@ -240,6 +240,25 @@ def mark_key_used(db: Session, api_key: ApiKey) -> None:
 # ---------------- Persist helpers ----------------
 
 
+def _payloads_for_log(
+    request_type: str,
+    request_payload: dict[str, Any] | list | None,
+    response_payload: dict[str, Any] | list | None,
+) -> tuple[Any, Any]:
+    """Decide the (request, response) JSON to store on a request_log row.
+
+    Text logs persist neither: the prompt/answer is the dominant request_logs
+    bloat source and carries no billing/audit value. Image/video logs keep
+    both — task_service backfills cost params (n, duration) from the request.
+    """
+    if request_type == RequestType.TEXT:
+        return None, None
+    return (
+        redact(request_payload),
+        response_payload if isinstance(response_payload, (dict, list)) else None,
+    )
+
+
 def persist_success(
     db: Session,
     *,
@@ -278,6 +297,7 @@ def persist_success(
         note_parts.append("pricing_missing=true")
     elif usage_source == "estimated":
         note_parts.append("pricing_estimated=true")
+    req_json, resp_json = _payloads_for_log(request_type, request_payload, response_payload)
     log_row = RequestLog(
         user_id=user.id,
         api_key_id=api_key.id,
@@ -299,8 +319,8 @@ def persist_success(
         http_status=http_status,
         request_id=request_id,
         upstream_request_id=upstream_request_id,
-        request_payload_json=redact(request_payload),
-        response_payload_json=response_payload if isinstance(response_payload, (dict, list)) else None,
+        request_payload_json=req_json,
+        response_payload_json=resp_json,
         asset_url=asset_url,
         unit_price_snapshot_json=cost_service.price_snapshot(model),
         usage_source=usage_source,
@@ -336,6 +356,7 @@ def persist_failure(
     upstream_request_id: str | None = None,
 ) -> RequestLog:
     """No debit on failure. Just write the log."""
+    req_json, resp_json = _payloads_for_log(request_type, request_payload, response_payload)
     log_row = RequestLog(
         user_id=user.id,
         api_key_id=api_key.id,
@@ -351,8 +372,8 @@ def persist_failure(
         upstream_request_id=upstream_request_id,
         error_code=error_code,
         error_message=error_message,
-        request_payload_json=redact(request_payload),
-        response_payload_json=response_payload if isinstance(response_payload, (dict, list)) else None,
+        request_payload_json=req_json,
+        response_payload_json=resp_json,
         unit_price_snapshot_json=cost_service.price_snapshot(model) if model else None,
     )
     db.add(log_row)
