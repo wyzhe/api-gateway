@@ -4,6 +4,8 @@
 (function () {
   try {
     var pref = localStorage.getItem("theme"); // "system" | "light" | "dark" | null
+    // Normalize unknown/garbage values to system, matching readStoredPreference().
+    if (pref !== "dark" && pref !== "light" && pref !== "system") pref = null;
     var systemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
     var dark = pref === "dark" || ((pref === "system" || !pref) && systemDark);
     document.documentElement.classList.toggle("dark", dark);
