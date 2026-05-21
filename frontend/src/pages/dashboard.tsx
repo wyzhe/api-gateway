@@ -4,7 +4,6 @@ import { KpiStrip } from "@/components/kpi-strip";
 import { EmptyState } from "@/components/empty-state";
 import { SectionHeading } from "@/components/section-heading";
 import { DotStatus } from "@/components/dot-status";
-import { LogDetailDrawer, useLogDetail } from "@/components/log-detail-drawer";
 import { TypeBadge } from "@/components/type-badge";
 import { PageHeader } from "@/components/shell";
 import { UsageTrends } from "@/components/usage-trends";
@@ -29,7 +28,6 @@ type DashboardOut = {
 
 export function DashboardPage() {
   const [data, setData] = useState<DashboardOut | null>(null);
-  const detail = useLogDetail();
   const nav = useNavigate();
   const t = useT();
 
@@ -94,8 +92,7 @@ export function DashboardPage() {
               {data?.recent_logs.slice(0, 10).map((r) => (
                 <li
                   key={r.id}
-                  onClick={() => detail.open(r.id)}
-                  className="px-2 py-2 flex items-center gap-3 text-xs cursor-pointer hover:bg-surface-2"
+                  className="px-2 py-2 flex items-center gap-3 text-xs"
                 >
                   <TypeBadge type={r.request_type} />
                   <span className="mono text-foreground">{r.model_name || r.upstream_model}</span>
@@ -130,8 +127,6 @@ export function DashboardPage() {
           </section>
         </div>
       </div>
-
-      <LogDetailDrawer log={detail.selected} onClose={detail.close} />
     </div>
   );
 }

@@ -10,7 +10,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { LogDetailDrawer, useLogDetail } from "@/components/log-detail-drawer";
 import { DotStatus } from "@/components/dot-status";
 import { EmptyState } from "@/components/empty-state";
 import { TypeBadge } from "@/components/type-badge";
@@ -28,7 +27,6 @@ export function UsageLogsPage() {
   const [status, setStatus] = useState<string>(params.get("status") ?? "__all__");
   const [model, setModel] = useState<string>(params.get("model") ?? "");
   const apiKeyId = params.get("api_key_id");
-  const detail = useLogDetail();
 
   const refresh = async () => {
     const qs = new URLSearchParams({ limit: "200" });
@@ -100,11 +98,7 @@ export function UsageLogsPage() {
               </TableRow>
             )}
             {rows.map((r) => (
-              <TableRow
-                key={r.id}
-                onClick={() => detail.open(r.id)}
-                className="cursor-pointer"
-              >
+              <TableRow key={r.id}>
                 <TableCell><TypeBadge type={r.request_type} /></TableCell>
                 <TableCell className="mono text-xs">{r.model_name || r.upstream_model}</TableCell>
                 <TableCell>
@@ -132,8 +126,6 @@ export function UsageLogsPage() {
           </TableBody>
         </Table>
       </div>
-
-      <LogDetailDrawer log={detail.selected} onClose={detail.close} />
     </div>
   );
 }
