@@ -132,6 +132,16 @@ def _compute_cost(
         duration: Decimal | None = (
             Decimal(str(duration_seconds)) if duration_seconds is not None else None
         )
+        # APIMart's task-status response omits the video duration, so when
+        # upstream reports none, fall back to the client-requested duration —
+        # otherwise a per-second-priced video would be billed $0.
+        if duration is None and isinstance(rlog.request_payload_json, dict):
+            requested = rlog.request_payload_json.get("duration")
+            if requested is not None:
+                try:
+                    duration = Decimal(str(requested))
+                except ArithmeticError:
+                    duration = None
         rlog.video_duration = duration
         return cost_service.calc_video_cost(model, duration)
     # image
