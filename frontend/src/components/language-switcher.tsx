@@ -1,5 +1,4 @@
-import type { Lang } from "@/lib/i18n";
-import { useLang } from "@/lib/i18n";
+import { useLang, useT, type Lang } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 const OPTIONS: ReadonlyArray<readonly [Lang, string]> = [
@@ -9,6 +8,7 @@ const OPTIONS: ReadonlyArray<readonly [Lang, string]> = [
 
 export function LanguageSwitcher({ className }: { className?: string }) {
   const { lang, setLang } = useLang();
+  const t = useT();
   return (
     <div
       className={cn(
@@ -16,7 +16,7 @@ export function LanguageSwitcher({ className }: { className?: string }) {
         className,
       )}
       role="group"
-      aria-label="Language"
+      aria-label={t("nav.language")}
     >
       {OPTIONS.map(([code, label]) => {
         const active = lang === code;
