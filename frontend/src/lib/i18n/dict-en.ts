@@ -79,6 +79,12 @@ export const en = {
     accountSettings: "Account settings",
     userMenu: "User menu",
     language: "Language",
+    theme: "Theme",
+  },
+  theme: {
+    system: "System",
+    light: "Light",
+    dark: "Dark",
   },
   login: {
     title: "Log in to Relay",

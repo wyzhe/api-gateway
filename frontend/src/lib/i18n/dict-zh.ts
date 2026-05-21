@@ -81,6 +81,12 @@ export const zh: EnDict = {
     accountSettings: "账号设置",
     userMenu: "用户菜单",
     language: "语言",
+    theme: "主题",
+  },
+  theme: {
+    system: "系统",
+    light: "亮色",
+    dark: "暗色",
   },
   login: {
     title: "登录 Relay",
