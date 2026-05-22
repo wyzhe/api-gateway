@@ -336,7 +336,7 @@ export const zh: EnDict = {
     curlLabel: "curl",
     videoPollingHint: "视频任务通常需要 1–3 分钟，页面会自动轮询结果。",
     assetExpiryNotice:
-      "图像与视频资源由 APIMart 托管，生成 3 天后会被自动删除，请及时下载保存。",
+      "图像与视频资源在生成 3 天后会被自动删除，请及时下载保存。",
     toastNeedApiKey: "请先在上方粘贴 API Key。",
     toastPickModel: "请选择一个模型。",
     toastStreamError: "流式请求失败",
@@ -401,7 +401,7 @@ export const zh: EnDict = {
     title: "生成记录",
     subtitle: "经网关生成的图像与视频结果。",
     assetExpiryNotice:
-      "图像与视频资源由 APIMart 托管，生成 3 天后会被自动删除，请及时下载保存。",
+      "图像与视频资源在生成 3 天后会被自动删除，请及时下载保存。",
     refreshBtn: "刷新",
     emptyTitle: "还没有生成记录。",
     emptyLink: "去 Playground 试一下 →",

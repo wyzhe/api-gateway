@@ -28,12 +28,12 @@ def test_retired_text_models_are_gone():
 
 def test_video_models_are_the_expected_set():
     video = {s["public_name"] for s in DEFAULT_MODELS if s["type"] == "video"}
-    assert video == {"veo3.1-fast", "grok-imagine-1.0-video-apimart"}
+    assert video == {"veo3.1-fast", "grok-imagine-1.0-video"}
 
 
 def test_retired_video_models_are_gone():
     names = {s["public_name"] for s in DEFAULT_MODELS}
-    for retired in ("veo3", "veo3.1", "grok-imagine-video"):
+    for retired in ("veo3", "veo3.1", "grok-imagine-video", "grok-imagine-1.0-video-apimart"):
         assert retired not in names
 
 
@@ -95,8 +95,8 @@ def test_video_models_use_official_per_second_prices():
     m = _by_name(DEFAULT_MODELS)
     assert m["veo3.1-fast"]["pricing_mode"] == "per_second"
     assert m["veo3.1-fast"]["video_second_price"] == Decimal("0.15")
-    assert m["grok-imagine-1.0-video-apimart"]["pricing_mode"] == "per_second"
-    assert m["grok-imagine-1.0-video-apimart"]["video_second_price"] == Decimal("0.05")
+    assert m["grok-imagine-1.0-video"]["pricing_mode"] == "per_second"
+    assert m["grok-imagine-1.0-video"]["video_second_price"] == Decimal("0.05")
 
 
 def test_chat_upstream_models_match_apimart_ids():
@@ -116,9 +116,9 @@ def test_video_display_and_upstream_names_match_spec():
     m = _by_name(DEFAULT_MODELS)
     assert m["veo3.1-fast"]["display_name"] == "veo3.1"
     assert m["veo3.1-fast"]["upstream_model"] == "veo3.1-fast"
-    assert m["grok-imagine-1.0-video-apimart"]["display_name"] == "grok-imagine"
+    assert m["grok-imagine-1.0-video"]["display_name"] == "grok-imagine"
     assert (
-        m["grok-imagine-1.0-video-apimart"]["upstream_model"]
+        m["grok-imagine-1.0-video"]["upstream_model"]
         == "grok-imagine-1.0-video-apimart"
     )
 
@@ -160,6 +160,7 @@ def test_retarget_on_boot_corrects_legacy_upstream():
         "nano-banana": "gemini-2.5-flash-image-preview",
         "nano-banana-pro": "gemini-3-pro-image-preview",
         "grok-imagine": "grok-imagine-1.0-apimart",
+        "grok-imagine-1.0-video": "grok-imagine-1.0-video-apimart",
     }
     # every retarget target must match the catalogue's own upstream_model
     m = _by_name(DEFAULT_MODELS)

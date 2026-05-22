@@ -25,7 +25,7 @@ log = get_logger(__name__)
 #
 # Status / visible default to active+visible. The grok-imagine *image* row is
 # the exception — seeded disabled (APIMart image support unconfirmed); an admin
-# can enable it later. The grok video row (grok-imagine-1.0-video-apimart) is active.
+# can enable it later. The grok video row (grok-imagine-1.0-video) is active.
 
 DEFAULT_MODELS: list[dict] = [
     # ------------ Text ------------
@@ -180,7 +180,8 @@ DEFAULT_MODELS: list[dict] = [
         "capabilities": {"durations": [4, 8], "aspect_ratios": ["16:9", "9:16"]},
     },
     {
-        "public_name": "grok-imagine-1.0-video-apimart",
+        # Public name kept clean; upstream_model is APIMart's actual video id.
+        "public_name": "grok-imagine-1.0-video",
         "upstream_model": "grok-imagine-1.0-video-apimart",
         "type": "video",
         "display_name": "grok-imagine",
@@ -309,8 +310,11 @@ def ensure_deepseek_models(db: Session, provider: Provider) -> None:
 
 
 # Rename map: old public_name -> new public_name. Existing FK rows keep working.
+# The rename also sets upstream_model = new; when the new public_name differs
+# from the upstream id, add a RETARGET_ON_BOOT entry to correct it back.
 RENAME_ON_BOOT: dict[str, str] = {
     "claude-sonnet-4.5": "claude-sonnet-4.6",
+    "grok-imagine-1.0-video-apimart": "grok-imagine-1.0-video",
 }
 
 # Retarget map: public_name -> correct upstream_model. Fixes already-seeded
@@ -323,6 +327,7 @@ RETARGET_ON_BOOT: dict[str, str] = {
     "nano-banana": "gemini-2.5-flash-image-preview",
     "nano-banana-pro": "gemini-3-pro-image-preview",
     "grok-imagine": "grok-imagine-1.0-apimart",
+    "grok-imagine-1.0-video": "grok-imagine-1.0-video-apimart",
 }
 
 # Names we want to keep in the DB (for log FK integrity) but mark disabled.

@@ -6,7 +6,6 @@ const PROVIDER_LABELS: Record<string, string> = {
   gemini: "Gemini",
   xai: "xAI · Grok",
   veo: "Google Veo",
-  apimart: "APIMart",
   deepseek: "DeepSeek",
 };
 
@@ -16,7 +15,6 @@ const PROVIDER_COLOR_VAR: Record<string, string> = {
   gemini: "var(--gemini)",
   xai: "var(--xai)",
   veo: "var(--veo)",
-  apimart: "var(--apimart)",
   deepseek: "var(--deepseek)",
 };
 
@@ -27,9 +25,9 @@ export function ProviderTag({
   provider: string | null | undefined;
   className?: string;
 }) {
-  const key = (provider || "apimart").toLowerCase();
+  const key = (provider || "").toLowerCase();
   const label = PROVIDER_LABELS[key] || provider || "—";
-  const color = PROVIDER_COLOR_VAR[key] || PROVIDER_COLOR_VAR.apimart;
+  const color = PROVIDER_COLOR_VAR[key] || "var(--muted-foreground)";
   return (
     <span
       className={cn(

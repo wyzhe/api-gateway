@@ -342,7 +342,7 @@ export const en = {
     videoPollingHint:
       "Video tasks typically take 1–3 minutes. The page polls automatically.",
     assetExpiryNotice:
-      "Generated images and videos are hosted by APIMart and are deleted 3 days after creation. Download and save anything you want to keep.",
+      "Generated images and videos are deleted 3 days after creation. Download and save anything you want to keep.",
     toastNeedApiKey: "Paste an API key above first.",
     toastPickModel: "Pick a model.",
     toastStreamError: "Stream error",
@@ -407,7 +407,7 @@ export const en = {
     title: "Generations",
     subtitle: "Image and video outputs from your gateway calls.",
     assetExpiryNotice:
-      "Generated images and videos are hosted by APIMart and are deleted 3 days after creation. Download and save anything you want to keep.",
+      "Generated images and videos are deleted 3 days after creation. Download and save anything you want to keep.",
     refreshBtn: "Refresh",
     emptyTitle: "No generations yet.",
     emptyLink: "Try the Playground →",
