@@ -532,12 +532,18 @@ async def submit_async_task(
         await release_reservation_fully(reservation)
         raise HTTPException(status_code=502, detail="Upstream did not return a task_id")
 
-    log_row, task_row = persist_queued_task(
-        db, user=user, api_key=api_key, provider=resolved.provider, model=resolved.model,
-        request_type=request_type.value, request_payload=payload, response_payload=resp.body,
-        upstream_request_id=resp.upstream_request_id, request_id=request_id,
-        latency_ms=latency_ms, http_status=resp.http_status, upstream_task_id=task_id,
-    )
+    try:
+        log_row, task_row = persist_queued_task(
+            db, user=user, api_key=api_key, provider=resolved.provider, model=resolved.model,
+            request_type=request_type.value, request_payload=payload, response_payload=resp.body,
+            upstream_request_id=resp.upstream_request_id, request_id=request_id,
+            latency_ms=latency_ms, http_status=resp.http_status, upstream_task_id=task_id,
+        )
+    except Exception:
+        # No task row was persisted, so finalize_task will never run and never
+        # reconcile this reservation — release it now or it leaks for 32 days.
+        await release_reservation_fully(reservation)
+        raise
     # Keep the reservation in place: actual debit will fire from finalize_task.
     # The reservation is intentionally NOT released here.
     # (The arq worker reconciles tasks on a schedule; the reservation TTL is 32d so we don't leak.)

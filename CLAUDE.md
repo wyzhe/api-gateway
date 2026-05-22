@@ -102,13 +102,9 @@ Do NOT add cross-provider fallback. If upstream is down, surface the error.
 
 We force `stream_options.include_usage=true` so APIMart's last OpenAI SSE chunk carries `usage`. The Anthropic Messages API delivers usage incrementally (`message_start` has `input_tokens`; `message_delta` updates `output_tokens`) — we accumulate the last seen values.
 
-If either protocol's usage block is missing, we **fall back to a pessimistic estimate**:
+If a streaming response's usage block is missing, we **count the actual relayed output** — the gateway proxied every SSE delta, so at stream end it joins the completion text and counts it with `token_estimator.count_text_tokens()` (model-appropriate tiktoken encoding); the prompt side reuses the pre-call tiktoken count. OpenAI counts `delta.content` + streamed tool-call arguments; Anthropic counts `content_block_delta` text. The log is marked `usage_source="estimated"` + `pricing_estimated=true` in `error_message` — here "estimated" means "gateway-counted, not from an upstream `usage` block," and the figure is accurate, not a pessimistic ceiling.
 
-- OpenAI: `estimate_chat_usage()` — tiktoken count of messages + `max_tokens` ceiling.
-- Anthropic: `estimate_anthropic_messages_usage()` — same tokenizer (over-estimate is acceptable for billing), plus the `system` field + tool definitions in the prompt count.
-- Mark the log with `usage_source="estimated"` and `pricing_estimated=true` in `error_message`.
-
-This guarantees no free service. The estimate is intentionally an upper bound: if actual usage arrives later (e.g. APIMart back-fills), the worker can call `billing_service.adjust_log_cost()` and refund the difference.
+The `max_tokens` ceiling (`estimate_chat_usage` / `estimate_anthropic_messages_usage` → `estimate_text_cost_upper_bound`) is still used — but **only** for the pre-call spend reservation against the monthly cap, never for the final bill. This guarantees no free service and no over-charge. (A non-streaming response that omits `usage` is the one remaining case that still bills the `max_tokens` ceiling — rare, and outside the streaming path.)
 
 ## Rate limiting
 
@@ -131,7 +127,7 @@ arq app.worker.WorkerSettings
 Jobs:
 - `finalize_task(task_id)`: locked finalize for one task. Idempotent — safe to enqueue many times.
 - `scan_pending_tasks()`: cron every 30s. Enqueues `finalize_task` for non-terminal tasks older than 15s.
-- `reconcile_stream_usage(log_id)`: stub for the post-hoc usage clawback described above.
+- `refresh_low_balance_gauge()`: cron. Refreshes the `users_with_low_balance` Prometheus gauge.
 
 A failed worker job is retried with exponential backoff. Worker job exceptions are logged via the same structlog pipeline.
 

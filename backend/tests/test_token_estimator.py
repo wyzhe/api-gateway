@@ -1,7 +1,30 @@
 """tiktoken-based pessimistic estimator. Pure-function, no DB/Redis needed."""
 from __future__ import annotations
 
-from app.services.token_estimator import count_message_tokens, estimate_chat_usage
+from app.services.token_estimator import (
+    count_message_tokens,
+    count_text_tokens,
+    estimate_chat_usage,
+)
+
+
+def test_count_text_tokens_counts_actual_text():
+    n = count_text_tokens("Hello, this is a short streamed reply.", "gpt-4o")
+    assert n > 0
+    # A short blob lands well under any max_tokens ceiling — that's the whole
+    # point of counting the streamed text instead of billing the ceiling.
+    assert n < 50
+
+
+def test_count_text_tokens_empty_is_zero():
+    assert count_text_tokens("", "gpt-4o") == 0
+    assert count_text_tokens(None, "gpt-4o") == 0  # type: ignore[arg-type]
+
+
+def test_count_text_tokens_scales_with_length():
+    short = count_text_tokens("one two three", "claude-sonnet-4.6")
+    long = count_text_tokens("one two three " * 100, "claude-sonnet-4.6")
+    assert long > short * 50
 
 
 def test_count_message_tokens_text_only():

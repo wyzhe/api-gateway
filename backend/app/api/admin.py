@@ -144,17 +144,20 @@ def create_user(
     )
     db.add(u)
     db.flush()
-    audit_service.record(
-        db, actor_user_id=admin.id, action="user.create", target_type="user", target_id=u.id,
-        before=None,
-        after={"email": u.email, "role": u.role, "display_name": u.display_name},
-        ip=_ip(request),
-    )
-    db.commit()
     if payload.initial_balance > 0:
         billing_service.recharge(
             db, u.id, payload.initial_balance, admin_id=admin.id, note="Initial balance"
         )
+    audit_service.record(
+        db, actor_user_id=admin.id, action="user.create", target_type="user", target_id=u.id,
+        before=None,
+        after={
+            "email": u.email, "role": u.role, "display_name": u.display_name,
+            "initial_balance": payload.initial_balance,
+        },
+        ip=_ip(request),
+    )
+    db.commit()
     db.refresh(u)
     return AdminUserOut.model_validate(u)
 
@@ -254,7 +257,7 @@ def recharge_user(
         txn = billing_service.recharge(db, user_id, payload.amount, admin.id, payload.note)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    # Audit in a follow-up transaction (recharge() commits).
+    # recharge() flushes; the audit row and the balance change commit together.
     audit_service.record(
         db, actor_user_id=admin.id, action="user.recharge", target_type="user", target_id=user_id,
         before=None, after={"amount": txn.amount, "note": payload.note}, ip=_ip(request),

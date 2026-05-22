@@ -123,3 +123,56 @@ def test_deepseek_models_seeded_under_deepseek_provider(db_session):
         row = db_session.query(ModelRow).filter(ModelRow.public_name == name).one()
         assert row.provider_id == deepseek.id
         assert row.type == "text"
+
+
+def test_stream_usage_missing_bills_actual_tokens(
+    client, user_api_key_funded, test_user_funded, monkeypatch, db_session
+):
+    """Streaming chat where upstream never sends a `usage` block: the gateway
+    must bill the *actual* relayed output (counted with tiktoken), not the
+    max_tokens ceiling."""
+    from app.providers.base import ProviderStreamChunk
+    from app.services import gateway_service
+    from app.models import RequestLog
+    from app.services.token_estimator import count_text_tokens
+
+    pieces = ["Hello, ", "this is a short ", "streamed reply with no usage block."]
+    full_text = "".join(pieces)
+
+    class _FakeProvider:
+        async def chat_completions_stream(self, payload):
+            for piece in pieces:
+                yield ProviderStreamChunk(
+                    raw_line=b"data: {}\n",
+                    parsed={"model": payload["model"], "choices": [{"delta": {"content": piece}}]},
+                )
+            yield ProviderStreamChunk(raw_line=b"data: [DONE]\n", parsed=None)
+
+    monkeypatch.setattr(gateway_service, "build_provider", lambda _provider: _FakeProvider())
+
+    r = client.post(
+        "/v1/chat/completions",
+        headers={"Authorization": f"Bearer {user_api_key_funded}"},
+        json={
+            "model": "claude-sonnet-4.6",
+            "messages": [{"role": "user", "content": "hi"}],
+            "stream": True,
+            "max_tokens": 4096,
+        },
+    )
+    assert r.status_code == 200
+    _ = r.text  # drain the stream so event_stream() persists the log
+
+    log = (
+        db_session.query(RequestLog)
+        .filter(RequestLog.user_id == test_user_funded.id, RequestLog.request_type == "text")
+        .order_by(RequestLog.id.desc())
+        .first()
+    )
+    assert log is not None
+    assert log.status == "success"
+    assert log.usage_source == "estimated"
+    expected = count_text_tokens(full_text, "claude-sonnet-4.6")
+    assert log.completion_tokens == expected
+    # The whole point: nowhere near the 4096 max_tokens ceiling.
+    assert log.completion_tokens < 100

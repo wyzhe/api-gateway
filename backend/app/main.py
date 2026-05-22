@@ -196,6 +196,13 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    # Drop the offending `input` value from each error: pydantic includes the
+    # raw input by default, which would echo secrets (e.g. a rejected password)
+    # straight back into the 422 response body.
+    safe_details = [
+        {"loc": e.get("loc"), "msg": e.get("msg"), "type": e.get("type")}
+        for e in exc.errors()
+    ]
     return JSONResponse(
         status_code=422,
         content={
@@ -203,7 +210,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
                 "message": "Validation failed",
                 "type": "validation_error",
                 "code": "validation_error",
-                "details": exc.errors(),
+                "details": safe_details,
             }
         },
     )

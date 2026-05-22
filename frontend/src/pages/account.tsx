@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/shell";
 import { Button } from "@/components/ui/button";
@@ -149,6 +150,7 @@ function PasswordCard() {
 function ConnectionsCard() {
   const { user } = useAuth();
   const t = useT();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [identities, setIdentities] = useState<OAuthIdentity[]>([]);
   const [providers, setProviders] = useState<OAuthProvidersStatus>({ google: false, github: false });
   const [loading, setLoading] = useState(true);
@@ -162,6 +164,24 @@ function ConnectionsCard() {
 
   useEffect(() => {
     void load();
+  }, []);
+
+  // The OAuth link callback redirects back here with ?linked= or ?error=.
+  useEffect(() => {
+    const linked = searchParams.get("linked");
+    const error = searchParams.get("error");
+    if (!linked && !error) return;
+    if (linked) {
+      toast.success(t("settings.connections.linkSuccess", { provider: linked }));
+    } else if (error === "provider_in_use") {
+      toast.error(t("settings.connections.linkErrInUse"));
+    } else {
+      toast.error(t("settings.connections.linkErrExpired"));
+    }
+    searchParams.delete("linked");
+    searchParams.delete("error");
+    setSearchParams(searchParams, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const canDetach = (id: OAuthIdentity): boolean => {

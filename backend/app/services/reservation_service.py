@@ -19,23 +19,43 @@ api_key per Redis TTL window (default 32 days).
 After the request resolves, `release()` decrements by (reservation − actual_cost)
 so the counter converges to true committed spend.
 
-Key naming: `ratelimit:mtd:{api_key_id}:{YYYYMM}`.
+Money never touches a float: the Redis counter holds an **integer** count of
+`1e-8`-dollar units (the scale of the `Numeric(18,8)` cost columns), mutated
+with the exact `INCRBY`/`DECRBY` commands. `INCRBYFLOAT` is IEEE-754 and would
+drift across repeated incr/decr — forbidden on the money path.
+
+Key naming: `ratelimit:mtd:v2:{api_key_id}:{YYYYMM}` (the `v2` segment isolates
+the integer-unit format from any legacy float-formatted counters, which simply
+expire on their own TTL).
 """
 from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from redis.asyncio import Redis
 
 _TTL_SECONDS = 32 * 24 * 3600
 
+# Counter unit: 1e-8 dollars — matches the scale of the Numeric(18,8) columns,
+# so every cost/limit converts to an integer with zero precision loss.
+_UNIT_SCALE = Decimal(10) ** 8
+
+
+def _to_units(amount: Decimal) -> int:
+    """Convert a dollar `Decimal` to an integer count of 1e-8-dollar units.
+
+    Amounts already quantized to ≤8 places convert exactly; an estimate carrying
+    more places (a token-price division can) is rounded to the nearest unit —
+    negligible against the cap and consistent with how costs are stored."""
+    return int((amount * _UNIT_SCALE).to_integral_value(rounding=ROUND_HALF_UP))
+
 
 def _redis_key(api_key_id: int, ts: datetime | None = None) -> str:
     ts = ts or datetime.now(timezone.utc)
-    return f"ratelimit:mtd:{api_key_id}:{ts.strftime('%Y%m')}"
+    return f"ratelimit:mtd:v2:{api_key_id}:{ts.strftime('%Y%m')}"
 
 
 @dataclass
@@ -48,17 +68,17 @@ class Reservation:
 
 _TRY_INCR_LUA = """
 -- KEYS[1] = mtd key
--- ARGV[1] = reservation amount  (string decimal)
--- ARGV[2] = limit               (string decimal)
+-- ARGV[1] = reservation amount  (integer units)
+-- ARGV[2] = limit               (integer units)
 -- returns: -1 if key missing (caller must initialize from DB),
 --          0  if reservation would exceed cap,
 --          1  if reserved successfully
 if redis.call('EXISTS', KEYS[1]) == 0 then
     return -1
 end
-local newval = redis.call('INCRBYFLOAT', KEYS[1], ARGV[1])
-if tonumber(newval) > tonumber(ARGV[2]) then
-    redis.call('INCRBYFLOAT', KEYS[1], '-' .. ARGV[1])
+local newval = redis.call('INCRBY', KEYS[1], ARGV[1])
+if newval > tonumber(ARGV[2]) then
+    redis.call('DECRBY', KEYS[1], ARGV[1])
     return 0
 end
 return 1
@@ -66,16 +86,16 @@ return 1
 
 _INIT_AND_INCR_LUA = """
 -- KEYS[1] = mtd key
--- ARGV[1] = committed_mtd  (string decimal)
--- ARGV[2] = reservation    (string decimal)
--- ARGV[3] = limit          (string decimal)
+-- ARGV[1] = committed_mtd  (integer units)
+-- ARGV[2] = reservation    (integer units)
+-- ARGV[3] = limit          (integer units)
 -- ARGV[4] = ttl seconds
 if redis.call('EXISTS', KEYS[1]) == 0 then
     redis.call('SET', KEYS[1], ARGV[1], 'EX', tonumber(ARGV[4]))
 end
-local newval = redis.call('INCRBYFLOAT', KEYS[1], ARGV[2])
-if tonumber(newval) > tonumber(ARGV[3]) then
-    redis.call('INCRBYFLOAT', KEYS[1], '-' .. ARGV[2])
+local newval = redis.call('INCRBY', KEYS[1], ARGV[2])
+if newval > tonumber(ARGV[3]) then
+    redis.call('DECRBY', KEYS[1], ARGV[2])
     return 0
 end
 return 1
@@ -105,7 +125,8 @@ async def try_reserve(
     key = _redis_key(api_key_id)
     try:
         ret = await redis.eval(
-            _TRY_INCR_LUA, 1, key, str(reservation_amount), str(monthly_limit)
+            _TRY_INCR_LUA, 1, key,
+            str(_to_units(reservation_amount)), str(_to_units(monthly_limit)),
         )
     except Exception as exc:
         if strict:
@@ -137,8 +158,8 @@ async def init_and_reserve(
     try:
         ok = await redis.eval(
             _INIT_AND_INCR_LUA, 1, key,
-            str(committed_mtd), str(reservation_amount),
-            str(monthly_limit), str(_TTL_SECONDS),
+            str(_to_units(committed_mtd)), str(_to_units(reservation_amount)),
+            str(_to_units(monthly_limit)), str(_TTL_SECONDS),
         )
     except Exception as exc:
         if strict:
@@ -156,9 +177,11 @@ async def release(redis: Redis, reservation: Reservation, *, actual_cost: Decima
     """
     if reservation.reservation_id.startswith("stub-"):
         return
-    delta = actual_cost - reservation.amount
+    delta_units = _to_units(actual_cost) - _to_units(reservation.amount)
+    if delta_units == 0:
+        return
     try:
-        await redis.incrbyfloat(reservation.redis_key, str(delta))
+        await redis.incrby(reservation.redis_key, delta_units)
     except Exception:
         pass
 

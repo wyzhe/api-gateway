@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import json
 import time
-from decimal import Decimal
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
@@ -33,6 +32,7 @@ from ..services import (
 )
 from ..services.token_estimator import (
     count_message_tokens,
+    count_text_tokens,
     estimate_anthropic_messages_usage,
 )
 
@@ -415,10 +415,13 @@ async def _chat_completions_stream(
         started = time.perf_counter()
         final_usage: dict[str, Any] | None = None
         upstream_error: dict[str, Any] | None = None
+        # Accumulate the relayed output so that, if upstream omits `usage`, we
+        # can count the *actual* completion tokens instead of billing the
+        # max_tokens ceiling.
+        completion_parts: list[str] = []
         # Capture the preauth estimate in closure so the usage-missing fallback
-        # below doesn't have to recount tokens.
+        # below doesn't have to recount the prompt.
         nonlocal_prompt_est = prompt_est
-        nonlocal_max_completion = max_completion
         tpm_settled = False
         try:
             try:
@@ -436,6 +439,17 @@ async def _chat_completions_stream(
                         break
                     if chunk.parsed and isinstance(chunk.parsed.get("usage"), dict):
                         final_usage = chunk.parsed["usage"]
+                    if chunk.parsed:
+                        for _ch in chunk.parsed.get("choices") or []:
+                            _delta = (_ch or {}).get("delta") or {}
+                            _piece = _delta.get("content")
+                            if isinstance(_piece, str):
+                                completion_parts.append(_piece)
+                            for _tc in _delta.get("tool_calls") or []:
+                                if isinstance(_tc, dict):
+                                    _args = (_tc.get("function") or {}).get("arguments")
+                                    if isinstance(_args, str):
+                                        completion_parts.append(_args)
                     if chunk.parsed and "model" in chunk.parsed:
                         chunk.parsed["model"] = resolved.model.public_name
                         line = (f"data: {json.dumps(chunk.parsed)}\n\n").encode()
@@ -467,10 +481,13 @@ async def _chat_completions_stream(
             cached_tokens = 0
             cache_creation_tokens = 0
             if final_usage is None:
-                # Upstream omitted usage even with include_usage=true. Reuse the
-                # preauth token count + max_tokens ceiling as a pessimistic bound.
+                # Upstream omitted usage even with include_usage=true. We still
+                # relayed every delta, so count the *actual* completion text
+                # rather than billing the max_tokens ceiling.
                 prompt_tokens = nonlocal_prompt_est
-                completion_tokens = nonlocal_max_completion
+                completion_tokens = count_text_tokens(
+                    "".join(completion_parts), resolved.model.public_name
+                )
                 total_tokens = prompt_tokens + completion_tokens
                 usage_source = UsageSource.ESTIMATED.value
                 log.warning(
@@ -761,6 +778,8 @@ async def _messages_stream(
         cached_tokens = 0
         cache_creation_tokens = 0
         saw_usage = False
+        # Accumulated output text — counted only if upstream never reports usage.
+        output_parts: list[str] = []
         upstream_error: dict[str, Any] | None = None
         tpm_settled = False
         try:
@@ -806,6 +825,16 @@ async def _messages_stream(
                                 saw_usage = True
                             except Exception:
                                 pass
+                        elif ev_type == "content_block_delta":
+                            # Accumulate output for the usage-missing fallback.
+                            _d = chunk.parsed.get("delta") or {}
+                            _t = _d.get("text")
+                            if isinstance(_t, str):
+                                output_parts.append(_t)
+                            else:
+                                _pj = _d.get("partial_json")
+                                if isinstance(_pj, str):
+                                    output_parts.append(_pj)
                     yield chunk.raw_line
             except Exception as e:
                 err_event = {
@@ -833,7 +862,12 @@ async def _messages_stream(
 
             usage_source = UsageSource.UPSTREAM.value
             if not saw_usage:
-                input_tokens, output_tokens = prompt_est, max_completion
+                # Upstream never reported usage. Count the actual relayed output
+                # rather than billing the max_tokens ceiling.
+                input_tokens = prompt_est
+                output_tokens = count_text_tokens(
+                    "".join(output_parts), resolved.model.public_name
+                )
                 cached_tokens = 0
                 cache_creation_tokens = 0
                 usage_source = UsageSource.ESTIMATED.value

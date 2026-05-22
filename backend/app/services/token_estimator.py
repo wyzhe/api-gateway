@@ -1,11 +1,14 @@
-"""Pessimistic token counting for streaming chat fallback.
+"""tiktoken-based token counting for the gateway.
 
-When upstream omits `usage` from the final SSE chunk, we still need to bill.
-We count prompt tokens with tiktoken (cl100k_base by default; o200k_base for
-newer GPT-5/GPT-4o families) and assume completion = `max_tokens` (or the
-model's configured ceiling). Result is upward-biased: if real usage arrives
-later (e.g. APIMart back-fills), the worker can refund the difference via
-`billing_service.adjust_log_cost()`.
+Two distinct jobs (cl100k_base by default; o200k_base for newer GPT-5/GPT-4o
+families):
+
+- `estimate_chat_usage` / `estimate_anthropic_messages_usage` — pre-call
+  *upper bound* (prompt count + `max_tokens` ceiling). Feeds the monthly-cap
+  spend reservation only; never the final bill.
+- `count_text_tokens` — counts a finished text blob. The streaming billing
+  fallback uses it on the *actual relayed output* when upstream omits `usage`,
+  so the bill reflects what was generated, not the `max_tokens` ceiling.
 """
 from __future__ import annotations
 
@@ -57,6 +60,18 @@ def count_message_tokens(messages: list[dict[str, Any]], model_name: str) -> int
                 total += len(enc.encode(json.dumps(v, ensure_ascii=False)))
     total += 2  # priming
     return total
+
+
+def count_text_tokens(text: str, model_name: str) -> int:
+    """Token count of a single text blob with the model-appropriate encoding.
+
+    Used by the streaming fallback: when upstream omits `usage`, the gateway
+    has still relayed every output delta, so it joins them and counts here for
+    an accurate completion-token figure (rather than the `max_tokens` ceiling).
+    """
+    if not text:
+        return 0
+    return len(_encoder_for_model(model_name).encode(text))
 
 
 def estimate_chat_usage(

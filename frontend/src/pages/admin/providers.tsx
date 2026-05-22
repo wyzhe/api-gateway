@@ -95,7 +95,7 @@ export function AdminProvidersPage() {
               <div className="text-xs text-muted-foreground mt-2">{t("admin.providers.apiKeyLabel")}</div>
               <div className="mono text-xs text-muted-foreground">
                 {t("admin.providers.apiKeyHintPrefix")}
-                <span className="text-foreground">{t("admin.providers.apiKeyHintEnvVar")}</span>
+                <span className="text-foreground">{`${p.name.toUpperCase()}_API_KEY`}</span>
                 {t("admin.providers.apiKeyHintSuffix")}
               </div>
             </CardContent>
@@ -126,7 +126,7 @@ export function AdminProvidersPage() {
             </FormField>
             <p className="text-xs text-muted-foreground">
               {t("admin.providers.editDialog.rotateHintPrefix")}
-              <span className="mono">{t("admin.providers.editDialog.rotateHintEnvVar")}</span>
+              <span className="mono">{`${(editing?.name ?? "").toUpperCase()}_API_KEY`}</span>
               {t("admin.providers.editDialog.rotateHintMiddle")}
               <span className="mono">{t("admin.providers.editDialog.rotateHintEnvFile")}</span>
               {t("admin.providers.editDialog.rotateHintSuffix")}

@@ -40,8 +40,7 @@ def recharge(
         created_by_admin_id=admin_id,
     )
     db.add(txn)
-    db.commit()
-    db.refresh(txn)
+    db.flush()  # caller commits — keeps the audit_logs row in the same transaction
     return txn
 
 

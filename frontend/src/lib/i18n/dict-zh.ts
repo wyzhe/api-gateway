@@ -126,6 +126,9 @@ export const zh: EnDict = {
       detachConfirm: "确认解绑此 {provider} 关联?",
       cannotDetachLast:
         "至少要保留一种登录方式。请先绑定另一个 provider。",
+      linkSuccess: "已成功绑定 {provider}。",
+      linkErrInUse: "该账号已被其它用户绑定。",
+      linkErrExpired: "绑定会话已过期,请重试。",
     },
     security: {
       title: "密码",
@@ -597,7 +600,6 @@ export const zh: EnDict = {
       baseUrlLabel: "Base URL",
       apiKeyLabel: "服务商 API Key",
       apiKeyHintPrefix: "通过 ",
-      apiKeyHintEnvVar: "APIMART_API_KEY",
       apiKeyHintSuffix: " 环境变量配置：仅可写入，现有值会被掩码遮蔽，界面中无法读取。",
       editTitle: "编辑",
       editDialog: {
@@ -607,7 +609,6 @@ export const zh: EnDict = {
         statusLabel: "状态",
         disabledLongHint: "已禁用 — 将阻断对该服务商的所有调用",
         rotateHintPrefix: "该服务商的 API Key 通过 ",
-        rotateHintEnvVar: "APIMART_API_KEY",
         rotateHintMiddle: " 环境变量配置；如需轮换，请在 ",
         rotateHintEnvFile: ".env",
         rotateHintSuffix: " 中修改并重启后端。",

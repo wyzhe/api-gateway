@@ -204,7 +204,7 @@ async def callback(
         linker_id = state_data.get("linker_user_id")
         if not linker_id:
             return RedirectResponse(
-                _frontend_url("/settings/connections?error=state_expired"),
+                _frontend_url("/account?error=state_expired"),
                 status_code=302,
             )
         try:
@@ -222,7 +222,7 @@ async def callback(
             db.commit()
             auth_oauth_total.labels(provider=provider, outcome="link").inc()
             return RedirectResponse(
-                _frontend_url(f"/settings/connections?linked={provider}"),
+                _frontend_url(f"/account?linked={provider}"),
                 status_code=302,
             )
         except oauth_linking_service.OAuthProviderInUse:
@@ -235,7 +235,7 @@ async def callback(
             db.commit()
             auth_oauth_total.labels(provider=provider, outcome="error_in_use").inc()
             return RedirectResponse(
-                _frontend_url("/settings/connections?error=provider_in_use"),
+                _frontend_url("/account?error=provider_in_use"),
                 status_code=302,
             )
 

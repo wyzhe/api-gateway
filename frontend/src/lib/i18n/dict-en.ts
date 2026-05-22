@@ -130,6 +130,9 @@ export const en = {
       detachConfirm: "Unlink this {provider} connection?",
       cannotDetachLast:
         "You must keep at least one login method. Link another provider first.",
+      linkSuccess: "Linked {provider} successfully.",
+      linkErrInUse: "That account is already linked to another user.",
+      linkErrExpired: "The linking session expired — please try again.",
     },
     security: {
       title: "Password",
@@ -605,7 +608,6 @@ export const en = {
       baseUrlLabel: "Base URL",
       apiKeyLabel: "API key",
       apiKeyHintPrefix: "Configured via ",
-      apiKeyHintEnvVar: "APIMART_API_KEY",
       apiKeyHintSuffix: " env. Not shown in the UI for safety.",
       editTitle: "Edit",
       editDialog: {
@@ -615,7 +617,6 @@ export const en = {
         statusLabel: "Status",
         disabledLongHint: "disabled — blocks all upstream calls",
         rotateHintPrefix: "The API key for this provider is set via the ",
-        rotateHintEnvVar: "APIMART_API_KEY",
         rotateHintMiddle: " environment variable; rotate it in ",
         rotateHintEnvFile: ".env",
         rotateHintSuffix: " and restart the backend.",

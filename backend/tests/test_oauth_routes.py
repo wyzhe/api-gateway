@@ -330,7 +330,7 @@ def test_link_callback_attaches_identity_to_current_user(monkeypatch, jwt, test_
     r = client.get(f"/api/auth/oauth/google/callback?code=x&state={state}",
                    follow_redirects=False)
     assert r.status_code in (302, 307)
-    assert "/settings/connections?linked=google" in r.headers["location"]
+    assert "/account?linked=google" in r.headers["location"]
     cookies = r.headers.get_list("set-cookie")
     assert not any(c.startswith("oauth_exchange=") and "Max-Age=60" in c for c in cookies)
 

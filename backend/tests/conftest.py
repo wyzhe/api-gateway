@@ -119,6 +119,7 @@ def test_user(db_session) -> Iterator[User]:
 @pytest.fixture
 def test_user_funded(db_session, test_user) -> User:
     billing_service.recharge(db_session, test_user.id, Decimal("100"), admin_id=None, note="pytest")
+    db_session.commit()
     db_session.refresh(test_user)
     return test_user
 
