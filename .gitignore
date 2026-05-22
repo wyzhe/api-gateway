@@ -42,5 +42,6 @@ references/
 # Local scratch / smoke-test script (root only)
 /test.py
 
-# WIP frontend visual rebuild — not committed (see MIGRATION_PLAN.md)
+# WIP frontend visual rebuild + its plan — not committed
 /frontend-muxcode/
+/MIGRATION_PLAN.md
